@@ -48,3 +48,16 @@ FOUNDATION_EXPORT BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, 
 /** AV1 / VP9 / VP8 — AVAssetExportSession cannot produce a Photos-safe MP4. */
 FOUNDATION_EXPORT BOOL ThetaVideoFourCCNeedsFFmpegTranscode(FourCharCode codec);
 FOUNDATION_EXPORT BOOL ThetaAssetVideoNeedsFFmpegTranscode(AVAsset *asset);
+
+@class AVAssetExportSession;
+
+/**
+ * Sets `outputFileType` only when the session reports it as supported, and never lets
+ * -setOutputFileType: raise out of the call.
+ *
+ * -[AVAssetExportSession setOutputFileType:] raises NSInvalidArgumentException when the type is
+ * not in `supportedFileTypes`, and that list is asset/preset dependent (and, on newer iOS, can
+ * come back empty because the synchronous accessor is deprecated). Callers must treat NO as
+ * "this preset can't produce that container" and move on.
+ */
+FOUNDATION_EXPORT BOOL ThetaExportSessionSetFileType(AVAssetExportSession *session, NSString *fileType);

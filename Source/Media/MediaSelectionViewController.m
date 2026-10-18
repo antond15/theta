@@ -1662,7 +1662,8 @@ static void * const playerKey = &playerKey;
                 }
                 
                 // Detect video encoding (load tracks first — otherwise formatDescriptions is empty)
-                AVAsset *videoAsset = [AVAsset assetWithURL:[NSURL fileURLWithPath:videoPath]];
+                /* Precise timing: a fragmented DASH segment reports duration 0 in its moov. */
+                AVAsset *videoAsset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:videoPath] options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
                 {
                     dispatch_semaphore_t videoKeysSem = dispatch_semaphore_create(0);
                     [videoAsset loadValuesAsynchronouslyForKeys:@[@"tracks", @"duration"] completionHandler:^{
@@ -1750,13 +1751,18 @@ static void * const playerKey = &playerKey;
                     AVAsset *audioAssetForMerge = nil;
                     AVAssetTrack *audioTrackForMerge = nil;
                     if (hasAudio && audioPath && [fm fileExistsAtPath:audioPath]) {
-                        audioAssetForMerge = [AVAsset assetWithURL:[NSURL fileURLWithPath:audioPath]];
+                        audioAssetForMerge = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:audioPath] options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
                         audioTrackForMerge = [[audioAssetForMerge tracksWithMediaType:AVMediaTypeAudio] firstObject];
                     }
                     
                     CMTime videoDur = videoAsset.duration;
+                    /* mergeDur is derived from videoDur, so falling back to videoDur cannot rescue a
+                       bad value — and insertTimeRange: raises on an invalid range instead of
+                       reporting through its error out-param. */
+                    BOOL durationUsable = CMTIME_IS_NUMERIC(videoDur) && CMTIME_COMPARE_INLINE(videoDur, >, kCMTimeZero);
                     CMTime mergeDur = videoDur;
-                    if (audioTrackForMerge && audioAssetForMerge && CMTIME_IS_NUMERIC(audioAssetForMerge.duration)) {
+                    if (durationUsable && audioTrackForMerge && audioAssetForMerge && CMTIME_IS_NUMERIC(audioAssetForMerge.duration)
+                        && CMTIME_COMPARE_INLINE(audioAssetForMerge.duration, >, kCMTimeZero)) {
                         mergeDur = CMTimeMinimum(videoDur, audioAssetForMerge.duration);
                     }
                     if (!CMTIME_IS_NUMERIC(mergeDur) || CMTIME_COMPARE_INLINE(mergeDur, <=, kCMTimeZero)) {
@@ -1766,7 +1772,12 @@ static void * const playerKey = &playerKey;
                     
                     NSError *videoInsertError = nil;
                     if (videoTrackForMerge) {
-                        [compositionVideoTrack insertTimeRange:mergeRange ofTrack:videoTrackForMerge atTime:kCMTimeZero error:&videoInsertError];
+                        if (!durationUsable) {
+                            videoInsertError = [NSError errorWithDomain:@"Theta" code:-10
+                                                              userInfo:@{NSLocalizedDescriptionKey: @"Unusable video duration"}];
+                        } else {
+                            [compositionVideoTrack insertTimeRange:mergeRange ofTrack:videoTrackForMerge atTime:kCMTimeZero error:&videoInsertError];
+                        }
                         if (videoInsertError) {
                             NSLog(@"Error adding video track for video %ld: %@", (long)videoIndex, videoInsertError);
                             dispatch_semaphore_signal(transcodeSemaphore);
@@ -1802,20 +1813,24 @@ static void * const playerKey = &playerKey;
                     
                     AVAssetExportSession *exportSession = [[AVAssetExportSession alloc] initWithAsset:composition presetName:AVAssetExportPresetHighestQuality];
                     exportSession.outputURL = [NSURL fileURLWithPath:outputPath];
-                    exportSession.outputFileType = AVFileTypeMPEG4;
+                    BOOL canWriteMP4 = ThetaExportSessionSetFileType(exportSession, AVFileTypeMPEG4);
                     if ([exportSession respondsToSelector:@selector(setShouldOptimizeForNetworkUse:)]) {
                         exportSession.shouldOptimizeForNetworkUse = YES;
                     }
                     
                     dispatch_semaphore_t exportSemaphore = dispatch_semaphore_create(0);
-                    [exportSession exportAsynchronouslyWithCompletionHandler:^{
-                        dispatch_semaphore_signal(exportSemaphore);
-                    }];
-                    dispatch_semaphore_wait(exportSemaphore, DISPATCH_TIME_FOREVER);
+                    if (canWriteMP4) {
+                        [exportSession exportAsynchronouslyWithCompletionHandler:^{
+                            dispatch_semaphore_signal(exportSemaphore);
+                        }];
+                        dispatch_semaphore_wait(exportSemaphore, DISPATCH_TIME_FOREVER);
+                    } else {
+                        NSLog(@"Bulk %ld: export session cannot write MPEG-4", (long)videoIndex);
+                    }
                     
                     dispatch_semaphore_signal(transcodeSemaphore);
                     
-                    if (exportSession.status != AVAssetExportSessionStatusCompleted) {
+                    if (!canWriteMP4 || exportSession.status != AVAssetExportSessionStatusCompleted) {
                         NSLog(@"Export failed for video %ld: %@", (long)videoIndex, exportSession.error);
                         if ([fm fileExistsAtPath:outputPath]) [fm removeItemAtPath:outputPath error:nil];
                         NSError *transcodeError = nil;
@@ -2324,22 +2339,27 @@ static void * const playerKey = &playerKey;
             __block NSString *frameworkPath;
 
             dispatch_once(&onceToken, ^{
+                /* dylibs/ffmpegkit is where scripts/isolate-ffmpeg-dylibs.py puts it, with its
+                   @rpath dependencies rewritten to @loader_path so it binds to our libav* and not
+                   to the stripped ones Instagram bundles. The other paths are older layouts. */
 #ifndef SIDELOAD
-                frameworkPath = ROOT_PATH_NS(@"/Library/Application Support/ffmpeg.framework/ffmpegkit");
-                ffmpegkitHandle = dlopen([frameworkPath UTF8String], RTLD_NOW);
-                if (!ffmpegkitHandle) {
-                    NSString *alternativePath = ROOT_PATH_NS(@"/Library/Application Support/ffmpeg.framework/ffmpegkit");
-                    ffmpegkitHandle = dlopen([alternativePath UTF8String], RTLD_NOW);
+                NSString *ffmpegRoot = ROOT_PATH_NS(@"/Library/Application Support/ffmpeg.framework");
+                for (NSString *rel in @[@"dylibs/ffmpegkit", @"ffmpegkit.framework/ffmpegkit", @"ffmpegkit"]) {
+                    frameworkPath = [ffmpegRoot stringByAppendingPathComponent:rel];
+                    ffmpegkitHandle = dlopen([frameworkPath UTF8String], RTLD_NOW);
+                    if (ffmpegkitHandle) break;
                 }
 #else
                 NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
                 NSString *frameworksPath = [[NSBundle mainBundle] privateFrameworksPath];
-                NSArray *sideloadPaths = @[
-                    [bundlePath stringByAppendingPathComponent:@"ffmpeg.framework/ffmpegkit"],
-                    [frameworksPath stringByAppendingPathComponent:@"ffmpeg.framework/ffmpegkit"],
-                    [[NSBundle mainBundle] pathForResource:@"ffmpegkit" ofType:nil inDirectory:@"ffmpeg.framework"] ?: @"",
-                    @"/ffmpeg.framework/ffmpegkit"
-                ];
+                NSMutableArray *sideloadPaths = [NSMutableArray array];
+                for (NSString *dir in @[bundlePath ?: @"", frameworksPath ?: @""]) {
+                    if (!dir.length) continue;
+                    NSString *root = [dir stringByAppendingPathComponent:@"ffmpeg.framework"];
+                    for (NSString *rel in @[@"dylibs/ffmpegkit", @"ffmpegkit.framework/ffmpegkit", @"ffmpegkit"]) {
+                        [sideloadPaths addObject:[root stringByAppendingPathComponent:rel]];
+                    }
+                }
                 for (NSString *path in sideloadPaths) {
                     if (path.length > 0) {
                         frameworkPath = path;

@@ -539,6 +539,33 @@ static BOOL ThetaAVAssetLoadKeys(AVAsset *asset) {
     return [asset statusOfValueForKey:@"tracks" error:&err] == AVKeyValueStatusLoaded;
 }
 
+BOOL ThetaExportSessionSetFileType(AVAssetExportSession *session, NSString *fileType) {
+    if (!session || !fileType.length) return NO;
+
+    /* Deprecated on iOS 16+ and can be empty before compatibility is determined; an empty list
+       means "unknown", not "nothing supported", so only reject on a populated mismatch. */
+    NSArray<NSString *> *supported = nil;
+    @try {
+        supported = session.supportedFileTypes;
+    } @catch (__unused NSException *e) {
+        supported = nil;
+    }
+    if (supported.count > 0 && ![supported containsObject:fileType]) {
+        NSLog(@"[Theta] export preset cannot write %@ (supports %@)", fileType, supported);
+        return NO;
+    }
+
+    @try {
+        session.outputFileType = fileType;
+    } @catch (NSException *e) {
+        /* This is the crash from the 441.0.0 / iOS 26.6 report: an unguarded setter raising
+           NSInvalidArgumentException out of a background queue and aborting the process. */
+        NSLog(@"[Theta] setOutputFileType:%@ raised: %@", fileType, e.reason);
+        return NO;
+    }
+    return YES;
+}
+
 static NSString *ThetaRenameAudioByMagic(NSString *path) {
     if (!path.length) return path;
     NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
@@ -646,7 +673,7 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
     if (videoPath.length == 0 || outputPath.length == 0) return NO;
     @try {
         NSFileManager *fm = [NSFileManager defaultManager];
-        AVAsset *videoAsset = [AVAsset assetWithURL:[NSURL fileURLWithPath:videoPath]];
+        AVAsset *videoAsset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:videoPath] options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
         ThetaAVAssetLoadKeys(videoAsset);
         AVAssetTrack *videoTrack = [[videoAsset tracksWithMediaType:AVMediaTypeVideo] firstObject];
         if (!videoTrack) {
@@ -893,7 +920,7 @@ BOOL ThetaExportPhotosCompatibleMP4(NSString *videoPath, NSString *audioPath, BO
     NSFileManager *fm = [NSFileManager defaultManager];
     if ([fm fileExistsAtPath:outputPath]) [fm removeItemAtPath:outputPath error:nil];
 
-    AVAsset *videoAsset = [AVAsset assetWithURL:[NSURL fileURLWithPath:videoPath]];
+    AVAsset *videoAsset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:videoPath] options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
     ThetaAVAssetLoadKeys(videoAsset);
     AVAssetTrack *videoTrack = [[videoAsset tracksWithMediaType:AVMediaTypeVideo] firstObject];
     if (!videoTrack) return NO;

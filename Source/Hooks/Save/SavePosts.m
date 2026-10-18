@@ -120,6 +120,10 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
     
     // Run everything on a background queue to avoid blocking UI
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+      /* Nothing below may let an exception escape: this is a bare dispatch block, so an
+         AVFoundation raise here terminates Instagram instead of failing the save. */
+      __block void (^finishJob)(void) = nil;
+      @try {
         NSString *videoManifest = [[NSString alloc] initWithData:videoData encoding:NSUTF8StringEncoding];
         NSString *videoURLString = selectedVideoURL.length > 0 ? selectedVideoURL : IGDashManifestBestCompatibleURL(videoManifest);
         NSString *audioURLString = IGDashManifestBestAudioURL(videoManifest);
@@ -140,7 +144,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         theta_sweepStaleReelSaveFiles();
         NSString *workDir = theta_makeReelSaveWorkDir();
         __block BOOL jobFinished = NO;
-        void (^finishJob)(void) = ^{
+        finishJob = ^{
             if (jobFinished) return;
             jobFinished = YES;
             theta_removePath(workDir);
@@ -219,7 +223,9 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         }
         
         // Detect and log video encoding
-        AVAsset *videoAsset = [AVAsset assetWithURL:[NSURL fileURLWithPath:videoPath]];
+        /* Fragmented MP4 (IG serves DASH/CMAF segments) advertises duration 0 in its moov;
+           only the precise-timing option makes AVFoundation walk sidx/moof for the real value. */
+        AVAsset *videoAsset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:videoPath] options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
         {
             dispatch_semaphore_t videoKeysSem = dispatch_semaphore_create(0);
             [videoAsset loadValuesAsynchronouslyForKeys:@[@"tracks", @"duration"] completionHandler:^{
@@ -264,9 +270,22 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
 
             NSString *fileToSave = h264OutputPath;
             if (!success) {
-                NSLog(@"FFmpeg transcoding failed (%@); trying original file", transcodeError);
-                fileToSave = videoPath;
-                success = YES;
+                /* Never substitute the raw download. It is a fragmented AV1 DASH segment:
+                   moov advertises duration 0, there are no sample tables, and the audio lives
+                   in a separate representation that never got muxed in. Photos rejects it, and
+                   in folder mode it lands as a "saved" video that nothing can play. Fail
+                   honestly instead, and name the reason: without a console there is no other
+                   way to tell "ffmpeg didn't load" from "ffmpeg loaded and the encode failed". */
+                NSLog(@"AV1 conversion failed (%@); refusing to save the raw DASH segment", transcodeError);
+                NSString *reason = transcodeError.localizedDescription.length
+                    ? [NSString stringWithFormat:@"AV1 conversion failed: %@", transcodeError.localizedDescription]
+                    : @"This reel is AV1 and couldn't be converted.";
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    showCompletionToast(progressToast, NO, @"Couldn't convert video", reason,
+                                        [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
+                });
+                finishJob();
+                return;
             }
             
             // Save the transcoded file
@@ -348,7 +367,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         
         // Detect and log audio encoding if audio file exists
         if (hasAudio) {
-            AVAsset *audioAsset = [AVAsset assetWithURL:[NSURL fileURLWithPath:audioPath]];
+            AVAsset *audioAsset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:audioPath] options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
             NSArray<AVAssetTrack *> *audioTracks = [audioAsset tracksWithMediaType:AVMediaTypeAudio];
             if (audioTracks.count > 0) {
                 AVAssetTrack *audioTrack = audioTracks[0];
@@ -379,7 +398,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         AVMutableCompositionTrack *compositionVideoTrack = [composition addMutableTrackWithMediaType:AVMediaTypeVideo preferredTrackID:kCMPersistentTrackID_Invalid];
         AVMutableCompositionTrack *compositionAudioTrack = nil;
         
-        AVAsset *videoAssetForMerge = [AVAsset assetWithURL:[NSURL fileURLWithPath:videoPath]];
+        AVAsset *videoAssetForMerge = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:videoPath] options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
         {
             dispatch_semaphore_t loadSem = dispatch_semaphore_create(0);
             [videoAssetForMerge loadValuesAsynchronouslyForKeys:@[@"tracks", @"duration"] completionHandler:^{
@@ -401,8 +420,20 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         }
         
         CMTime videoDur = videoAssetForMerge.duration;
+        /* Bail out instead of falling back to videoDur: mergeDur is *derived* from it, so a bad
+           videoDur would survive the check and reach insertTimeRange:, which raises rather than
+           reporting through its error out-param. */
+        if (!CMTIME_IS_NUMERIC(videoDur) || CMTIME_COMPARE_INLINE(videoDur, <=, kCMTimeZero)) {
+            NSLog(@"ThetaSave: unusable video duration for %@", videoPath);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                showCompletionToast(progressToast, NO, @"Error", @"Video file is unreadable", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
+            });
+            finishJob();
+            return;
+        }
         CMTime mergeDur = videoDur;
-        if (audioTrackForMerge && audioAssetForMerge && CMTIME_IS_NUMERIC(audioAssetForMerge.duration)) {
+        if (audioTrackForMerge && audioAssetForMerge && CMTIME_IS_NUMERIC(audioAssetForMerge.duration)
+            && CMTIME_COMPARE_INLINE(audioAssetForMerge.duration, >, kCMTimeZero)) {
             mergeDur = CMTimeMinimum(videoDur, audioAssetForMerge.duration);
         }
         if (!CMTIME_IS_NUMERIC(mergeDur) || CMTIME_COMPARE_INLINE(mergeDur, <=, kCMTimeZero)) {
@@ -441,7 +472,14 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         
         AVAssetExportSession *exportSession = [[AVAssetExportSession alloc] initWithAsset:composition presetName:AVAssetExportPresetHighestQuality];
         exportSession.outputURL = outputURL;
-        exportSession.outputFileType = AVFileTypeMPEG4;
+        if (!ThetaExportSessionSetFileType(exportSession, AVFileTypeMPEG4)) {
+            NSLog(@"ThetaSave: export session cannot write MPEG-4");
+            dispatch_async(dispatch_get_main_queue(), ^{
+                showCompletionToast(progressToast, NO, @"Error", @"Could not prepare video for saving", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
+            });
+            finishJob();
+            return;
+        }
         if ([exportSession respondsToSelector:@selector(setShouldOptimizeForNetworkUse:)]) {
             exportSession.shouldOptimizeForNetworkUse = YES;
         }
@@ -791,6 +829,14 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 dispatch_semaphore_signal(semaphore);
             }
         }];
+      } @catch (NSException *exception) {
+        NSLog(@"[Theta] reel save failed with exception: %@ — %@", exception.name, exception.reason);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            showCompletionToast(progressToast, NO, @"Error", @"Could not save this video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
+        });
+        // Raised before finishJob was set up: only the global download lock is held.
+        if (finishJob) finishJob(); else [ThetaHelper endGlobalDownload];
+      }
     });
 }
 

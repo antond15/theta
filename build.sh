@@ -500,6 +500,12 @@ build_sideload() {
 		rm -rf "$out_app/ffmpeg.framework"
 		# Follow symlink if present
 		cp -f -R "$ffmpeg_src" "$out_app/ffmpeg.framework"
+		# Instagram ships its own stripped libavcodec/libavutil under Frameworks/, with the same
+		# @rpath install names ours use. Without this, dyld binds our libavformat to Instagram's
+		# copies and the AV1 transcode path never loads. Do NOT "fix" that by deleting the copies
+		# under Frameworks/ — they belong to Instagram.
+		python3 "$SCRIPT_DIR/scripts/isolate-ffmpeg-dylibs.py" "$out_app/ffmpeg.framework" \
+			| sed 's/^/[Build] /'
 	fi
 
 	# Housekeeping
