@@ -70,14 +70,17 @@ static void hook_viewWillAppear_tabBar(id self, SEL _cmd, BOOL animated) {
 
     NSInteger launchIdx = [[NSUserDefaults standardUserDefaults] integerForKey:@"Launch Tab_SegmentIndex"];
     NSString *selName = nil;
+    NSString *intent = nil;
     switch (launchIdx) {
-        case 1:  selName = @"_timelineButtonPressed";       break; // Home
-        case 2:  selName = @"_exploreButtonPressed";         break; // Explore
-        case 3:  selName = @"_discoverVideoButtonPressed";   break; // Reels
-        case 4:  selName = @"_directInboxButtonPressed";     break; // Messages
-        case 5:  selName = @"_profileButtonPressed";         break; // Profile
+        case 1:  selName = @"_timelineButtonPressed";     intent = @"FEED";    break; // Home
+        case 2:  selName = @"_exploreButtonPressed";      intent = @"SEARCH";  break; // Explore
+        case 3:  selName = @"_discoverVideoButtonPressed"; intent = @"CLIPS";  break; // Reels
+        case 4:  selName = @"_directInboxButtonPressed";  intent = @"DIRECT";  break; // Messages
+        case 5:  selName = @"_profileButtonPressed";      intent = @"PROFILE"; break; // Profile
         default: break;
     }
+    // A hidden tab has no view controller to switch to.
+    if (THShouldHideTabByIntent(intent)) selName = nil;
     if (selName) {
         SEL sel = NSSelectorFromString(selName);
         if ([self respondsToSelector:sel]) {
@@ -87,9 +90,14 @@ static void hook_viewWillAppear_tabBar(id self, SEL _cmd, BOOL animated) {
 }
 
 void THRegisterNavigationHooks(void) {
+    // Also called from the constructor: IGTabBarController reads these while it builds the tab
+    // bar, which happens before InitializeHooks runs.
+    static BOOL sNavConfigHooked = NO, sLaunchTabHooked = NO;
+
     // _TtC18IGNavConfiguration18IGNavConfiguration is the Swift class name
     Class navConfig = objc_getClass("_TtC18IGNavConfiguration18IGNavConfiguration");
-    if (navConfig) {
+    if (navConfig && !sNavConfigHooked) {
+        sNavConfigHooked = YES;
         SEL tabOrd = sel_registerName("tabOrdering");
         SEL swipe = sel_registerName("isTabSwipingEnabled");
 
@@ -101,5 +109,8 @@ void THRegisterNavigationHooks(void) {
 
     // Launch tab — hooks IGTabBarController viewWillAppear
     Class tbCls = objc_getClass("IGTabBarController");
-    NullHookMessageEx(tbCls, @selector(viewWillAppear:), (void *)hook_viewWillAppear_tabBar, &orig_viewWillAppear_tabBar);
+    if (tbCls && !sLaunchTabHooked) {
+        sLaunchTabHooked = YES;
+        NullHookMessageEx(tbCls, @selector(viewWillAppear:), (void *)hook_viewWillAppear_tabBar, &orig_viewWillAppear_tabBar);
+    }
 }

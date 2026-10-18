@@ -229,6 +229,9 @@ static void ThetaLoad(void) {
 #endif
 
     THRegisterLiquidGlassTabBarEarlyHooks();
+    // The tab bar is built before InitializeHooks runs, so its hooks must already be installed.
+    THRegisterNavigationHooks();
+    THRegisterHideTabsHooks();
 
     appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     NSString *thetaProject = [NSString stringWithUTF8String:THETA_PROJECT];

@@ -97,14 +97,6 @@ If Substrate cannot be found automatically, set `SUBSTRATE_FRAMEWORK_PATH` to a 
 
 Sideload also injects `ThetaNSE` into Instagram’s notification service extension so decrypted banners can work. `Source/SideloadNSE/keychain-sharing.plist` is **optional** and is not applied by the build. Skip it unless notifications break because the extension cannot read Instagram’s keychain. In that case, merge those entitlements onto `Instagram.app` and `InstagramNotificationExtension.appex` only (never onto `ThetaNSE` or other dylibs), and replace `TEAMID` with your signing Team ID. Theta already probes wildcard keychain groups at runtime, so most sideload installs do not need this plist.
 
-## Known issues
-
-| Area | Scope | Status |
-| --- | --- | --- |
-| **Navigation** (Tab Icon Order, Swipe Between Tabs, Launch Tab, Hide Feed/Explore/Reels/Messages Tab, Messenger Mode) | **Sideload only** | Broken |
-
-Jailbreak Navigation settings are unaffected. Everything else in Theta settings is expected to work on both jailbreak and sideload.
-
 ## Checking a new Instagram version
 
 `scripts/compat.py` reads the ObjC metadata of every binary in an unpacked Instagram app and checks each hook Theta installs: the class must exist and the selector must be on it, a category or a superclass. Variables passed to the hook helpers are traced back to their assignments and fallback lists.

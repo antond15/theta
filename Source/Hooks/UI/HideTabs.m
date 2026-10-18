@@ -436,6 +436,55 @@ static BOOL theta_anyTabHideEnabled(void) {
         || ENABLED(@"Hide Explore Tab") || ENABLED(@"Hide Messages Tab");
 }
 
+static BOOL theta_shouldHideSurface(id surface) {
+    NSString *intent = nil;
+    @try { intent = [surface performSelector:@selector(tabStringFromSurfaceIntent)]; } @catch (__unused NSException *e) {}
+    if (ENABLED(@"Messenger Mode")) {
+        return ![intent isEqualToString:@"PROFILE"] && ![intent isEqualToString:@"DIRECT"];
+    }
+    return theta_shouldRemoveSurfaceIntent(intent);
+}
+
+/// Drops hidden tabs from a surface list. Returns the input unchanged if nothing is hidden
+/// or if filtering would leave no tabs.
+static NSArray *theta_filterTabBarSurfaces(NSArray *surfaces) {
+    if (![surfaces isKindOfClass:[NSArray class]] || !surfaces.count) return surfaces;
+    if (!ENABLED(@"Messenger Mode") && !theta_anyTabHideEnabled()) return surfaces;
+    NSMutableArray *kept = [NSMutableArray arrayWithCapacity:surfaces.count];
+    for (id surface in surfaces) {
+        if (!theta_shouldHideSurface(surface)) [kept addObject:surface];
+    }
+    if (kept.count == surfaces.count || !kept.count) return surfaces;
+    return [kept copy];
+}
+
+// Instagram 451 builds the tab list (legacy and native iOS 26 tab bar) through
+// IGDefaultTabPreferenceService -reorderedSurfaces: and, for the native bar,
+// -[IGTabBarController _nativeOrderedSurfacesForHorizontalSizeClass:]. Filtering there hides the
+// tab, its view controller and its swipe page together, before anything is laid out.
+static NSArray *(*orig_reorderedSurfaces)(id, SEL, NSArray *);
+static NSArray *hook_reorderedSurfaces(id self, SEL _cmd, NSArray *surfaces) {
+    return theta_filterTabBarSurfaces(orig_reorderedSurfaces(self, _cmd, surfaces));
+}
+
+static NSArray *(*orig_nativeOrderedSurfaces)(id, SEL, NSInteger);
+static NSArray *hook_nativeOrderedSurfaces(id self, SEL _cmd, NSInteger sizeClass) {
+    return theta_filterTabBarSurfaces(orig_nativeOrderedSurfaces(self, _cmd, sizeClass));
+}
+
+/// YES if the tab bar already renders only visible tabs (the surface hooks above ran).
+static BOOL theta_tabBarSurfacesAlreadyFiltered(id tabBarController) {
+    id surfaces = nil;
+    if ([tabBarController respondsToSelector:@selector(_renderedTabBarSurfaces)]) {
+        @try { surfaces = [tabBarController performSelector:@selector(_renderedTabBarSurfaces)]; } @catch (__unused NSException *e) {}
+    }
+    if (![surfaces isKindOfClass:[NSArray class]] || ![(NSArray *)surfaces count]) return NO;
+    for (id surface in (NSArray *)surfaces) {
+        if (theta_shouldHideSurface(surface)) return NO;
+    }
+    return YES;
+}
+
 // Walks the full VC hierarchy (children + presented) to find IGTabBarController.
 static UIViewController *theta_findIGTabBarController(void) {
     Class cls = objc_getClass("IGTabBarController");
@@ -503,6 +552,8 @@ static void THApplyTabHidingNow(id tabBarController) {
     BOOL messengerMode = ENABLED(@"Messenger Mode");
     BOOL anyTabHide = theta_anyTabHideEnabled();
     if (!messengerMode && !anyTabHide) return;
+    // Removing buttons by index would then take the wrong view controller with it.
+    if (theta_tabBarSurfacesAlreadyFiltered(tabBarController)) return;
 
     @try {
         BOOL removedTabButtons = NO;
@@ -614,7 +665,14 @@ void THRegisterHideTabsHooks(void) {
     Class tbCls = objc_getClass("IGTabBarController");
     if (!tbCls) return;
 
-    NullHookMessageEx(tbCls, @selector(viewWillAppear:), (void *)hook_hideTabs, &orig_hideTabs);
+    // Also called from the constructor so the hooks are in place before the tab bar is built.
+    static BOOL sInstalled = NO;
+    if (!sInstalled) {
+        sInstalled = YES;
+        NullHookMessageEx(tbCls, @selector(viewWillAppear:), (void *)hook_hideTabs, &orig_hideTabs);
+        NullHookMessageIfPresent(tbCls, NSSelectorFromString(@"_nativeOrderedSurfacesForHorizontalSizeClass:"), (void *)hook_nativeOrderedSurfaces, &orig_nativeOrderedSurfaces);
+        NullHookMessageIfPresent(objc_getClass("_TtC22IGDefaultTabPreference29IGDefaultTabPreferenceService"), @selector(reorderedSurfaces:), (void *)hook_reorderedSurfaces, &orig_reorderedSurfaces);
+    }
 
     // Hooks are installed post-auth; viewWillAppear: has already fired for the visible
     // tab bar. Apply immediately so the user sees the correct state on first launch.
