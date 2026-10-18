@@ -6,24 +6,30 @@ Tested against Instagram **441.0.0**.
 
 ## Requirements
 
-- [Theos](https://theos.dev) with `THEOS` set (for example `export THEOS=/opt/theos`)
-- Theos `Xcode14.xctoolchain` at `$THEOS/toolchain/Xcode14.xctoolchain`
-- The **patched iPhoneOS 14.5 SDK** from this repo (see below). A stock Xcode SDK will not work — Theta is built with `SDKVERSION = 14.5` and needs Theos-patched private-framework stubs.
+- A Mac with the Xcode command-line tools (`xcode-select --install`). Full Xcode also works but is not required.
+- [Homebrew](https://brew.sh), for GNU make (`gmake`; macOS ships make 3.81) and `ldid`
+- [Theos](https://theos.dev), with `THEOS` set (`build.sh` defaults to `~/theos`)
+- The **patched iPhoneOS 14.5 SDK** from this repo. A stock Xcode SDK will not work — Theta is built with `SDKVERSION = 14.5` and needs Theos-patched private-framework stubs.
 - Python 3 (used by `scripts/assemble.py` during the build)
-- A Mac with Xcode command-line tools
+
+`dpkg-deb` is not needed; Theos falls back to its bundled `dm.pl` for `.deb` packaging.
 
 Jailbreak packages also need **Cydia Substrate** on the device (`Depends: mobilesubstrate`). Sideload builds bundle Substrate into the IPA.
 
-### Patched iPhoneOS 14.5 SDK
+### Setup
 
-After cloning or forking, unpack the SDK into your Theos `sdks` directory:
+Run once after cloning (safe to re-run):
 
 ```sh
-mkdir -p "$THEOS/sdks"
-tar -xJf sdks/iPhoneOS14.5.sdk.tar.xz -C "$THEOS/sdks"
+./scripts/setup-toolchain.sh
 ```
 
-That creates `$THEOS/sdks/iPhoneOS14.5.sdk`. Do not unpack it inside the Theta repo; Theos only looks under `$THEOS/sdks`.
+It installs `make` and `ldid` with Homebrew, clones Theos into `$THEOS` (default `~/theos`), and unpacks the patched SDK into `$THEOS/sdks`. It also patches two things the SDK and Makefile expect but current macOS no longer provides:
+
+- **Toolchain link.** The Makefile uses `$THEOS/toolchain/Xcode14.xctoolchain/usr/bin/`. Xcode 14 does not install on current macOS, so the script links that path to the selected Xcode or command-line tools toolchain. A real Xcode 14 toolchain already there is left alone.
+- **libc++ headers.** The patched 14.5 SDK has no C++ headers, and clang 15 and later fail with `'cmath' file not found` from `simd/math.h`. The script copies libc++ headers into `$THEOS/sdks/iPhoneOS14.5.sdk/usr/include/c++`. Re-unpacking the SDK removes them, so re-run the script after that.
+
+If you put Theos somewhere other than `~/theos`, export `THEOS` in your shell profile before running the script and building.
 
 ## Build
 
@@ -35,12 +41,12 @@ Prefer `./build.sh` from the repo root. Do not set `SIDELOAD` and `ROOTLESS` at 
 ./build.sh sideload     # inject into input/Payload → output/Instagram_patched.ipa
 ```
 
-Equivalent Make invocations:
+Equivalent Make invocations (use GNU make; `THEOS` must be exported):
 
 ```sh
-make package
-make package ROOTLESS=1
-make package SIDELOAD=1
+gmake package
+gmake package ROOTLESS=1
+gmake package SIDELOAD=1
 ```
 
 FFmpeg headers and frameworks live at `layout/Library/Application Support/ffmpeg.framework`. Sideload builds copy that framework into the app when it is present. Reel save still works without FFmpeg via a native AVFoundation fallback.
@@ -71,6 +77,12 @@ If Theos device install is already configured (`THEOS_DEVICE_IP`), `make install
    unzip Instagram.ipa -d /tmp/ig
    mkdir -p input
    cp -R /tmp/ig/Payload input/
+   ```
+
+   Check that the binary is really decrypted (`cryptid 0`). An encrypted binary builds fine but the tweak will not load:
+
+   ```sh
+   otool -l input/Payload/Instagram.app/Instagram | grep -A4 LC_ENCRYPTION_INFO
    ```
 
 2. Run `./build.sh sideload`. That compiles `Theta.dylib` with `SIDELOAD=1`, injects it into the Instagram binary, stages `CydiaSubstrate.framework`, and writes `output/Instagram_patched.ipa`.

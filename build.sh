@@ -15,6 +15,13 @@ fi
 
 export COPYFILE_DISABLE=1
 
+# scripts/setup-toolchain.sh installs Theos to ~/theos by default.
+export THEOS="${THEOS:-$HOME/theos}"
+if [[ ! -f "$THEOS/makefiles/common.mk" ]]; then
+	echo "[Build] ERROR: Theos not found at $THEOS — run ./scripts/setup-toolchain.sh"
+	exit 1
+fi
+
 MODE="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')"
 # Default = rootful
 if [[ -z "$MODE" || "$MODE" == "rootful" ]]; then
