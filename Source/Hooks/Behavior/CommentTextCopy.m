@@ -370,7 +370,7 @@ static NSURL *findAnimatedImageURL(id self) {
         }
         
         // Find IGAnimatedImageView in subviews
-        Class animatedImageViewClass = NSClassFromString(@"IGAnimatedImageView");
+        Class animatedImageViewClass = NSClassFromString(@"_TtC15IGAnimatedImage19IGAnimatedImageView") ?: NSClassFromString(@"IGAnimatedImageView");
         if (!animatedImageViewClass) {
             return nil;
         }

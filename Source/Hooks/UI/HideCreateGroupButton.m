@@ -26,18 +26,21 @@ static void hook_hideCreateGroupButton3(id self, SEL _cmd) {
 
 void THRegisterHideCreateGroupButtonHooks(void) {
     Class bottomButtons = ThetaFirstClass(@[
+        @"_TtC20IGDirectShareSheetUI29IGSharesheetBottomButtonsView",
         @"_TtC12IGShareSheet27IGSharesheetBottomButtonsView",
         @"IGShareSheet.IGSharesheetBottomButtonsView"
     ]);
     NullHookMessageIfPresent(bottomButtons, @selector(secondaryButtonTappedWithButton:), (void *)hook_hideCreateGroupButton, &orig_hideCreateGroupButton);
 
     Class bottomContainer = ThetaFirstClass(@[
+        @"_TtC20IGDirectShareSheetUI38IGShareSheetBottomButtonsViewContainer",
         @"_TtC12IGShareSheet39IGShareSheetBottomButtonsViewContainer",
         @"IGShareSheet.IGShareSheetBottomButtonsViewContainer"
     ]);
     NullHookMessageIfPresent(bottomContainer, @selector(setSecondaryButtonEnabled:animated:), (void *)hook_hideCreateGroupButton2, &orig_hideCreateGroupButton2);
 
     Class facepile = ThetaFirstClass(@[
+        @"_TtC20IGDirectShareSheetUI45IGShareSheetCreateOrSendToGroupFacepileButton",
         @"_TtC12IGShareSheet45IGShareSheetCreateOrSendToGroupFacepileButton",
         @"IGShareSheet.IGShareSheetCreateOrSendToGroupFacepileButton"
     ]);

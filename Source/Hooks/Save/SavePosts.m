@@ -809,7 +809,7 @@ static void downloadMedia(id self) {
         IGMedia *currentMedia;
         if ([delegateImpl isKindOfClass:NSClassFromString(@"IGFeedItemUFICellConfigurableDelegateImpl")]) {
             currentMedia = [delegateImpl valueForKey:@"_media"];
-        } else if ([delegateImpl isKindOfClass:NSClassFromString(@"IGFeedSectionController")]) {
+        } else if ([delegateImpl isKindOfClass:(NSClassFromString(@"_TtC18IGFeedSectionSwift23IGFeedSectionController") ?: NSClassFromString(@"IGFeedSectionController"))]) {
             currentMedia = [[delegateImpl performSelector:@selector(mediaCell)] valueForKey:@"_media"];
         }
 
@@ -968,7 +968,7 @@ static void fullscreenMediaItem(id self) {
         IGMedia *currentMedia;
         if ([delegateImpl isKindOfClass:NSClassFromString(@"IGFeedItemUFICellConfigurableDelegateImpl")]) {
             currentMedia = [delegateImpl valueForKey:@"_media"];
-        } else if ([delegateImpl isKindOfClass:NSClassFromString(@"IGFeedSectionController")]) {
+        } else if ([delegateImpl isKindOfClass:(NSClassFromString(@"_TtC18IGFeedSectionSwift23IGFeedSectionController") ?: NSClassFromString(@"IGFeedSectionController"))]) {
             currentMedia = [[delegateImpl performSelector:@selector(mediaCell)] valueForKey:@"_media"];
         }
 

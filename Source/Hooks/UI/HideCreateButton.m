@@ -38,8 +38,9 @@ static void hook_hideCreateButton3(id self, SEL _cmd) {
         }
 
         for (UIView *view in leftButtons) {
-            if ([view isKindOfClass:NSClassFromString(@"IGProfileNavigationHeaderViewButton")]) {
+            if ([view isKindOfClass:(NSClassFromString(@"_TtC40IGProfileNavigationHeaderViewButtonSwift35IGProfileNavigationHeaderViewButton") ?: NSClassFromString(@"IGProfileNavigationHeaderViewButton"))]) {
                 UIView *buttonView = ThetaValueForKey(view, @"_view");
+                if (!buttonView) buttonView = ThetaValueForKey(view, @"view");
                 if ([buttonView isKindOfClass:[UIView class]]) {
                     NSString *accessibilityLabel = buttonView.accessibilityLabel;
                     if ([accessibilityLabel isEqualToString:@"Tap to open creation menu"]) {

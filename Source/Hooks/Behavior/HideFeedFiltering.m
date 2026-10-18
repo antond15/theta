@@ -187,13 +187,6 @@ static NSArray *hook_exploreObjs(id self, SEL _cmd, id arg1) {
     return theta_removeAdsFromList(r);
 }
 
-static NSArray *(*orig_exploreSwiftObjs)(id, SEL, id);
-static NSArray *hook_exploreSwiftObjs(id self, SEL _cmd, id arg1) {
-    NSArray *r = orig_exploreSwiftObjs(self, _cmd, arg1);
-    if (!ENABLED(@"Disable Ads")) return r;
-    return theta_removeAdsFromList(r);
-}
-
 static void (*orig_endFeedCell)(id self, SEL _cmd, id arg1);
 static void hook_endFeedCell(id self, SEL _cmd, id arg1) {
     orig_endFeedCell(self, _cmd, arg1);
@@ -206,13 +199,10 @@ static void hook_endFeedCell(id self, SEL _cmd, id arg1) {
 }
 
 void THRegisterHideFeedFilteringHooks(void) {
-    NullHookMessageIfPresent(objc_getClass("IGSundialFeedDataSource"), @selector(objectsForListAdapter:), (void *)hook_sundialObjs, &orig_sundialObjs);
-    NullHookMessageIfPresent(objc_getClass("IGContextualFeedViewController"), @selector(objectsForListAdapter:), (void *)hook_ctxObjs, &orig_ctxObjs);
+    NullHookMessageIfPresent(objc_getClass("_TtC23IGSundialFeedDataSource23IGSundialFeedDataSource") ?: objc_getClass("IGSundialFeedDataSource"), @selector(objectsForListAdapter:), (void *)hook_sundialObjs, &orig_sundialObjs);
+    NullHookMessageIfPresent(objc_getClass("_TtC30IGContextualFeedViewController30IGContextualFeedViewController") ?: objc_getClass("IGContextualFeedViewController"), @selector(objectsForListAdapter:), (void *)hook_ctxObjs, &orig_ctxObjs);
     NullHookMessageIfPresent(objc_getClass("IGVideoFeedViewController"), @selector(objectsForListAdapter:), (void *)hook_videoObjs, &orig_videoObjs);
-    NullHookMessageIfPresent(objc_getClass("IGChainingFeedViewController"), @selector(objectsForListAdapter:), (void *)hook_chainObjs, &orig_chainObjs);
-    NullHookMessageIfPresent(objc_getClass("IGExploreListKitDataSource"), @selector(objectsForListAdapter:), (void *)hook_exploreObjs, &orig_exploreObjs);
-
-    Class swiftExplore = objc_getClass("_TtC28IGExploreViewControllerSwift26IGExploreListKitDataSource");
-    NullHookMessageIfPresent(swiftExplore, @selector(objectsForListAdapter:), (void *)hook_exploreSwiftObjs, &orig_exploreSwiftObjs);
+    NullHookMessageIfPresent(objc_getClass("_TtC18IGPostChainingFeed28IGChainingFeedViewController") ?: objc_getClass("IGChainingFeedViewController"), @selector(objectsForListAdapter:), (void *)hook_chainObjs, &orig_chainObjs);
+    NullHookMessageIfPresent(objc_getClass("_TtC28IGExploreViewControllerSwift26IGExploreListKitDataSource") ?: objc_getClass("IGExploreListKitDataSource"), @selector(objectsForListAdapter:), (void *)hook_exploreObjs, &orig_exploreObjs);
     NullHookMessageIfPresent(objc_getClass("IGEndOfFeedDemarcatorCellTopOfFeed"), @selector(configureWithViewConfig:), (void *)hook_endFeedCell, &orig_endFeedCell);
 }

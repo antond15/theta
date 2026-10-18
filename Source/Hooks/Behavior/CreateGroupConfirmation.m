@@ -17,5 +17,5 @@ static void hook_createGroupConfirmation(id self, SEL _cmd, id arg1) {
 }
 
 void THRegisterCreateGroupConfirmationHooks(void) {
-    NullHookMessageEx(objc_getClass("IGShareSheet.IGSharesheetBottomButtonsView"), @selector(secondaryButtonTappedWithButton:), (void *)hook_createGroupConfirmation, &orig_createGroupConfirmation);
+    NullHookMessageEx(objc_getClass("_TtC20IGDirectShareSheetUI29IGSharesheetBottomButtonsView") ?: objc_getClass("IGShareSheet.IGSharesheetBottomButtonsView"), @selector(secondaryButtonTappedWithButton:), (void *)hook_createGroupConfirmation, &orig_createGroupConfirmation);
 }

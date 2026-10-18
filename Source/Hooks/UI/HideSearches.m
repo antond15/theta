@@ -9,5 +9,5 @@ static BOOL hook_recentSearchStore(id self, SEL _cmd, id item) {
 }
 
 void THRegisterHideSearchesRecentStoreHooks(void) {
-    NullHookMessageIfPresent(objc_getClass("IGRecentSearchStore"), @selector(addItem:), (void *)hook_recentSearchStore, &orig_recentSearchStore);
+    NullHookMessageIfPresent(objc_getClass("_TtC19IGRecentSearchStore19IGRecentSearchStore") ?: objc_getClass("IGRecentSearchStore"), @selector(addItem:), (void *)hook_recentSearchStore, &orig_recentSearchStore);
 }
