@@ -442,28 +442,12 @@ static void hook_sundialAppendSeenState(id self, SEL _cmd, id payload) {
     orig_sundialAppendSeenState(self, _cmd, payload);
 }
 
-static void (*orig_uploadSeenMedia)(id, SEL, id);
-static void hook_uploadSeenMedia(id self, SEL _cmd, id media) {
-    if (theta_blockSeenReceipts()) return;
-    orig_uploadSeenMedia(self, _cmd, media);
-}
-
-static void (*orig_uploadSeenState)(id, SEL);
-static void hook_uploadSeenState(id self, SEL _cmd) {
-    if (theta_blockSeenReceipts()) return;
-    orig_uploadSeenState(self, _cmd);
-}
-
-static void (*orig_uploadSeenStateArg)(id, SEL, id);
-static void hook_uploadSeenStateArg(id self, SEL _cmd, id arg1) {
-    if (theta_blockSeenReceipts()) return;
-    orig_uploadSeenStateArg(self, _cmd, arg1);
-}
-
-static void (*orig_sendSeenReceipt)(id, SEL, id);
-static void hook_sendSeenReceipt(id self, SEL _cmd, id arg1) {
-    if (theta_blockSeenReceipts()) return;
-    orig_sendSeenReceipt(self, _cmd, arg1);
+/* IG 451: the Swift pending store builds the /media/seen/ request itself and starts it with
+   the direct (unhookable) -[IGAPIRequest startWithAPIClient:callback:], passing [uploader networker]. */
+static id (*orig_uploaderNetworker)(id, SEL);
+static id hook_uploaderNetworker(id self, SEL _cmd) {
+    if (theta_blockSeenReceipts()) return nil;
+    return orig_uploaderNetworker(self, _cmd);
 }
 
 static void (*orig_sendSeenRequestForCurrentItem)(id, SEL);
@@ -476,24 +460,6 @@ static void (*orig_sendSeenRequestForCurrentItemPriv)(id, SEL);
 static void hook_sendSeenRequestForCurrentItemPriv(id self, SEL _cmd) {
     if (theta_blockSeenReceipts()) return;
     orig_sendSeenRequestForCurrentItemPriv(self, _cmd);
-}
-
-static void (*orig_enqueueSeenStateForMedia)(id, SEL, id);
-static void hook_enqueueSeenStateForMedia(id self, SEL _cmd, id media) {
-    if (theta_blockSeenReceipts()) return;
-    orig_enqueueSeenStateForMedia(self, _cmd, media);
-}
-
-static void (*orig_uploadSeenStateWithStoryItem)(id, SEL, id);
-static void hook_uploadSeenStateWithStoryItem(id self, SEL _cmd, id storyItem) {
-    if (theta_blockSeenReceipts()) return;
-    orig_uploadSeenStateWithStoryItem(self, _cmd, storyItem);
-}
-
-static void (*orig_enqueueSeenStateWithStoryItem)(id, SEL, id);
-static void hook_enqueueSeenStateWithStoryItem(id self, SEL _cmd, id storyItem) {
-    if (theta_blockSeenReceipts()) return;
-    orig_enqueueSeenStateWithStoryItem(self, _cmd, storyItem);
 }
 
 static void (*orig_sectionFlushQueuedSeenRequests)(id, SEL);
@@ -514,32 +480,6 @@ static void hook_sectionEnqueueSeenForPlayhead(id self, SEL _cmd) {
     orig_sectionEnqueueSeenForPlayhead(self, _cmd);
 }
 
-#pragma mark - Pending store (blocks secondary flush paths)
-
-static void (*orig_pendingFlushSeenStates)(id, SEL);
-static void hook_pendingFlushSeenStates(id self, SEL _cmd) {
-    if (theta_blockSeenReceipts()) return;
-    orig_pendingFlushSeenStates(self, _cmd);
-}
-
-static void (*orig_pendingFlushSeenStatesPriv)(id, SEL);
-static void hook_pendingFlushSeenStatesPriv(id self, SEL _cmd) {
-    if (theta_blockSeenReceipts()) return;
-    orig_pendingFlushSeenStatesPriv(self, _cmd);
-}
-
-static void (*orig_pendingUploadSeenStates)(id, SEL);
-static void hook_pendingUploadSeenStates(id self, SEL _cmd) {
-    if (theta_blockSeenReceipts()) return;
-    orig_pendingUploadSeenStates(self, _cmd);
-}
-
-static void (*orig_pendingUploadSeenStatesPriv)(id, SEL);
-static void hook_pendingUploadSeenStatesPriv(id self, SEL _cmd) {
-    if (theta_blockSeenReceipts()) return;
-    orig_pendingUploadSeenStatesPriv(self, _cmd);
-}
-
 static void (*orig_storyViewerDisappear)(id, SEL, BOOL);
 static void hook_storyViewerDisappear(id self, SEL _cmd, BOOL anim) {
     THStorySeenReceiptNetworkGuardLeave();
@@ -547,20 +487,10 @@ static void hook_storyViewerDisappear(id self, SEL _cmd, BOOL anim) {
 }
 
 void THRegisterStorySeenLocalOnlyHooks(void) {
-    Class pending = objc_getClass("IGStoryPendingSeenStateStore");
+    Class pending = ThetaFirstClass(@[ @"_TtC26IGStoryPendingSeenStateKit28IGStoryPendingSeenStateStore", @"IGStoryPendingSeenStateStore" ]);
     SEL pendingSel = NSSelectorFromString(@"initWithUserSessionPK:uploader:fileManager:uploadInBackgroundTask:");
     if (pending && class_getInstanceMethod(pending, pendingSel))
         NullHookMessageEx(pending, pendingSel, (void *)hook_pendingStoreInit, &orig_pendingStoreInit);
-    if (pending) {
-        NullHookMessageIfPresent(pending, NSSelectorFromString(@"flushPendingSeenStates"),
-            (void *)hook_pendingFlushSeenStates, &orig_pendingFlushSeenStates);
-        NullHookMessageIfPresent(pending, NSSelectorFromString(@"_flushPendingSeenStates"),
-            (void *)hook_pendingFlushSeenStatesPriv, &orig_pendingFlushSeenStatesPriv);
-        NullHookMessageIfPresent(pending, NSSelectorFromString(@"uploadPendingSeenStates"),
-            (void *)hook_pendingUploadSeenStates, &orig_pendingUploadSeenStates);
-        NullHookMessageIfPresent(pending, NSSelectorFromString(@"_uploadPendingSeenStates"),
-            (void *)hook_pendingUploadSeenStatesPriv, &orig_pendingUploadSeenStatesPriv);
-    }
 
     Class sundialMgr = objc_getClass("_TtC23IGSundialSeenStateSwift25IGSundialSeenStateManager");
     SEL mgrSel = NSSelectorFromString(@"initWithNetworker:diskManager:launcherSet:seenStateManagerAnnouncer:");
@@ -576,17 +506,9 @@ void THRegisterStorySeenLocalOnlyHooks(void) {
     if (viewer)
         NullHookMessageEx(viewer, @selector(viewWillDisappear:), (void *)hook_storyViewerDisappear, &orig_storyViewerDisappear);
 
-    /* Legacy ObjC uploader selectors often disappear once Swift wraps receipts; suppression still runs via networker-nil + fullscreen hook. */
     Class uploader = objc_getClass("IGStorySeenStateUploader");
-    if (uploader) {
-        NullHookMessageIfPresent(uploader, @selector(uploadSeenStateWithMedia:), (void *)hook_uploadSeenMedia, &orig_uploadSeenMedia);
-        NullHookMessageIfPresent(uploader, @selector(uploadSeenState), (void *)hook_uploadSeenState, &orig_uploadSeenState);
-        NullHookMessageIfPresent(uploader, NSSelectorFromString(@"_uploadSeenState:"), (void *)hook_uploadSeenStateArg, &orig_uploadSeenStateArg);
-        NullHookMessageIfPresent(uploader, @selector(sendSeenReceipt:), (void *)hook_sendSeenReceipt, &orig_sendSeenReceipt);
-        NullHookMessageIfPresent(uploader, NSSelectorFromString(@"enqueueSeenStateForMedia:"), (void *)hook_enqueueSeenStateForMedia, &orig_enqueueSeenStateForMedia);
-        NullHookMessageIfPresent(uploader, NSSelectorFromString(@"uploadSeenStateWithStoryItem:"), (void *)hook_uploadSeenStateWithStoryItem, &orig_uploadSeenStateWithStoryItem);
-        NullHookMessageIfPresent(uploader, NSSelectorFromString(@"enqueueSeenStateWithStoryItem:"), (void *)hook_enqueueSeenStateWithStoryItem, &orig_enqueueSeenStateWithStoryItem);
-    }
+    if (uploader)
+        NullHookMessageIfPresent(uploader, @selector(networker), (void *)hook_uploaderNetworker, &orig_uploaderNetworker);
 
     Class section = objc_getClass("IGStoryFullscreenSectionController");
     if (section) {
@@ -650,20 +572,6 @@ void THRegisterStorySeenLocalOnlyHooks(void) {
     for (NSString *cn in extraSeen) {
         Class c = objc_getClass(cn.UTF8String);
         if (!c) continue;
-        if (!orig_uploadSeenMedia)
-            NullHookMessageIfPresent(c, @selector(uploadSeenStateWithMedia:), (void *)hook_uploadSeenMedia, &orig_uploadSeenMedia);
-        if (!orig_uploadSeenState)
-            NullHookMessageIfPresent(c, @selector(uploadSeenState), (void *)hook_uploadSeenState, &orig_uploadSeenState);
-        if (!orig_uploadSeenStateArg)
-            NullHookMessageIfPresent(c, NSSelectorFromString(@"_uploadSeenState:"), (void *)hook_uploadSeenStateArg, &orig_uploadSeenStateArg);
-        if (!orig_sendSeenReceipt)
-            NullHookMessageIfPresent(c, @selector(sendSeenReceipt:), (void *)hook_sendSeenReceipt, &orig_sendSeenReceipt);
-        if (!orig_enqueueSeenStateForMedia)
-            NullHookMessageIfPresent(c, NSSelectorFromString(@"enqueueSeenStateForMedia:"), (void *)hook_enqueueSeenStateForMedia, &orig_enqueueSeenStateForMedia);
-        if (!orig_uploadSeenStateWithStoryItem)
-            NullHookMessageIfPresent(c, NSSelectorFromString(@"uploadSeenStateWithStoryItem:"), (void *)hook_uploadSeenStateWithStoryItem, &orig_uploadSeenStateWithStoryItem);
-        if (!orig_enqueueSeenStateWithStoryItem)
-            NullHookMessageIfPresent(c, NSSelectorFromString(@"enqueueSeenStateWithStoryItem:"), (void *)hook_enqueueSeenStateWithStoryItem, &orig_enqueueSeenStateWithStoryItem);
         if (!orig_sundialUploadSeenStateIfNecessary)
             NullHookMessageIfPresent(c, @selector(uploadSeenStateIfNecessary), (void *)hook_sundialUploadSeenStateIfNecessary, &orig_sundialUploadSeenStateIfNecessary);
         if (!orig_sundialAppendSeenState)
