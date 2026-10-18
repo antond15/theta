@@ -8,3 +8,5 @@ TweakCOMPILE.xm
 default.profraw
 tools/insert_dylib
 input/Payload/
+__pycache__/
+BACKLOG.md

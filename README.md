@@ -105,6 +105,17 @@ Sideload also injects `ThetaNSE` into Instagram’s notification service extensi
 
 Jailbreak Navigation settings are unaffected. Everything else in Theta settings is expected to work on both jailbreak and sideload.
 
+## Checking a new Instagram version
+
+`scripts/compat.py` reads the ObjC metadata of every binary in an unpacked Instagram app and checks each hook Theta installs: the class must exist and the selector must be on it, a category or a superclass. Variables passed to the hook helpers are traced back to their assignments and fallback lists.
+
+```sh
+./scripts/compat.py input/Payload/Instagram.app                    # hooks that won't install on this build
+./scripts/compat.py /path/to/old/Instagram.app input/Payload/Instagram.app   # what broke since the old build
+```
+
+A hook marked missing whose neighbours in the same file still resolve is usually a dead fallback. "Now Swift: …" means Instagram moved the class into a Swift module, and the plain name Theta uses no longer finds it. A hook that resolves can still misbehave, so this does not replace testing on a device. The Mach-O parser is `scripts/objcdump.py`; both are based on Nico Jan's scripts in [nicojan/theta](https://github.com/nicojan/theta/tree/local-build-notes).
+
 ## Layout
 
 ```
@@ -124,4 +135,5 @@ Source/
   ProfileAnalyzer/  Follower analytics
 Include/            Public headers
 scripts/assemble.py Builds TweakCOMPILE.xm (single TU for static hooks)
+scripts/compat.py   Checks Theta's hooks against an Instagram build
 ```
