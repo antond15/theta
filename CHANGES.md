@@ -49,3 +49,4 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - `scripts/compat.py` checks every hook against an unpacked Instagram build (see [Checking a new Instagram version](DEVELOPMENT.md#checking-a-new-instagram-version)).
 - `./build.sh debug` builds with diagnostic logging (`THETA_DEBUG=1`).
 - `scripts/assemble.py` builds the single translation unit in the same order on every machine.
+- `scripts/pre-push.sh` is an optional git pre-push hook that fails on new `compat.py` misses and on compile errors (see [DEVELOPMENT.md](DEVELOPMENT.md#pre-push-check)).

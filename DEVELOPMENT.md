@@ -53,6 +53,21 @@ FFmpeg headers and frameworks live in `vendor/ffmpeg.framework`. The Makefile co
 
 A hook marked missing whose neighbours in the same file still resolve is usually a dead fallback. "Now Swift: …" means Instagram moved the class into a Swift module, and the plain name Theta uses no longer finds it. A hook that resolves can still misbehave, so this does not replace testing on a device. The Mach-O parser is `scripts/objcdump.py`; both are based on Nico Jan's scripts in [nicojan/theta](https://github.com/nicojan/theta/tree/local-build-notes).
 
+## Pre-push check
+
+`scripts/pre-push.sh` runs `compat.py` and a compile before every push. It runs locally on purpose: CI would need the decrypted IPA, and that must not be uploaded anywhere. Install it as a git hook once:
+
+```sh
+ln -s ../../scripts/pre-push.sh .git/hooks/pre-push
+```
+
+It does two things:
+
+1. **Hook coverage.** It runs `compat.py` against `input/Payload/Instagram.app`, or skips this step with a notice if the app isn't there. A current Instagram build already has a few misses (dead fallbacks), so the exit code alone is useless. The script compares the MISSING and UNRESOLVED entries (file, class, selector; line numbers ignored) against a baseline in `.git/theta-compat-baseline.txt`, and fails only on entries that are not in the baseline. The first run creates the baseline. Entries that disappear are listed but don't fail. After switching to a new Instagram version, or after deciding a new miss is fine, record the current state with `./scripts/pre-push.sh --update-baseline`.
+2. **Compile.** It runs `gmake clean && gmake`, the same compile `./build.sh` does, and fails on a compile error. More than the usual six warnings are printed but don't fail the push.
+
+The check compiles the working tree, including uncommitted changes, so commit or stash before pushing if they differ. `git push --no-verify` skips it.
+
 ## Layout
 
 ```
@@ -76,6 +91,7 @@ ThetaResources.bundle    Images, copied into the app by build.sh
 tools/insert_dylib.c     Adds the load commands for Theta and ThetaNSE (compiled by build.sh)
 scripts/assemble.py      Builds TweakCOMPILE.xm (single TU for static hooks)
 scripts/compat.py        Checks Theta's hooks against an Instagram build
+scripts/pre-push.sh      Local pre-push check: compat.py and a compile
 scripts/objcdump.py      Mach-O / ObjC metadata parser used by compat.py
 scripts/isolate-ffmpeg-dylibs.py  Gives the bundled FFmpeg its own install names
 scripts/setup-toolchain.sh        One-time Theos / SDK / toolchain setup
