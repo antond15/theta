@@ -1580,8 +1580,10 @@ static void * const playerKey = &playerKey;
                 NSURL *audioTestURL = audioURLString.length > 0 ? [NSURL URLWithString:audioURLString] : nil;
                 __block BOOL hasAudio = (audioURLString.length > 0 && audioTestURL != nil);
                 
-                NSString *videoPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"bulk_video_%ld.mp4", (long)videoIndex]];
-                __block NSString *audioPath = hasAudio ? [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"bulk_audio_%ld.m4a", (long)videoIndex]] : nil;
+                // Unique per job so overlapping saves never share a file; theta_ names are swept at launch.
+                NSString *jobID = [[NSUUID UUID] UUIDString];
+                NSString *videoPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_video_%ld_%@.mp4", (long)videoIndex, jobID]];
+                __block NSString *audioPath = hasAudio ? [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_audio_%ld_%@.m4a", (long)videoIndex, jobID]] : nil;
                 
                 // Remove any existing files
                 if ([fm fileExistsAtPath:videoPath]) [fm removeItemAtPath:videoPath error:nil];
@@ -1683,7 +1685,7 @@ static void * const playerKey = &playerKey;
                 });
                 formatProgressDisplay(); // Updates toast internally with progress
                 
-                NSString *outputPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"bulk_output_%ld.mp4", (long)videoIndex]];
+                NSString *outputPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_output_%ld_%@.mp4", (long)videoIndex, jobID]];
                 if ([fm fileExistsAtPath:outputPath]) [fm removeItemAtPath:outputPath error:nil];
                 
                 __block NSTimeInterval transcodeStartTime = [[NSDate date] timeIntervalSince1970];
@@ -2132,7 +2134,7 @@ static void * const playerKey = &playerKey;
         }
         
         // Write to temp file
-        NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"temp_video_%ld.mp4", (long)index]];
+        NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_thumb_%ld_%@.mp4", (long)index, [[NSUUID UUID] UUIDString]]];
         BOOL writeSuccess = [data writeToFile:tempPath atomically:YES];
         
         if (!writeSuccess) {
