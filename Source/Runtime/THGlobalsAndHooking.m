@@ -31,7 +31,6 @@ static BOOL shouldBeSeen = false;
 static BOOL s_thetaAllowStorySeenReceipts = false;
 static BOOL s_thetaLocalSeenMarkActive = false;
 static BOOL storeUserSearch = NO;
-static NSTimeInterval lastSpamTime = 0;
 static BOOL hooksInitialized = NO;
 static NSTimeInterval s_lastToastShowTime = 0;
 
@@ -52,63 +51,6 @@ static void RecordFailedHookLine(NSString *line) {
     [sFailedHookLock lock];
     [sFailedHookLines addObject:[line copy]];
     [sFailedHookLock unlock];
-}
-
-static UIViewController *ThetaPresenterForAlert(void) {
-    UIApplication *app = [UIApplication sharedApplication];
-    UIWindow *window = app.keyWindow;
-    if (!window) {
-        for (UIWindow *w in app.windows) {
-            if (w.isKeyWindow && !w.hidden) {
-                window = w;
-                break;
-            }
-        }
-    }
-    if (!window && app.windows.count) {
-        window = app.windows[0];
-    }
-    if (!window) return nil;
-    UIViewController *vc = window.rootViewController;
-    while (vc && vc.presentedViewController) {
-        vc = vc.presentedViewController;
-    }
-    return vc;
-}
-
-static void PresentAggregatedHookFailureAlert(void) {
-    FailedHooksEnsureInit();
-    NSArray *lines;
-    [sFailedHookLock lock];
-    lines = [sFailedHookLines copy];
-    [sFailedHookLines removeAllObjects];
-    [sFailedHookLock unlock];
-    if (lines.count == 0) return;
-
-    NSUInteger n = lines.count;
-    NSString *title = [NSString stringWithFormat:@"Theta Hook Errors (%lu)", (unsigned long)n];
-    NSString *message = [lines componentsJoinedByString:@"\n"];
-    const NSUInteger kMaxLen = 3500;
-    if (message.length > kMaxLen) {
-        message = [[message substringToIndex:kMaxLen] stringByAppendingString:@"…"];
-    }
-
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
-                                                                   message:message
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-
-    UIViewController *root = ThetaPresenterForAlert();
-    if (root) {
-        [root presentViewController:alert animated:YES completion:nil];
-    } else {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            UIViewController *retry = ThetaPresenterForAlert();
-            if (retry) {
-                [retry presentViewController:alert animated:YES completion:nil];
-            }
-        });
-    }
 }
 
 /** KVC that never throws (Swift/ObjC ivars often aren't KVC-compliant). */
@@ -200,16 +142,6 @@ static void NullHookMessageEx(Class cls, SEL sel, void *replacement, void *origi
 /** Silent install when class/selector may be absent across IG versions. */
 static void NullHookMessageIfPresent(Class cls, SEL sel, void *replacement, void *original) {
     (void)ThetaInstallMessageHook(cls, sel, replacement, original, NO);
-}
-
-static void NullHookMessage(Class cls, SEL sel, void *replacement) {
-    if (!cls) {
-        RecordFailedHookLine(@"class_addMethod: target class is nil");
-        return;
-    }
-    if (!class_addMethod(cls, sel, (IMP)replacement, "v@:")) {
-        RecordFailedHookLine([NSString stringWithFormat:@"-[%@ %@] — class_addMethod failed", NSStringFromClass(cls), NSStringFromSelector(sel)]);
-    }
 }
 
 /** First NSClassFromString hit across ObjC + Swift mangled names. */
