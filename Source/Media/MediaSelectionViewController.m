@@ -401,11 +401,7 @@ static BOOL ThetaPreviewImageIsPlaceholder(UIImage *image) {
 
     NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
     config.timeoutIntervalForRequest = 12.0;
-    config.HTTPAdditionalHeaders = @{
-        @"User-Agent": @"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-        @"Accept": @"image/*,*/*;q=0.8",
-        @"Referer": @"https://www.instagram.com/"
-    };
+    config.HTTPAdditionalHeaders = @{ @"Accept": @"image/*,*/*;q=0.8" };
     NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
     NSURLSessionDataTask *task = [session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (!data || error) {
@@ -2097,20 +2093,9 @@ static void * const playerKey = &playerKey;
 }
 
 - (void)attemptThumbnailFromURL:(NSURL *)videoURL forIndex:(NSInteger)index {
-    // Create a session with browser-like headers
     NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
     config.timeoutIntervalForRequest = 10.0;
     config.timeoutIntervalForResource = 15.0;
-    
-    // Add headers that mimic a browser request
-    config.HTTPAdditionalHeaders = @{
-        @"User-Agent": @"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-        @"Accept": @"*/*",
-        @"Accept-Language": @"en-US,en;q=0.9",
-        @"Accept-Encoding": @"gzip, deflate, br",
-        @"Connection": @"keep-alive",
-        @"Referer": @"https://www.instagram.com/"
-    };
     
     NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
     
