@@ -1365,6 +1365,10 @@ static void thetaInstantEnsureGhostHooks(void) {
     if (!orig_instantDefaultsSetObject)
         NullHookMessageIfPresent([NSUserDefaults class], @selector(setObject:forKey:), (void *)hook_instantDefaultsSetObject, &orig_instantDefaultsSetObject);
 
+#ifndef SIDELOAD
+    /* Inline Swift hooks: never in a sideloaded build, where patching __TEXT breaks the code signature
+       (see theta_tryInstallLiquidGlassTabBarCSymbolHooks). The IDA offsets are also from another build:
+       on 451 they resolve to unrelated code. */
     if (!orig_instantConsumptionMarkSeen || !orig_instantStoreSeenPks || !orig_instantCurrentSnap || !orig_instantConsumptionTransition) {
         void *anchor = NULL;
         uintptr_t idaAnchor = 0;
@@ -1387,6 +1391,7 @@ static void thetaInstantEnsureGhostHooks(void) {
             }
         }
     }
+#endif
 
     if (!orig_instantDidPanConsumption) {
         NullHookMessageIfPresent(ThetaFirstClass(@[
