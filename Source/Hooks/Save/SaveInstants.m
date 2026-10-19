@@ -1178,10 +1178,24 @@ static void hook_instantSetHeader(id self, SEL _cmd, NSString *value, NSString *
     if (orig_instantSetHeader) orig_instantSetHeader(self, _cmd, value, field);
 }
 
-static void (*orig_instantDropReq)(id, SEL, id);
-static void hook_instantDropReq(id self, SEL _cmd, id req) {
-    if (thetaInstantGhostShouldBlockNetwork() && thetaInstantPayloadLooksLikeSeen(req)) return;
-    if (orig_instantDropReq) orig_instantDropReq(self, _cmd, req);
+/* IGURLRequest reaches Tigon here. A dropped request fails the way Tigon fails one it won't start. */
+static id (*orig_instantTigonStartRequest)(id, SEL, id, id, id);
+static id hook_instantTigonStartRequest(id self, SEL _cmd, id req, id policy, id callbacks) {
+    if (thetaInstantGhostShouldBlockNetwork()) {
+        NSURL *url = [req respondsToSelector:@selector(URL)] ? ((id (*)(id, SEL))objc_msgSend)(req, @selector(URL)) : nil;
+        NSDictionary *headers = [req respondsToSelector:@selector(allHTTPHeaderFields)]
+            ? ((id (*)(id, SEL))objc_msgSend)(req, @selector(allHTTPHeaderFields)) : nil;
+        id friendly = [headers isKindOfClass:[NSDictionary class]] ? headers[@"X-FB-Friendly-Name"] : nil;
+        Class summaryCls = objc_getClass("IGNetworkRequestSummary");
+        Class taskCls = objc_getClass("IGCompletedRequestTask");
+        if ((thetaInstantPayloadLooksLikeSeen(url) || ([friendly isKindOfClass:[NSString class]] && thetaInstantStringLooksLikeSeen(friendly)))
+            && summaryCls && taskCls && [callbacks respondsToSelector:@selector(failure:summary:)]) {
+            NSError *err = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+            ((void (*)(id, SEL, id, id))objc_msgSend)(callbacks, @selector(failure:summary:), err, [summaryCls new]);
+            return [taskCls new];
+        }
+    }
+    return orig_instantTigonStartRequest(self, _cmd, req, policy, callbacks);
 }
 
 static void (*orig_instantDefaultsSetObject)(id, SEL, id, id);
@@ -1344,27 +1358,9 @@ static void thetaInstantEnsureGhostHooks(void) {
     if (!orig_instantSetHeader)
         NullHookMessageIfPresent([NSMutableURLRequest class], @selector(setValue:forHTTPHeaderField:), (void *)hook_instantSetHeader, &orig_instantSetHeader);
 
-    if (!orig_instantDropReq) {
-        NSArray<NSString *> *hosts = @[
-            @"IGTigonNetworker", @"FBTigonService", @"TigonService",
-            @"IGGraphQLService", @"IGGraphQLRequest", @"IGAPIRequest", @"IGURLRequest",
-            @"PNPandoGraphQLService", @"FBGraphQLService"
-        ];
-        NSArray<NSString *> *sels = @[
-            @"startRequest:", @"addRequest:", @"sendRequest:", @"startWithRequest:", @"startQuery:", @"handleQuery:"
-        ];
-        for (NSString *cn in hosts) {
-            if (orig_instantDropReq) break;
-            Class c = NSClassFromString(cn);
-            if (!c) continue;
-            for (NSString *sn in sels) {
-                SEL s = NSSelectorFromString(sn);
-                if (!class_getInstanceMethod(c, s) && !class_getClassMethod(c, s)) continue;
-                NullHookMessageIfPresent(c, s, (void *)hook_instantDropReq, &orig_instantDropReq);
-                if (orig_instantDropReq) break;
-            }
-        }
-    }
+    if (!orig_instantTigonStartRequest)
+        NullHookMessageIfPresent(objc_getClass("IGTigonNetworkLayer"), @selector(startRequest:policy:callbacks:),
+                                 (void *)hook_instantTigonStartRequest, &orig_instantTigonStartRequest);
 
     if (!orig_instantDefaultsSetObject)
         NullHookMessageIfPresent([NSUserDefaults class], @selector(setObject:forKey:), (void *)hook_instantDefaultsSetObject, &orig_instantDefaultsSetObject);

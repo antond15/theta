@@ -424,10 +424,21 @@ static NSURLSessionUploadTask *hook_nsurl_uploadReqDataComp(id self, SEL _cmd, N
     return orig_nsurl_uploadReqDataComp(self, _cmd, req, data, comp);
 }
 
-static void (*orig_dropSeenReq1)(id, SEL, id);
-static void hook_dropSeenReq1(id self, SEL _cmd, id req) {
-    if (theta_shouldDropStorySeenTraffic(req)) return;
-    if (orig_dropSeenReq1) orig_dropSeenReq1(self, _cmd, req);
+/* IGURLRequest reaches Tigon here. A dropped request fails the way Tigon fails one it won't start. */
+static id (*orig_tigonStartRequest)(id, SEL, id, id, id);
+static id hook_tigonStartRequest(id self, SEL _cmd, id req, id policy, id callbacks) {
+    if (theta_blockSeenReceipts()) {
+        NSURL *url = [req respondsToSelector:@selector(URL)] ? ((id (*)(id, SEL))objc_msgSend)(req, @selector(URL)) : nil;
+        Class summaryCls = objc_getClass("IGNetworkRequestSummary");
+        Class taskCls = objc_getClass("IGCompletedRequestTask");
+        if ([url isKindOfClass:[NSURL class]] && theta_urlLooksLikeStorySeen(url)
+            && summaryCls && taskCls && [callbacks respondsToSelector:@selector(failure:summary:)]) {
+            NSError *err = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+            ((void (*)(id, SEL, id, id))objc_msgSend)(callbacks, @selector(failure:summary:), err, [summaryCls new]);
+            return [taskCls new];
+        }
+    }
+    return orig_tigonStartRequest(self, _cmd, req, policy, callbacks);
 }
 
 static void (*orig_sundialUploadSeenStateIfNecessary)(id, SEL);
@@ -533,32 +544,8 @@ void THRegisterStorySeenLocalOnlyHooks(void) {
             NullHookMessageIfPresent(nssLocal, @selector(uploadTaskWithRequest:fromData:completionHandler:), (void *)hook_nsurl_uploadReqDataComp, &orig_nsurl_uploadReqDataComp);
     }
 
-    NSArray<NSString *> *reqHosts = @[
-        @"IGTigonNetworker",
-        @"FBTigonService",
-        @"TigonService",
-        @"IGGraphQLService",
-        @"IGGraphQLRequest",
-        @"IGAPIRequest",
-        @"IGURLRequest"
-    ];
-    NSArray<NSString *> *reqSels = @[
-        @"startRequest:",
-        @"addRequest:",
-        @"sendRequest:",
-        @"startWithRequest:",
-        @"startQuery:"
-    ];
-    for (NSString *cn in reqHosts) {
-        Class c = NSClassFromString(cn);
-        if (!c) continue;
-        for (NSString *sn in reqSels) {
-            SEL s = NSSelectorFromString(sn);
-            if (!class_getInstanceMethod(c, s)) continue;
-            if (!orig_dropSeenReq1)
-                NullHookMessageIfPresent(c, s, (void *)hook_dropSeenReq1, &orig_dropSeenReq1);
-        }
-    }
+    NullHookMessageIfPresent(objc_getClass("IGTigonNetworkLayer"), @selector(startRequest:policy:callbacks:),
+        (void *)hook_tigonStartRequest, &orig_tigonStartRequest);
 
     /* Do not call objc_getClassList here. It realizeAllClasses() and IG 446+ crashes in
        swift_getSingletonMetadata (NULL metadata init). Named classes above are enough. */
