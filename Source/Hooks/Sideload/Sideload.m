@@ -141,24 +141,6 @@ static NSString *SideloadRemapAccessGroup(NSString *group) {
 	return keychainAccessGroup.length ? keychainAccessGroup : group;
 }
 
-id (*orig_LS_initWithServiceIDAccessGroupUserIDSync)(id self, SEL _cmd, id serviceID, id accessGroup, id userID, BOOL sync);
-id hook_LS_initWithServiceIDAccessGroupUserIDSync(id self, SEL _cmd, id serviceID, id accessGroup, id userID, BOOL sync) {
-	if (!orig_LS_initWithServiceIDAccessGroupUserIDSync) return nil;
-	return orig_LS_initWithServiceIDAccessGroupUserIDSync(self, _cmd, serviceID, SideloadRemapAccessGroup(accessGroup), userID, NO);
-}
-
-id (*orig_LS_initWithServiceIDAccessGroupUserID)(id self, SEL _cmd, id serviceID, id accessGroup, id userID);
-id hook_LS_initWithServiceIDAccessGroupUserID(id self, SEL _cmd, id serviceID, id accessGroup, id userID) {
-	if (!orig_LS_initWithServiceIDAccessGroupUserID) return nil;
-	return orig_LS_initWithServiceIDAccessGroupUserID(self, _cmd, serviceID, SideloadRemapAccessGroup(accessGroup), userID);
-}
-
-id (*orig_LS_initSynchronizableItem)(id self, SEL _cmd, id serviceID, id accessGroup, id userID);
-id hook_LS_initSynchronizableItem(id self, SEL _cmd, id serviceID, id accessGroup, id userID) {
-	if (!orig_LS_initSynchronizableItem) return nil;
-	return orig_LS_initSynchronizableItem(self, _cmd, serviceID, SideloadRemapAccessGroup(accessGroup), userID);
-}
-
 id (*orig_UIC_keyChainStoreWithServiceAccessGroup)(id self, SEL _cmd, id service, id accessGroup);
 id hook_UIC_keyChainStoreWithServiceAccessGroup(id self, SEL _cmd, id service, id accessGroup) {
 	if (!orig_UIC_keyChainStoreWithServiceAccessGroup) return nil;

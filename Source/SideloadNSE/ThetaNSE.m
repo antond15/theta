@@ -35,7 +35,6 @@ static NSURL *(*orig_containerURL)(id, SEL, NSString *);
 static BOOL (*orig_mkdir)(id, SEL, NSString *, BOOL, NSDictionary *, NSError **);
 static NSString *(*orig_fbAccessGroup)(id, SEL);
 static NSString *(*orig_uicAccessGroup)(id, SEL);
-static id (*orig_lsInit4)(id, SEL, id, id, id, BOOL);
 static id (*orig_uicStore)(id, SEL, id, id);
 static void (*orig_didReceive)(id, SEL, id, id);
 
@@ -285,11 +284,6 @@ static NSString *hook_accessGroup(id self, SEL _cmd) {
     if (orig_fbAccessGroup) return orig_fbAccessGroup(self, _cmd);
     if (orig_uicAccessGroup) return orig_uicAccessGroup(self, _cmd);
     return nil;
-}
-
-static id hook_lsInit4(id self, SEL _cmd, id service, id group, id user, BOOL sync) {
-    if (!orig_lsInit4) return nil;
-    return orig_lsInit4(self, _cmd, service, gKeychainGroup.length ? gKeychainGroup : group, user, NO);
 }
 
 static id hook_uicStore(id self, SEL _cmd, id service, id group) {
@@ -648,9 +642,6 @@ static void ThetaNSEInit(void) {
         ThetaNSESwizzle(objc_getClass("FBSDKKeychainStore"), @selector(accessGroup), (IMP)hook_accessGroup, (void **)&orig_fbAccessGroup);
         ThetaNSESwizzle(objc_getClass("FBKeychainItemController"), @selector(accessGroup), (IMP)hook_accessGroup, (void **)&orig_fbAccessGroup);
         ThetaNSESwizzle(objc_getClass("UICKeyChainStore"), @selector(accessGroup), (IMP)hook_accessGroup, (void **)&orig_uicAccessGroup);
-        ThetaNSESwizzle(objc_getClass("LSKeychainItemController"),
-                        @selector(initWithServiceID:accessGroup:userID:isSynchronizable:),
-                        (IMP)hook_lsInit4, (void **)&orig_lsInit4);
         ThetaNSESwizzle(objc_getClass("UICKeyChainStore"),
                         @selector(keyChainStoreWithService:accessGroup:),
                         (IMP)hook_uicStore, (void **)&orig_uicStore);
