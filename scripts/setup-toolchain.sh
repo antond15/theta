@@ -6,7 +6,7 @@
 #
 # What it does:
 #   1. brew install make (gmake) and ldid
-#   2. clone Theos into $THEOS if missing
+#   2. clone Theos into $THEOS if missing, at the pinned $THEOS_COMMIT
 #   3. unpack the patched iPhoneOS 14.5 SDK into $THEOS/sdks
 #   4. point $THEOS/toolchain/Xcode14.xctoolchain at the local Xcode / CLT toolchain
 #   5. graft libc++ headers into the 14.5 SDK (modern clang needs <cmath>)
@@ -17,6 +17,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 THEOS="${THEOS:-$HOME/theos}"
+# Theos commit this fork is built and tested with. Bump it on purpose.
+THEOS_COMMIT="304e0799973e8145f32e4ca2de6c747a84b758ce"
 SDK_TARBALL="$REPO_DIR/sdks/iPhoneOS14.5.sdk.tar.xz"
 SDK_DIR="$THEOS/sdks/iPhoneOS14.5.sdk"
 TOOLCHAIN_LINK="$THEOS/toolchain/Xcode14.xctoolchain"
@@ -41,10 +43,17 @@ done
 # 2. Theos
 if [[ -f "$THEOS/makefiles/common.mk" ]]; then
 	log "Theos present at $THEOS"
+	current="$(git -C "$THEOS" rev-parse HEAD 2>/dev/null || true)"
+	if [[ "$current" != "$THEOS_COMMIT" ]]; then
+		log "WARNING: Theos is at ${current:-unknown}, this fork is tested with $THEOS_COMMIT"
+		log "  git -C \"$THEOS\" checkout $THEOS_COMMIT && git -C \"$THEOS\" submodule update --init --recursive"
+	fi
 else
 	[[ -e "$THEOS" ]] && die "$THEOS exists but is not a Theos checkout"
-	log "Cloning Theos into $THEOS"
-	git clone --quiet --recursive https://github.com/theos/theos.git "$THEOS"
+	log "Cloning Theos $THEOS_COMMIT into $THEOS"
+	git clone --quiet https://github.com/theos/theos.git "$THEOS"
+	git -C "$THEOS" checkout --quiet "$THEOS_COMMIT"
+	git -C "$THEOS" submodule update --quiet --init --recursive
 fi
 
 # 3. Patched 14.5 SDK
