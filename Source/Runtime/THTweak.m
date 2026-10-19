@@ -57,7 +57,6 @@ static void InitializeHooks(void) {
     THRegisterSaveAudioNotesHooks();
     THRegisterSaveInstantsHooks();
     THRegisterSortUserGridPostsHooks();
-    THRegisterFeedUsernameSpoofHooks();
     THRegisterToastDismissHooks();
     THRegisterHideTestFlightNagHooks();
 

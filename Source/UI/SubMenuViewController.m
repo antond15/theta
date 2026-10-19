@@ -548,12 +548,6 @@ static inline BOOL isBiometricOrPasscodeSet() {
     [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:key];
     [[NSUserDefaults standardUserDefaults] synchronize];
 
-    if ([settingTitle isEqualToString:@"Easter Eggs"] && sender.isOn) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            		[ThetaHelper showToastWithTitle:@"Easter Eggs not implemented yet!" subtitle:@"Will be soon, stay tuned!" icon:[ThetaHelper imageFromEmojiString:@"🐥" width:300] autoHide:4 openURL:nil];
-        });
-    }
-
     static NSSet *sRestartRequired;
     static dispatch_once_t sRestartRequiredOnce;
     dispatch_once(&sRestartRequiredOnce, ^{
