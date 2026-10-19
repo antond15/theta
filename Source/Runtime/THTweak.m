@@ -201,13 +201,11 @@ static void ObserveAppLifecycle(void) {
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(__unused NSNotification *note) {
         StartTweakWhenReady();
-        [THProfileAnalyzerViewController prefetchProfileImageIfNeeded];
     }];
     StartTweakWhenReady();
 #ifdef SIDELOAD
     RunSideloadSetupOnce();
 #endif
-    [THProfileAnalyzerViewController prefetchProfileImageIfNeeded];
 }
 
 __attribute__((constructor))
@@ -244,9 +242,6 @@ static void ThetaLoad(void) {
 
     dispatch_async(dispatch_get_main_queue(), ^{
         ObserveAppLifecycle();
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        [THProfileAnalyzerViewController prefetchProfileImageIfNeeded];
     });
 }
 
