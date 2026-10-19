@@ -90,6 +90,20 @@ static size_t safe_strlen_impl(const char *s) {
     return (size_t)(p - s);
 }
 
+// IGDeviceReportWithEssentialInfo and everything it calls live in FBSharedFramework (IG 451), so only
+// that image's strlen import is rebound, not every loaded image's.
+static void theta_rebindStrlenInFBShared(const struct mach_header *header, intptr_t slide) {
+    Dl_info info;
+    if (!dladdr(header, &info) || !info.dli_fname) return;
+    if (!strstr(info.dli_fname, "/FBSharedFramework.framework/FBSharedFramework")) return;
+    struct rebinding rebindings[] = {
+        { "strlen", (void *)safe_strlen_impl, (void **)&original_strlen_fn },
+    };
+    if (rebind_symbols_image((void *)header, slide, rebindings, 1) == 0) {
+        THDebugLog(@"[Theta] strlen guard installed in %s", info.dli_fname);
+    }
+}
+
 static OSStatus hooked_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result) {
     if (!real_SecItemAdd) return -25243; // errSecUnimplemented
     CFDictionaryRef rewritten = SideloadSecItemDictCopy(attributes, NO);
@@ -135,11 +149,7 @@ static void install_fishhook_rebindings(void) {
     p = dlsym(RTLD_DEFAULT, "SecItemDelete");
     real_SecItemDelete = (OSStatus (*)(CFDictionaryRef))p;
 
-    // Capture real strlen before rebind; only hook one symbol name.
-    original_strlen_fn = (size_t (*)(const char *))dlsym(RTLD_DEFAULT, "strlen");
-
     struct rebinding rebindings[] = {
-        { "strlen", (void *)safe_strlen_impl, (void **)&original_strlen_fn },
         { "SecItemCopyMatching", (void *)hooked_SecItemCopyMatching, (void **)&original_SecItemCopyMatching },
         { "SecItemAdd", (void *)hooked_SecItemAdd, (void **)&original_SecItemAdd },
         { "SecItemUpdate", (void *)hooked_SecItemUpdate, (void **)&original_SecItemUpdate },
@@ -147,6 +157,11 @@ static void install_fishhook_rebindings(void) {
     };
     size_t n = sizeof(rebindings) / sizeof(rebindings[0]);
     if (rebind_symbols(rebindings, n) == 0) {
-        THDebugLog(@"[Theta] strlen/SecItem* hooks installed (sideload session persist)");
+        THDebugLog(@"[Theta] SecItem* hooks installed (sideload session persist)");
     }
+
+    // Capture real strlen before rebind; only hook one symbol name.
+    original_strlen_fn = (size_t (*)(const char *))dlsym(RTLD_DEFAULT, "strlen");
+    // Also called for images that are already loaded.
+    _dyld_register_func_for_add_image(theta_rebindStrlenInFBShared);
 }
