@@ -25,7 +25,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 
 ## Privacy and data
 
-- **Diagnostic logging only in debug builds.** Notification-extension traces, hook-install misses, the keychain access group and trace logs are compiled in only by `./build.sh sideload debug`. Normal builds don't write them to the device log.
+- **Diagnostic logging only in debug builds.** Notification-extension traces, hook-install misses, the keychain access group and trace logs are compiled in only by `./build.sh debug`. Normal builds don't write them to the device log.
 - **Profile Analyzer** fetches your avatar only when you open it, not on every app launch. Its fallback API request sends Instagram's own user agent instead of a hard-coded, outdated one.
 - **Media preview downloads** (Save Profile Posts, bulk save) no longer pretend to be Safari.
 - **Open Links in External Browser** only opens http/https links. Other schemes inside an `l.instagram.com` redirect are left to Instagram. Redirect targets are no longer percent-decoded twice, which used to break links with encoded characters.
@@ -36,6 +36,8 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 
 ## Removed
 
+- **Jailbreak builds.** The rootful and rootless `.deb` targets, `control`, `layout/` and the `SIDELOAD` switch are gone; `./build.sh` builds the sideload IPA. The jailbreak-only code went with them: the Liquid Glass C-symbol and Instants inline hooks, the keychain blocking path, and the `/var/jb` lookups. FFmpeg now lives in `vendor/ffmpeg.framework`.
+- **Cydia Substrate.** Nothing used it once the jailbreak-only inline hooks were gone, so the IPA no longer bundles `CydiaSubstrate.framework` and the build no longer links it.
 - The "Easter Eggs" setting (random creepy usernames in the feed).
 - The unused GIF name overlay. "Copy GIF Name" on a comment GIF still works.
 - Suggested-posts hooks that had no setting and could never run.
@@ -44,7 +46,6 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 ## Tooling
 
 - `scripts/setup-toolchain.sh` sets up Theos, the patched SDK and the toolchain on a Mac with only the command-line tools. It installs Theos at a pinned, tested commit and warns when an existing checkout differs.
-- `scripts/compat.py` checks every hook against an unpacked Instagram build (see [Checking a new Instagram version](README.md#checking-a-new-instagram-version)).
-- `./build.sh sideload debug` builds with diagnostic logging (`THETA_DEBUG=1`).
-- The sideload build stages only the bundled `third_party/CydiaSubstrate.framework` and checks its SHA-256 first. It no longer downloads Substrate over plain HTTP or picks up a copy from `~/Downloads` or `~/Desktop`.
+- `scripts/compat.py` checks every hook against an unpacked Instagram build (see [Checking a new Instagram version](DEVELOPMENT.md#checking-a-new-instagram-version)).
+- `./build.sh debug` builds with diagnostic logging (`THETA_DEBUG=1`).
 - `scripts/assemble.py` builds the single translation unit in the same order on every machine.
