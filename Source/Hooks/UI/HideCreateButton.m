@@ -33,6 +33,11 @@ static void hook_hideCreateButton3(id self, SEL _cmd) {
     if (ENABLED(@"Hide Create Tab/Button")) {
         NSMutableArray *buttonsToRemove = [NSMutableArray array];
         NSArray *leftButtons = ThetaValueForKey(self, @"_leftButtons");
+        if (![leftButtons isKindOfClass:[NSArray class]]) {
+            // Swift header: leftButtons is a Swift Array ivar with no getter; its storage is an NSArray.
+            Ivar leftIvar = class_getInstanceVariable(object_getClass(self), "leftButtons");
+            leftButtons = leftIvar ? object_getIvar(self, leftIvar) : nil;
+        }
         if (![leftButtons isKindOfClass:[NSArray class]] || leftButtons.count == 0) {
             return;
         }
