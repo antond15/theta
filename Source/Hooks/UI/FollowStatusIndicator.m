@@ -590,8 +590,6 @@ static void saveMedia(id hostView) {
                 dispatch_group_enter(previewGroup);
                 NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:previewURL];
                 req.timeoutInterval = 10.0;
-                [req setValue:@"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" forHTTPHeaderField:@"User-Agent"];
-                [req setValue:@"https://www.instagram.com/" forHTTPHeaderField:@"Referer"];
                 [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
                     UIImage *preview = (data.length && !error) ? [UIImage imageWithData:data] : nil;
                     if (preview && preview.size.width > 44.0 && preview.size.height > 44.0) {
