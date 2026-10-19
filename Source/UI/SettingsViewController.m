@@ -11,7 +11,7 @@
 #import <zlib.h>
 #import <AVFoundation/AVFoundation.h>
 
-#define ENABLED(setting) [[NSUserDefaults standardUserDefaults] boolForKey:[NSString stringWithFormat:@"%@_Enabled", setting]]
+#import "Include/ThetaSettings.h"
 
 // MARK: - Color serialization helpers
 static NSString *THHexStringFromColor(UIColor *color) {

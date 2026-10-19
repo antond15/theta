@@ -1,7 +1,7 @@
 #import "Include/SecurityViewController.h"
 #import "Include/ThetaHelper.h"
 
-#define ENABLED(setting) [[NSUserDefaults standardUserDefaults] boolForKey:[NSString stringWithFormat:@"%@_Enabled", setting]]
+#import "Include/ThetaSettings.h"
 
 // Maximum authentication attempts
 static NSInteger maxAuthAttempts = 3;

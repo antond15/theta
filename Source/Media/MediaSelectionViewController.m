@@ -48,7 +48,7 @@ static void showCompletionToast(CustomToastView *progressToast, BOOL success, NS
 }
 
 
-#define ENABLED(setting) [[NSUserDefaults standardUserDefaults] boolForKey:[NSString stringWithFormat:@"%@_Enabled", setting]]
+#import "Include/ThetaSettings.h"
 
 
 

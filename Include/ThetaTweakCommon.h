@@ -6,8 +6,7 @@
 
 #import <Foundation/Foundation.h>
 #import "Include/ThetaDebug.h"
-
-#define ENABLED(setting) [[NSUserDefaults standardUserDefaults] boolForKey:[NSString stringWithFormat:@"%@_Enabled", setting]]
+#import "Include/ThetaSettings.h"
 
 /** Implemented in HideFeedFiltering.m; chained from HideAds home feed adapter. */
 NSArray *ThetaApplyHideFeedFiltering(NSArray *list, BOOL isMainFeed);

@@ -2,7 +2,7 @@
 #import "Include/CustomToastView.h"
 #import "Include/ThetaHelper.h"
 
-#define ENABLED(setting) [[NSUserDefaults standardUserDefaults] boolForKey:[NSString stringWithFormat:@"%@_Enabled", setting]]
+#import "Include/ThetaSettings.h"
 
 @implementation MessagesManager
 

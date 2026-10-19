@@ -3,7 +3,7 @@
 #import "Include/CustomToastView.h"
 #import <AudioToolbox/AudioToolbox.h>
 
-#define ENABLED(setting) [[NSUserDefaults standardUserDefaults] boolForKey:[NSString stringWithFormat:@"%@_Enabled", setting]]
+#import "Include/ThetaSettings.h"
 
 @implementation ThetaHelper
 

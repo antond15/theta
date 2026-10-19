@@ -1,5 +1,5 @@
 #import "Include/THProfileAnalyzerViewController.h"
-#define ENABLED(setting) [[NSUserDefaults standardUserDefaults] boolForKey:[NSString stringWithFormat:@"%@_Enabled", setting]]
+#import "Include/ThetaSettings.h"
 #import "Include/THProfileAnalyzerTypes.h"
 #import "Include/THProfileAnalyzerAPIClient.h"
 #import "Include/THProfileAnalyzerService.h"
