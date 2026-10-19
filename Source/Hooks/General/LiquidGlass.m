@@ -55,34 +55,6 @@ static BOOL hook_lgInAppNotif(id self, SEL _cmd) {
     return orig_lgInAppNotif ? orig_lgInAppNotif(self, _cmd) : NO;
 }
 
-static BOOL (*orig_lgContextMenu)(id, SEL) = NULL;
-static BOOL hook_lgContextMenu(id self, SEL _cmd) {
-    if (!theta_osSupportsLiquidGlass()) return NO;
-    if (ENABLED(@"Enable Liquid Glass Surfaces")) return YES;
-    return orig_lgContextMenu ? orig_lgContextMenu(self, _cmd) : NO;
-}
-
-static BOOL (*orig_lgToast)(id, SEL) = NULL;
-static BOOL hook_lgToast(id self, SEL _cmd) {
-    if (!theta_osSupportsLiquidGlass()) return NO;
-    if (ENABLED(@"Enable Liquid Glass Surfaces")) return YES;
-    return orig_lgToast ? orig_lgToast(self, _cmd) : NO;
-}
-
-static BOOL (*orig_lgToastPeek)(id, SEL) = NULL;
-static BOOL hook_lgToastPeek(id self, SEL _cmd) {
-    if (!theta_osSupportsLiquidGlass()) return NO;
-    if (ENABLED(@"Enable Liquid Glass Surfaces")) return YES;
-    return orig_lgToastPeek ? orig_lgToastPeek(self, _cmd) : NO;
-}
-
-static BOOL (*orig_lgAlertDialog)(id, SEL) = NULL;
-static BOOL hook_lgAlertDialog(id self, SEL _cmd) {
-    if (!theta_osSupportsLiquidGlass()) return NO;
-    if (ENABLED(@"Enable Liquid Glass Surfaces")) return YES;
-    return orig_lgAlertDialog ? orig_lgAlertDialog(self, _cmd) : NO;
-}
-
 static BOOL (*orig_lgIconBar)(id, SEL) = NULL;
 static BOOL hook_lgIconBar(id self, SEL _cmd) {
     if (!theta_osSupportsLiquidGlass()) return NO;
@@ -263,26 +235,6 @@ static id hook_meta_peekGroupName(id self, SEL _cmd) {
     return orig_meta_peekGroupName ? orig_meta_peekGroupName(self, _cmd) : nil;
 }
 
-// MetaLocalExperiment / FamilyLocalExperiment  -isInExperiment
-static BOOL (*orig_meta_isInExp)(id, SEL) = NULL;
-static BOOL hook_meta_isInExp(id self, SEL _cmd) {
-    if (theta_liquidGlassFloatingBarWanted() && theta_isHomecomingExp(theta_expName(self))) return YES;
-    return orig_meta_isInExp ? orig_meta_isInExp(self, _cmd) : NO;
-}
-
-static BOOL (*orig_family_isInExp)(id, SEL) = NULL;
-static BOOL hook_family_isInExp(id self, SEL _cmd) {
-    if (theta_liquidGlassFloatingBarWanted() && theta_isHomecomingExp(theta_expName(self))) return YES;
-    return orig_family_isInExp ? orig_family_isInExp(self, _cmd) : NO;
-}
-
-// LIDExperimentGenerator  -isExperimentEnabled:(NSString *)name
-static BOOL (*orig_lid_isExpEnabled)(id, SEL, NSString *) = NULL;
-static BOOL hook_lid_isExpEnabled(id self, SEL _cmd, NSString *name) {
-    if (theta_liquidGlassFloatingBarWanted() && theta_isHomecomingExp(name)) return YES;
-    return orig_lid_isExpEnabled ? orig_lid_isExpEnabled(self, _cmd, name) : NO;
-}
-
 static Class theta_resolveIGNavConfigurationClass(void) {
     static Class cached = Nil;
     if (cached) return cached;
@@ -323,20 +275,6 @@ static BOOL hook_tbvcm_isHomecoming(id self, SEL _cmd) {
     return orig_tbvcm_isHomecoming ? orig_tbvcm_isHomecoming(self, _cmd) : NO;
 }
 
-// IGSundialFeedViewController  -_isHomecomingEnabled
-static BOOL (*orig_sfvc_isHomecoming)(id, SEL) = NULL;
-static BOOL hook_sfvc_isHomecoming(id self, SEL _cmd) {
-    if (theta_liquidGlassFloatingBarWanted()) return YES;
-    return orig_sfvc_isHomecoming ? orig_sfvc_isHomecoming(self, _cmd) : NO;
-}
-
-// IGSundialFeedViewController  -_isHomeComingHomeFeed
-static BOOL (*orig_sfvc_homeFeed)(id, SEL) = NULL;
-static BOOL hook_sfvc_homeFeed(id self, SEL _cmd) {
-    if (theta_liquidGlassFloatingBarWanted()) return YES;
-    return orig_sfvc_homeFeed ? orig_sfvc_homeFeed(self, _cmd) : NO;
-}
-
 // IGMainAppSurfaceIntent  +resolvedHomeAppSurfaceIntentWithIsHomecomingEnabled:
 static id (*orig_surfaceIntent_resolved)(id, SEL, BOOL) = NULL;
 static id hook_surfaceIntent_resolved(id self, SEL _cmd, BOOL enabled) {
@@ -344,32 +282,16 @@ static id hook_surfaceIntent_resolved(id self, SEL _cmd, BOOL enabled) {
     return orig_surfaceIntent_resolved ? orig_surfaceIntent_resolved(self, _cmd, enabled) : nil;
 }
 
-// IGSundialViewerManagedRequestItem  -initWithMedia:launcherSet:isHomecomingEnabled:
-static id (*orig_viewerItem_init)(id, SEL, id, id, BOOL) = NULL;
-static id hook_viewerItem_init(id self, SEL _cmd, id media, id set, BOOL enabled) {
-    if (theta_liquidGlassFloatingBarWanted()) enabled = YES;
-    return orig_viewerItem_init ? orig_viewerItem_init(self, _cmd, media, set, enabled) : nil;
-}
-
 // Install FBShared-framework experiment hooks once each; retry after framework load.
 static void theta_tryInstallLiquidGlassExperimentHooksOnce(void) {
-    static BOOL metaInExpDone = NO;
     static BOOL metaGroupDone = NO;
     static BOOL metaPeekDone = NO;
-    static BOOL familyDone = NO;
-    static BOOL lidDone = NO;
     static BOOL navDone = NO;
 
-    SEL isInExp = NSSelectorFromString(@"isInExperiment");
-    SEL isExpEnabled = NSSelectorFromString(@"isExperimentEnabled:");
     SEL isHC = NSSelectorFromString(@"isHomecomingEnabled");
 
     Class metaCls = NSClassFromString(@"MetaLocalExperiment");
     if (metaCls) {
-        if (!metaInExpDone && (class_getInstanceMethod(metaCls, isInExp) || class_getClassMethod(metaCls, isInExp))) {
-            NullHookMessageIfPresent(metaCls, isInExp, (void *)hook_meta_isInExp, &orig_meta_isInExp);
-            metaInExpDone = YES;
-        }
         SEL grp = NSSelectorFromString(@"groupName");
         if (!metaGroupDone && (class_getInstanceMethod(metaCls, grp) || class_getClassMethod(metaCls, grp))) {
             NullHookMessageIfPresent(metaCls, grp, (void *)hook_meta_groupName, &orig_meta_groupName);
@@ -379,22 +301,6 @@ static void theta_tryInstallLiquidGlassExperimentHooksOnce(void) {
         if (!metaPeekDone && (class_getInstanceMethod(metaCls, peek) || class_getClassMethod(metaCls, peek))) {
             NullHookMessageIfPresent(metaCls, peek, (void *)hook_meta_peekGroupName, &orig_meta_peekGroupName);
             metaPeekDone = YES;
-        }
-    }
-
-    if (!familyDone) {
-        Class family = NSClassFromString(@"FamilyLocalExperiment");
-        if (family && (class_getInstanceMethod(family, isInExp) || class_getClassMethod(family, isInExp))) {
-            NullHookMessageIfPresent(family, isInExp, (void *)hook_family_isInExp, &orig_family_isInExp);
-            familyDone = YES;
-        }
-    }
-
-    if (!lidDone) {
-        Class lid = NSClassFromString(@"LIDExperimentGenerator");
-        if (lid && class_getInstanceMethod(lid, isExpEnabled)) {
-            NullHookMessageIfPresent(lid, isExpEnabled, (void *)hook_lid_isExpEnabled, &orig_lid_isExpEnabled);
-            lidDone = YES;
         }
     }
 
@@ -462,16 +368,8 @@ void THRegisterLiquidGlassHooks(void) {
     Class launcherConfig = NSClassFromString(@"IGDSLauncherConfig");
     if (launcherConfig) {
         SEL lgNotif  = sel_registerName("isLiquidGlassInAppNotificationEnabled");
-        SEL lgCtx    = sel_registerName("isLiquidGlassContextMenuEnabled");
-        SEL lgToastS = sel_registerName("isLiquidGlassToastEnabled");
-        SEL lgPeek   = sel_registerName("isLiquidGlassToastPeekEnabled");
-        SEL lgAlert  = sel_registerName("isLiquidGlassAlertDialogEnabled");
         SEL lgIcon   = sel_registerName("isLiquidGlassIconBarButtonEnabled");
         NullHookMessageIfPresent(launcherConfig, lgNotif,  (void *)hook_lgInAppNotif,   &orig_lgInAppNotif);
-        NullHookMessageIfPresent(launcherConfig, lgCtx,    (void *)hook_lgContextMenu,  &orig_lgContextMenu);
-        NullHookMessageIfPresent(launcherConfig, lgToastS, (void *)hook_lgToast,        &orig_lgToast);
-        NullHookMessageIfPresent(launcherConfig, lgPeek,   (void *)hook_lgToastPeek,    &orig_lgToastPeek);
-        NullHookMessageIfPresent(launcherConfig, lgAlert,  (void *)hook_lgAlertDialog,  &orig_lgAlertDialog);
         NullHookMessageIfPresent(launcherConfig, lgIcon,   (void *)hook_lgIconBar,      &orig_lgIconBar);
     }
 
@@ -484,22 +382,10 @@ void THRegisterLiquidGlassHooks(void) {
         NSSelectorFromString(@"_isHomecomingEnabled"),
         (void *)hook_tbvcm_isHomecoming, &orig_tbvcm_isHomecoming);
 
-    Class sfvc = NSClassFromString(@"IGSundialFeedViewController");
-    NullHookMessageIfPresent(sfvc,
-        NSSelectorFromString(@"_isHomecomingEnabled"),
-        (void *)hook_sfvc_isHomecoming, &orig_sfvc_isHomecoming);
-    NullHookMessageIfPresent(sfvc,
-        NSSelectorFromString(@"_isHomeComingHomeFeed"),
-        (void *)hook_sfvc_homeFeed, &orig_sfvc_homeFeed);
-
     // Class method — hook via metaclass so class_replaceMethod targets the right dispatch table
     Class surfaceIntentMeta = object_getClass(NSClassFromString(@"IGMainAppSurfaceIntent"));
     NullHookMessageIfPresent(surfaceIntentMeta,
         NSSelectorFromString(@"resolvedHomeAppSurfaceIntentWithIsHomecomingEnabled:"),
         (void *)hook_surfaceIntent_resolved, &orig_surfaceIntent_resolved);
 
-    Class viewerItem = NSClassFromString(@"IGSundialViewerManagedRequestItem");
-    NullHookMessageIfPresent(viewerItem,
-        NSSelectorFromString(@"initWithMedia:launcherSet:isHomecomingEnabled:"),
-        (void *)hook_viewerItem_init, &orig_viewerItem_init);
 }
