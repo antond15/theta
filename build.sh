@@ -302,69 +302,46 @@ ensure_insert_dylib() {
 	fi
 }
 
+# SHA-256 of third_party/CydiaSubstrate.framework/CydiaSubstrate: identical to the binary in Saurik's
+# mobilesubstrate_0.9.6301_iphoneos-arm.deb (checked 2026-10-19).
+SUBSTRATE_SHA256="1778e37c08925eca6145e0be052a951fcb2c61b13ae859f74353b4b8a6c53faa"
+
 stage_substrate_framework() {
 	# Copies CydiaSubstrate.framework into $1 (Instagram.app root)
 	local app_dir="$1"
 	local dest="$app_dir/CydiaSubstrate.framework"
-	local extract_py="$SCRIPT_DIR/scripts/extract-substrate-from-deb.py"
-	local cached="$SCRIPT_DIR/third_party/CydiaSubstrate.framework"
+	local src="$SCRIPT_DIR/third_party/CydiaSubstrate.framework"
+	local sum
 
-	copy_fw() {
-		local src="$1"
-		[[ -d "$src" ]] || return 1
-		[[ -f "$src/CydiaSubstrate" || -f "$src/CydiaSubstrate.dylib" ]] || return 1
-		rm -rf "$dest"
-		mkdir -p "$dest"
-		rsync -a "$src/" "$dest/"
-		if [[ ! -f "$dest/CydiaSubstrate" && -f "$dest/CydiaSubstrate.dylib" ]]; then
-			cp -f "$dest/CydiaSubstrate.dylib" "$dest/CydiaSubstrate"
-		fi
-		if command -v install_name_tool &>/dev/null; then
-			install_name_tool -id "@executable_path/CydiaSubstrate.framework/CydiaSubstrate" "$dest/CydiaSubstrate" 2>/dev/null || true
-		fi
-		# Also stage under Frameworks/ so the NSE can dlopen via its existing rpath.
-		if [[ -n "${app_dir:-}" ]]; then
-			mkdir -p "$app_dir/Frameworks"
-			rm -rf "$app_dir/Frameworks/CydiaSubstrate.framework"
-			rsync -a "$dest/" "$app_dir/Frameworks/CydiaSubstrate.framework/"
-			install_name_tool -id "@rpath/CydiaSubstrate.framework/CydiaSubstrate" \
-				"$app_dir/Frameworks/CydiaSubstrate.framework/CydiaSubstrate" 2>/dev/null || true
-		fi
-		strip_entitlements "$dest/CydiaSubstrate"
-		echo "[Build] Staged CydiaSubstrate.framework → $dest"
-		return 0
-	}
-
-	if [[ -n "${SUBSTRATE_FRAMEWORK_PATH:-}" ]] && copy_fw "$SUBSTRATE_FRAMEWORK_PATH"; then
-		return 0
+	if [[ -n "${SUBSTRATE_FRAMEWORK_PATH:-}" ]]; then
+		src="$SUBSTRATE_FRAMEWORK_PATH"
 	fi
-	if copy_fw "$cached"; then
-		return 0
+	if [[ ! -f "$src/CydiaSubstrate" ]]; then
+		echo "[Build] ERROR: no CydiaSubstrate binary in $src"
+		exit 1
+	fi
+	sum="$(shasum -a 256 "$src/CydiaSubstrate" | awk '{print $1}')"
+	if [[ -n "${SUBSTRATE_FRAMEWORK_PATH:-}" ]]; then
+		echo "[Build] Using SUBSTRATE_FRAMEWORK_PATH (unverified, sha256 $sum)"
+	elif [[ "$sum" != "$SUBSTRATE_SHA256" ]]; then
+		echo "[Build] ERROR: third_party/CydiaSubstrate.framework/CydiaSubstrate checksum mismatch"
+		echo "[Build]   expected $SUBSTRATE_SHA256"
+		echo "[Build]   got      $sum"
+		exit 1
 	fi
 
-	# Search nearby IPA unpacks / Sideloadly cache
-	local hit
-	while IFS= read -r hit; do
-		[[ -n "$hit" ]] || continue
-		if copy_fw "$(dirname "$hit")"; then
-			mkdir -p "$cached"
-			rsync -a "$dest/" "$cached/"
-			return 0
-		fi
-	done < <(find "$HOME/Library/Application Support/Sideloadly" "$HOME/Downloads" "$HOME/Desktop" "$SCRIPT_DIR/packages" \
-		-path "*/CydiaSubstrate.framework/CydiaSubstrate" -type f 2>/dev/null | head -5)
-
-	if [[ -f "$extract_py" ]]; then
-		echo "[Build] Fetching CydiaSubstrate from mobilesubstrate .deb..."
-		mkdir -p "$cached"
-		if python3 "$extract_py" "$cached"; then
-			copy_fw "$cached" && return 0
-		fi
-	fi
-
-	echo "[Build] ERROR: could not stage CydiaSubstrate.framework"
-	echo "[Build] Set SUBSTRATE_FRAMEWORK_PATH or place it at third_party/CydiaSubstrate.framework"
-	exit 1
+	rm -rf "$dest"
+	mkdir -p "$dest"
+	rsync -a "$src/" "$dest/"
+	install_name_tool -id "@executable_path/CydiaSubstrate.framework/CydiaSubstrate" "$dest/CydiaSubstrate" 2>/dev/null || true
+	# Also stage under Frameworks/ so the NSE can dlopen via its existing rpath.
+	mkdir -p "$app_dir/Frameworks"
+	rm -rf "$app_dir/Frameworks/CydiaSubstrate.framework"
+	rsync -a "$dest/" "$app_dir/Frameworks/CydiaSubstrate.framework/"
+	install_name_tool -id "@rpath/CydiaSubstrate.framework/CydiaSubstrate" \
+		"$app_dir/Frameworks/CydiaSubstrate.framework/CydiaSubstrate" 2>/dev/null || true
+	strip_entitlements "$dest/CydiaSubstrate"
+	echo "[Build] Staged CydiaSubstrate.framework → $dest"
 }
 
 build_jailbreak() {

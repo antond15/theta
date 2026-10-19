@@ -136,7 +136,7 @@ If Theos device install is already configured (`THEOS_DEVICE_IP`), `make install
 
 4. Open Instagram. Theta settings use the same gear / home-tab long-press as jailbreak.
 
-If Substrate cannot be found automatically, set `SUBSTRATE_FRAMEWORK_PATH` to a `CydiaSubstrate.framework` directory, or place one at `third_party/CydiaSubstrate.framework`.
+The bundled Substrate is `third_party/CydiaSubstrate.framework`, the binary from Saurik's `mobilesubstrate_0.9.6301` package. `build.sh` checks its SHA-256 before staging it. To use a different build, set `SUBSTRATE_FRAMEWORK_PATH` to a `CydiaSubstrate.framework` directory; that copy is not verified.
 
 Sideload also injects `ThetaNSE` into Instagram’s notification service extension so decrypted banners can work. `Source/SideloadNSE/keychain-sharing.plist` is **optional** and is not applied by the build. Skip it unless notifications break because the extension cannot read Instagram’s keychain. In that case, merge those entitlements onto `Instagram.app` and `InstagramNotificationExtension.appex` only (never onto `ThetaNSE` or other dylibs), and replace `TEAMID` with your signing Team ID. Theta already probes wildcard keychain groups at runtime, so most sideload installs do not need this plist.
 
