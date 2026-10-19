@@ -77,7 +77,10 @@ Prefer `./build.sh` from the repo root. Do not set `SIDELOAD` and `ROOTLESS` at 
 ./build.sh              # rootful .deb → packages/
 ./build.sh rootless     # rootless .deb → packages/
 ./build.sh sideload     # inject into input/Payload → output/Instagram_patched.ipa
+./build.sh sideload debug   # same, with diagnostic logging compiled in
 ```
+
+Diagnostic logging (hook-install misses, keychain and notification-extension traces, `THDebugLog`) only exists in `debug` builds (`THETA_DEBUG=1`). Normal builds contain none of it.
 
 Equivalent Make invocations (use GNU make; `THEOS` must be exported):
 

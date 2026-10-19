@@ -8,6 +8,8 @@ static ThetaHPKEContainerURLFn gContainerOrig;
 static NSURL *gStoreDir;
 static BOOL gStoreResolved;
 
+/* Diagnostics only exist in THETA_DEBUG builds (./build.sh sideload debug). */
+#if THETA_DEBUG
 static void ThetaHPKELog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
 static void ThetaHPKELog(NSString *fmt, ...) {
     va_list ap;
@@ -18,6 +20,9 @@ static void ThetaHPKELog(NSString *fmt, ...) {
     fflush(stderr);
     os_log(os_log_create("com.theta.nse", "ThetaHPKE"), "%{public}s", msg.UTF8String ?: "");
 }
+#else
+#define ThetaHPKELog(...) do { } while (0)
+#endif
 
 static BOOL ThetaHPKECanWrite(NSURL *url) {
     if (!url.path.length) return NO;
@@ -137,7 +142,7 @@ void ThetaHPKEMirrorKeychain(NSString *preferredGroup, NSString *wildcardGroup) 
     if (preferredGroup.length) [groups addObject:preferredGroup];
     if (wildcardGroup.length && ![wildcardGroup isEqualToString:preferredGroup])
         [groups addObject:wildcardGroup];
-    int found = 0;
+    __unused int found = 0;
     for (NSString *svc in services) {
         for (id group in groups) {
             NSMutableDictionary *query = [@{

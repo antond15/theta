@@ -5,6 +5,7 @@
 #define ThetaTweakCommon_h
 
 #import <Foundation/Foundation.h>
+#import "Include/ThetaDebug.h"
 
 #define ENABLED(setting) [[NSUserDefaults standardUserDefaults] boolForKey:[NSString stringWithFormat:@"%@_Enabled", setting]]
 

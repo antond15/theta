@@ -24,9 +24,11 @@ static void loadKeychainAccessGroup() {
 			NSDictionary* resultDict = (__bridge id)result;
 			keychainAccessGroup = resultDict[(__bridge id)kSecAttrAccessGroup];
 			CFRelease(result);
+#if THETA_DEBUG
 			fprintf(stderr, "[Theta] sideload keychain access group: %s\n",
 			        keychainAccessGroup.UTF8String ?: "(null)");
 			fflush(stderr);
+#endif
 		} else {
 			fprintf(stderr, "[Theta] Failed to get keychain access group: %d\n", (int)ret);
 			fflush(stderr);

@@ -100,13 +100,13 @@ static void InitializeHooks(void) {
             }
         });
 
-        // Log remaining hook misses; don't block launch with an alert.
-        // Use UTF8 %s so Console doesn't redact lines as <private>.
+        // Debug builds log remaining hook misses; don't block launch with an alert.
         FailedHooksEnsureInit();
         [sFailedHookLock lock];
         NSArray *failed = [sFailedHookLines copy];
         [sFailedHookLines removeAllObjects];
         [sFailedHookLock unlock];
+#if THETA_DEBUG
         if (failed.count) {
             // fprintf bypasses os_log privacy redaction (<private>).
             fprintf(stderr, "[Theta] %lu hook install miss(es):\n", (unsigned long)failed.count);
@@ -115,6 +115,7 @@ static void InitializeHooks(void) {
             }
             fflush(stderr);
         }
+#endif
     });
 }
 
@@ -154,6 +155,7 @@ static void RunSideloadSetupOnce(void) {
             } else {
                 NSLog(@"[Theta] Sideload keychain/container hooks installed");
             }
+#if THETA_DEBUG
             NSString *root = [NSBundle mainBundle].bundlePath;
             NSArray *checks = @[
                 @"PlugIns/InstagramNotificationExtension.appex",
@@ -166,6 +168,7 @@ static void RunSideloadSetupOnce(void) {
                 fprintf(stderr, "[Theta] NSE embed %s = %d\n", rel.UTF8String ?: "?", ok ? 1 : 0);
             }
             fflush(stderr);
+#endif
         } @catch (NSException *e) {
             NSLog(@"[Theta] Sideload setup exception: %@", e);
         }

@@ -17,6 +17,12 @@ ifeq ($(ROOTLESS), 1)
 	Theta_CFLAGS += -DROOTLESS=1
 endif
 
+# Diagnostic logging (THDebugLog, notification extension traces). Off in normal builds.
+ifeq ($(THETA_DEBUG), 1)
+	Theta_CFLAGS += -DTHETA_DEBUG=1
+	ThetaNSE_CFLAGS += -DTHETA_DEBUG=1
+endif
+
 include $(THEOS)/makefiles/common.mk
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
@@ -65,7 +71,7 @@ ifeq ($(SIDELOAD),1)
 LIBRARY_NAME = ThetaNSE
 ThetaNSE_FILES = Source/SideloadNSE/ThetaNSE.m Source/SideloadNSE/ThetaHPKEKeyFile.m fishhook.c
 ThetaNSE_FRAMEWORKS = Foundation Security
-ThetaNSE_CFLAGS = -fobjc-arc -fvisibility=hidden -I$(THEOS_PROJECT_DIR)
+ThetaNSE_CFLAGS += -fobjc-arc -fvisibility=hidden -I$(THEOS_PROJECT_DIR)
 include $(THEOS_MAKE_PATH)/library.mk
 endif
 

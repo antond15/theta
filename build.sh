@@ -28,15 +28,22 @@ if [[ -z "$MODE" || "$MODE" == "rootful" ]]; then
 	MODE="rootful"
 fi
 
+# Optional second argument: "debug" compiles in diagnostic logging (THETA_DEBUG=1).
+THETA_DEBUG=0
+if [[ "$(echo "${2:-}" | tr '[:upper:]' '[:lower:]')" == "debug" ]]; then
+	THETA_DEBUG=1
+fi
+
 usage() {
 	cat <<'EOF'
-Usage: ./build.sh [rootful|rootless|sideload]
+Usage: ./build.sh [rootful|rootless|sideload] [debug]
 
   (no args) / rootful   Build a rootful jailbreak package
   rootless              Build a rootless jailbreak package
   sideload              Build SIDELOAD=1 dylibs (Theta + ThetaNSE) and inject
                         Theta into the app and ThetaNSE into the notification
                         service extension (required for decrypted banners)
+  debug                 Also compile in diagnostic logging (THETA_DEBUG=1)
 
 Sideload expects a decrypted Instagram IPA unpacked as:
   input/Payload/Instagram.app/...
@@ -152,7 +159,7 @@ compile_theta_nse_clang() {
 	[[ -n "$sdk" ]] || return 1
 	echo "[Build] Compiling ThetaNSE.dylib with clang..."
 	xcrun -sdk iphoneos clang -arch arm64 -isysroot "$sdk" \
-		-miphoneos-version-min=14.0 \
+		-miphoneos-version-min=14.0 -DTHETA_DEBUG="$THETA_DEBUG" \
 		-fobjc-arc -fPIC -shared -fvisibility=hidden \
 		-I"$SCRIPT_DIR" \
 		-framework Foundation -framework Security \
@@ -365,10 +372,10 @@ build_jailbreak() {
 	$make_cmd clean
 	if [[ "$label" == "rootless" ]]; then
 		echo "[Build] Building rootless package..."
-		$make_cmd package ROOTLESS=1
+		$make_cmd package ROOTLESS=1 THETA_DEBUG="$THETA_DEBUG"
 	else
 		echo "[Build] Building rootful package..."
-		$make_cmd package
+		$make_cmd package THETA_DEBUG="$THETA_DEBUG"
 	fi
 	echo "[Build] Done. Packages in ./packages/"
 	ls -la packages/*.deb 2>/dev/null || true
@@ -433,7 +440,7 @@ build_sideload() {
 	echo "[Build] App: $app_name  binary: $binary_name"
 	echo "[Build] Building sideload dylib..."
 	$make_cmd clean
-	$make_cmd package SIDELOAD=1
+	$make_cmd package SIDELOAD=1 THETA_DEBUG="$THETA_DEBUG"
 
 	local dylib_src nse_src
 	dylib_src="$(find_built_dylib Theta.dylib)" || {

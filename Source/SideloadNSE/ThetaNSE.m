@@ -24,7 +24,6 @@
 
 static NSString *gKeychainGroup;
 static NSString *gWildcardKeychainGroup;
-static int gSecLogLeft = 16;
 static NSURL *gFakeGroupRoot;
 static OSStatus (*real_SecItemCopyMatching)(CFDictionaryRef, CFTypeRef *);
 static OSStatus (*real_SecItemAdd)(CFDictionaryRef, CFTypeRef *);
@@ -38,6 +37,11 @@ static NSString *(*orig_uicAccessGroup)(id, SEL);
 static id (*orig_uicStore)(id, SEL, id, id);
 static void (*orig_didReceive)(id, SEL, id, id);
 
+/* Diagnostics only exist in THETA_DEBUG builds (./build.sh sideload debug). */
+#if THETA_DEBUG
+static int gSecLogLeft = 16;
+
+static void ThetaNSELog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void ThetaNSELog(const char *fmt, ...) {
     char buf[512];
     va_list ap;
@@ -48,6 +52,9 @@ static void ThetaNSELog(const char *fmt, ...) {
     fflush(stderr);
     os_log(os_log_create("com.theta.nse", "ThetaNSE"), "%{public}s", buf);
 }
+#else
+#define ThetaNSELog(...) do { } while (0)
+#endif
 
 static NSString *ThetaNSEParentBundleID(void) {
     NSString *path = [[NSBundle mainBundle] bundlePath] ?: @"";
@@ -131,14 +138,6 @@ static BOOL ThetaNSESkipGroup(CFStringRef group) {
     return NO;
 }
 
-static NSString *ThetaNSEHostAppPath(void) {
-    NSString *path = [[NSBundle mainBundle] bundlePath] ?: @"";
-    if ([path.pathExtension isEqualToString:@"appex"]) {
-        return path.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent;
-    }
-    return path;
-}
-
 static BOOL ThetaNSEServiceNeedsHostGroup(CFDictionaryRef dict) {
     CFTypeRef svc = CFDictionaryGetValue(dict, kSecAttrService);
     if (!svc || CFGetTypeID(svc) != CFStringGetTypeID()) return NO;
@@ -171,6 +170,7 @@ static CFDictionaryRef ThetaNSERewriteDict(CFDictionaryRef dict, BOOL isQuery) {
     return copy;
 }
 
+#if THETA_DEBUG
 static void ThetaNSELogSecStatus(const char *op, OSStatus st) {
     if (st == errSecSuccess || st == errSecItemNotFound || st == errSecDuplicateItem) return;
     ThetaNSELog("%s status=%d group=%s", op, (int)st, gKeychainGroup.UTF8String ?: "(null)");
@@ -212,6 +212,10 @@ static void ThetaNSELogQuery(const char *op, CFDictionaryRef query, OSStatus st)
                     op, svc[0] ? svc : "-", acc[0] ? acc : "-", ag[0] ? ag : "-",
                     (int)st, gKeychainGroup.UTF8String ?: "(null)");
 }
+#else
+#define ThetaNSELogSecStatus(...) do { } while (0)
+#define ThetaNSELogQuery(...) do { } while (0)
+#endif
 
 static OSStatus hooked_CopyMatching(CFDictionaryRef query, CFTypeRef *result) {
     if (!real_SecItemCopyMatching) return (OSStatus)-4;
@@ -325,7 +329,6 @@ static BOOL hook_mkdir(id self, SEL _cmd, NSString *path, BOOL intermediates, NS
 }
 
 static void ThetaNSERebindAllNow(const char *why);
-static void ThetaNSELogAppImages(const char *why);
 
 static void ThetaNSESwizzle(Class cls, SEL sel, IMP neo, void **orig) {
     if (!cls || !sel || !neo) return;
@@ -338,6 +341,7 @@ static void ThetaNSESwizzle(Class cls, SEL sel, IMP neo, void **orig) {
 
 typedef void (^ThetaNSEContentHandler)(id content);
 
+#if THETA_DEBUG
 static void ThetaNSELogInfoTree(id obj, NSString *path, int depth) {
     if (depth > 5 || !obj) return;
     if ([obj isKindOfClass:[NSDictionary class]]) {
@@ -366,11 +370,25 @@ static void ThetaNSELogInfoTree(id obj, NSString *path, int depth) {
         return;
     }
     if ([obj isKindOfClass:[NSNumber class]]) {
-        ThetaNSELog("key %s = %@", path, obj);
+        ThetaNSELog("key %s = %s", path.UTF8String ?: "?", [obj description].UTF8String ?: "?");
         return;
     }
     ThetaNSELog("key %s = %s", path.UTF8String ?: "?", class_getName(object_getClass(obj)));
 }
+
+static void ThetaNSELogAppImages(const char *why) {
+    uint32_t count = _dyld_image_count();
+    int app = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (!name || strstr(name, "/usr/lib/") || strstr(name, "/System/")) continue;
+        const char *base = strrchr(name, '/');
+        ThetaNSELog("image %s", base ? base + 1 : name);
+        app++;
+    }
+    ThetaNSELog("images %s app=%d total=%u", why, app, count);
+}
+#endif
 
 static id (*orig_getEnc4)(id, SEL, id, id, id, NSError **);
 static id hook_getEnc4(id self, SEL _cmd, id keyFor, id group, id accessible, NSError **err) {
@@ -397,8 +415,9 @@ static id hook_getEnc2(id self, SEL _cmd, id keyFor, NSError **err) {
 }
 
 static void hook_didReceive(id self, SEL _cmd, id request, ThetaNSEContentHandler handler) {
-    gSecLogLeft = 32;
     ThetaNSERebindAllNow("didReceive");
+#if THETA_DEBUG
+    gSecLogLeft = 32;
     id content = nil;
     @try { content = [request valueForKey:@"content"]; } @catch (__unused NSException *e) {}
     id info = nil;
@@ -418,7 +437,9 @@ static void hook_didReceive(id self, SEL _cmd, id request, ThetaNSEContentHandle
                     (unsigned long)titleLen, (unsigned long)bodyLen);
         if (origHandler) origHandler(notifContent);
     };
-    if (orig_didReceive) orig_didReceive(self, _cmd, request, wrapped);
+    handler = wrapped;
+#endif
+    if (orig_didReceive) orig_didReceive(self, _cmd, request, handler);
 }
 
 static BOOL ThetaNSEMakeDataWritable(void *addr, size_t len) {
@@ -513,16 +534,18 @@ static void ThetaNSEAddImage(const struct mach_header *mh, intptr_t slide) {
     if (!ThetaNSEShouldRebindImage(name)) return;
     int n = ThetaNSERebindImage(mh, slide, name);
     gRebindTotal += n;
+#if THETA_DEBUG
     BOOL interesting = n > 0 || !name ||
         (name && (strstr(name, "FB") || strstr(name, "Meta") ||
                   strstr(name, "HPKE") || strstr(name, "Instagram") || strstr(name, ".appex")));
     if (interesting)
         ThetaNSELog("rebound %d SecItem* slots in %s", n, name ?: "(unnamed)");
+#endif
 }
 
 static void ThetaNSERebindAllNow(const char *why) {
     uint32_t count = _dyld_image_count();
-    int extra = 0;
+    __unused int extra = 0;
     for (uint32_t i = 0; i < count; i++) {
         const char *name = _dyld_get_image_name(i);
         if (!ThetaNSEShouldRebindImage(name)) continue;
@@ -533,19 +556,6 @@ static void ThetaNSERebindAllNow(const char *why) {
         }
     }
     ThetaNSELog("rebind-all %s extra=%d images=%u", why, extra, count);
-}
-
-static void ThetaNSELogAppImages(const char *why) {
-    uint32_t count = _dyld_image_count();
-    int app = 0;
-    for (uint32_t i = 0; i < count; i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (!name || strstr(name, "/usr/lib/") || strstr(name, "/System/")) continue;
-        const char *base = strrchr(name, '/');
-        ThetaNSELog("image %s", base ? base + 1 : name);
-        app++;
-    }
-    ThetaNSELog("images %s app=%d total=%u", why, app, count);
 }
 
 static int ThetaNSERebindLoadedImages(void) {
@@ -559,14 +569,14 @@ static void ThetaNSEHookSecItem(void) {
     real_SecItemUpdate = SecItemUpdate;
     real_SecItemDelete = SecItemDelete;
 
-    int slots = ThetaNSERebindLoadedImages();
+    __unused int slots = ThetaNSERebindLoadedImages();
     struct rebinding rebindings[] = {
         { "SecItemCopyMatching", (void *)hooked_CopyMatching, (void **)&real_SecItemCopyMatching },
         { "SecItemAdd", (void *)hooked_Add, (void **)&real_SecItemAdd },
         { "SecItemUpdate", (void *)hooked_Update, (void **)&real_SecItemUpdate },
         { "SecItemDelete", (void *)hooked_Delete, (void **)&real_SecItemDelete },
     };
-    int fh = rebind_symbols(rebindings, sizeof(rebindings) / sizeof(rebindings[0]));
+    __unused int fh = rebind_symbols(rebindings, sizeof(rebindings) / sizeof(rebindings[0]));
     ThetaNSELog("SecItem* data-slots=%d fishhook=%d", slots, fh == 0 ? 1 : 0);
 }
 
@@ -665,6 +675,7 @@ static void ThetaNSEInit(void) {
                         (IMP)hook_containerURL, (void **)&orig_containerURL);
         ThetaHPKESetContainerOrig((ThetaHPKEContainerURLFn)orig_containerURL);
 
+#if THETA_DEBUG
         NSOperatingSystemVersion ver = [[NSProcessInfo processInfo] operatingSystemVersion];
         ThetaNSELog("iOS %ld.%ld.%ld", (long)ver.majorVersion, (long)ver.minorVersion, (long)ver.patchVersion);
         if (ver.majorVersion <= 16)
@@ -674,6 +685,7 @@ static void ThetaNSEInit(void) {
         ThetaNSELog("application-groups: %s",
                     appGroups ? [(__bridge id)appGroups description].UTF8String : "(none)");
         if (appGroups) CFRelease(appGroups);
+#endif
 
         ThetaHPKEDumpStatus();
         ThetaNSESwizzle(objc_getClass("FBNotificationService"),
@@ -683,7 +695,9 @@ static void ThetaNSEInit(void) {
             ThetaNSESwizzle(objc_getClass("UNNotificationServiceExtension"),
                             @selector(didReceiveNotificationRequest:withContentHandler:),
                             (IMP)hook_didReceive, (void **)&orig_didReceive);
+#if THETA_DEBUG
         ThetaNSELogAppImages("init");
+#endif
         ThetaNSELog("ready bundle=%s", [[NSBundle mainBundle] bundleIdentifier].UTF8String ?: "?");
     }
 }
