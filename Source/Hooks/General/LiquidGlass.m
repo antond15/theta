@@ -235,6 +235,29 @@ static id hook_meta_peekGroupName(id self, SEL _cmd) {
     return orig_meta_peekGroupName ? orig_meta_peekGroupName(self, _cmd) : nil;
 }
 
+/* IG 451 reads these flags as Swift stored properties (59 direct calls to
+   IGLiquidGlassNavigationExperimentHelper.isEnabled() in the main binary), so the getter swizzles above
+   rarely run. Set the stored values through IG's own override setters instead. */
+static void theta_applyLiquidGlassOverrides(void) {
+    if (!theta_osSupportsLiquidGlass() || !ENABLED(@"Enable Liquid Glass Buttons")) return;
+    Class helperCls = ThetaFirstClass(@[
+        @"_TtC29IGLiquidGlassExperimentHelper39IGLiquidGlassNavigationExperimentHelper",
+        @"IGLiquidGlassExperimentHelper.IGLiquidGlassNavigationExperimentHelper"
+    ]);
+    id helper = [helperCls respondsToSelector:@selector(shared)] ? ((id (*)(id, SEL))objc_msgSend)(helperCls, @selector(shared)) : nil;
+    SEL overrideSel = NSSelectorFromString(@"overrideIsEnabled:");
+    if ([helper respondsToSelector:overrideSel])
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(helper, overrideSel, YES);
+
+    Class toggleCls = ThetaFirstClass(@[
+        @"_TtC20IGLiquidGlassSwizzle26IGLiquidGlassSwizzleToggle",
+        @"IGLiquidGlassSwizzle.IGLiquidGlassSwizzleToggle"
+    ]);
+    id toggle = [toggleCls respondsToSelector:@selector(shared)] ? ((id (*)(id, SEL))objc_msgSend)(toggleCls, @selector(shared)) : nil;
+    if ([toggle respondsToSelector:@selector(setIsEnabled:)])
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(toggle, @selector(setIsEnabled:), YES);
+}
+
 // Install FBShared-framework experiment hooks once each; retry after framework load.
 static void theta_tryInstallLiquidGlassExperimentHooksOnce(void) {
     static BOOL metaGroupDone = NO;
@@ -266,6 +289,7 @@ void THRegisterLiquidGlassTabBarEarlyHooks(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         theta_tryInstallLiquidGlassTabBarCSymbolHooks();
         theta_tryInstallLiquidGlassExperimentHooksOnce();
+        theta_applyLiquidGlassOverrides();
         dispatch_async(dispatch_get_main_queue(), ^{
             theta_tryInstallLiquidGlassTabBarCSymbolHooks();
             theta_tryInstallLiquidGlassExperimentHooksOnce();
@@ -281,7 +305,8 @@ void THRegisterLiquidGlassTabBarEarlyHooks(void) {
                        dispatch_get_main_queue(), ^{
             theta_tryInstallLiquidGlassTabBarCSymbolHooks();
             theta_tryInstallLiquidGlassExperimentHooksOnce();
-            });
+            theta_applyLiquidGlassOverrides();
+        });
     });
 }
 
@@ -316,4 +341,5 @@ void THRegisterLiquidGlassHooks(void) {
     }
 
     theta_tryInstallLiquidGlassExperimentHooksOnce();
+    theta_applyLiquidGlassOverrides();
 }
