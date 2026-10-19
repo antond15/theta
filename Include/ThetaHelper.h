@@ -26,6 +26,8 @@ void ThetaShowNativeToastWithEmoji(NSString *title, NSString * _Nullable subtitl
 #pragma mark - File Management
 + (void)createDirectoryIfNotExists:(NSURL *)URL;
 + (void)cleanupTemporaryMediaFiles;
+/** Clears Library/Caches and Theta's leftover temp files, then shows a summary banner. Never touches saved media. */
++ (void)clearAppCache;
 
 #pragma mark - Download Management
 + (BOOL)tryBeginGlobalDownloadOrNotify;

@@ -167,30 +167,85 @@ static volatile BOOL sGlobalDownloadInProgress = NO;
     }
 }
 
-+ (void)cleanupTemporaryMediaFiles {
-    NSURL *documentsURL = [NSURL fileURLWithPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents"] isDirectory:YES];
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSArray *files = [fm contentsOfDirectoryAtPath:documentsURL.path error:nil];
-    
-    for (NSString *file in files) {
-        if ([file hasSuffix:@".mp4"] || [file hasSuffix:@".aac"] || [file hasSuffix:@".m4a"]) {
-            if ([file hasPrefix:@"Video-"]) continue;
-            NSURL *fileURL = [documentsURL URLByAppendingPathComponent:file];
-            [fm removeItemAtURL:fileURL error:nil];
-        }
+/** Theta's own staging/temp names. Saved media lives in Documents/AudioNotes and never matches. */
+static BOOL ThetaIsTemporaryItemName(NSString *name) {
+    static NSRegularExpression *re;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *uuid = @"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}";
+        NSString *pattern = [NSString stringWithFormat:
+            @"^(theta[_-].*"
+            @"|(story|profile|image|media|instant)-%@(\\.[A-Za-z0-9]+)?"
+            @"|bulk_(video|audio|output)_[0-9]+\\.(mp4|m4a)"
+            @"|temp_video_[0-9]+\\.mp4"
+            @"|video\\.mp4|audio\\.m4a|audio\\.aac|audio_lc\\.m4a|output\\.mp4|output_h264\\.mp4)$", uuid];
+        re = [NSRegularExpression regularExpressionWithPattern:pattern options:0 error:nil];
+    });
+    return name.length && [re firstMatchInString:name options:0 range:NSMakeRange(0, name.length)] != nil;
+}
+
+static unsigned long long ThetaItemSize(NSFileManager *fm, NSString *path) {
+    BOOL isDir = NO;
+    if (![fm fileExistsAtPath:path isDirectory:&isDir]) return 0;
+    if (!isDir) return [[fm attributesOfItemAtPath:path error:nil] fileSize];
+    unsigned long long total = 0;
+    NSDirectoryEnumerator *e = [fm enumeratorAtPath:path];
+    for (NSString *sub in e) {
+        NSDictionary *attrs = e.fileAttributes;
+        if ([attrs[NSFileType] isEqualToString:NSFileTypeRegular]) total += [attrs fileSize];
+        (void)sub;
     }
+    return total;
+}
+
+/** Deletes Theta temp items directly inside Documents, Caches and tmp. Returns the number removed. */
+static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *docs = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
     NSString *caches = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
-    for (NSString *root in @[documentsURL.path, caches ?: @"", NSTemporaryDirectory()]) {
+    NSUInteger removed = 0;
+    for (NSString *root in @[docs ?: @"", caches ?: @"", NSTemporaryDirectory() ?: @""]) {
         if (!root.length) continue;
-        NSArray *items = [fm contentsOfDirectoryAtPath:root error:nil];
-        for (NSString *item in items) {
-            if ([item hasPrefix:@"theta_save_"] || [item hasPrefix:@"theta-save"] || [item hasPrefix:@"theta_bulk_"] ||
-                [item isEqualToString:@"video.mp4"] || [item isEqualToString:@"audio.m4a"] || [item isEqualToString:@"audio.aac"] ||
-                [item isEqualToString:@"audio_lc.m4a"] || [item isEqualToString:@"output.mp4"] || [item isEqualToString:@"output_h264.mp4"]) {
-                [fm removeItemAtPath:[root stringByAppendingPathComponent:item] error:nil];
+        for (NSString *item in [fm contentsOfDirectoryAtPath:root error:nil]) {
+            if (!ThetaIsTemporaryItemName(item)) continue;
+            NSString *path = [root stringByAppendingPathComponent:item];
+            unsigned long long size = bytes ? ThetaItemSize(fm, path) : 0;
+            if ([fm removeItemAtPath:path error:nil]) {
+                removed++;
+                if (bytes) *bytes += size;
             }
         }
     }
+    return removed;
+}
+
++ (void)cleanupTemporaryMediaFiles {
+    ThetaRemoveTemporaryItems(NULL);
+}
+
++ (void)clearAppCache {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    unsigned long long bytes = 0;
+    NSUInteger removed = 0;
+
+    NSString *caches = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    for (NSString *item in caches.length ? [fm contentsOfDirectoryAtPath:caches error:nil] : @[]) {
+        NSString *path = [caches stringByAppendingPathComponent:item];
+        unsigned long long size = ThetaItemSize(fm, path);
+        if ([fm removeItemAtPath:path error:nil]) {
+            removed++;
+            bytes += size;
+        }
+    }
+    removed += ThetaRemoveTemporaryItems(&bytes);
+
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"Show Banners_Enabled"]) return;
+    NSString *subtitle = @"Cache cleared.";
+    if (removed > 0) {
+        NSString *size = [NSByteCountFormatter stringFromByteCount:(long long)bytes countStyle:NSByteCountFormatterCountStyleFile];
+        subtitle = [NSString stringWithFormat:@"Cleared %lu item%@ (%@)", (unsigned long)removed, removed == 1 ? @"" : @"s", size];
+    }
+    [self showToastWithTitle:@"Cache Cleared" subtitle:subtitle icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
 }
 
 #pragma mark - Download Management
