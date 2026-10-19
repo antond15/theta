@@ -85,10 +85,10 @@ static void *theta_dlopenFFmpegLibrary(NSArray<NSString *> *bases, NSString *lib
     for (NSString *base in bases) {
         NSArray<NSString *> *relative = @[
             /* scripts/isolate-ffmpeg-dylibs.py moves the dylibs here at build time and rewrites
-               their install names to @loader_path/<name>, so they can't collide with the stripped
+               their install names to @loader_path/<name>.dylib, so they can't collide with the stripped
                libavcodec/libavutil Instagram bundles under Frameworks/. Try it first; the framework
                layout stays as a fallback for an ffmpeg install staged before that script existed. */
-            [NSString stringWithFormat:@"dylibs/%@", libName],
+            [NSString stringWithFormat:@"dylibs/%@.dylib", libName],
             [NSString stringWithFormat:@"%@.framework/%@", libName, libName],
             libName,
         ];

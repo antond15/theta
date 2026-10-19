@@ -10,8 +10,10 @@ it Instagram's stripped libavcodec/libavutil instead of ours, and libraries Inst
 doesn't ship (libswresample) can't be found at all — so the dlopen fails and every AV1
 reel falls through to "couldn't convert video".
 
-Fix: move each dylib to `<ffmpeg.framework>/dylibs/<name>` and rewrite its own install
-name plus its sibling dependencies to `@loader_path/<name>`. Those strings are shorter
+Fix: move each dylib to `<ffmpeg.framework>/dylibs/<name>.dylib` and rewrite its own install
+name plus its sibling dependencies to `@loader_path/<name>.dylib`. The `.dylib` extension matters:
+re-signers sign `*.dylib` files and framework bundles, and skip an extensionless Mach-O in a plain
+folder, which iOS then refuses to dlopen. Those strings are shorter
 than the `@rpath/…` ones they replace, so they are patched in place with no load-command
 resizing, and they can never match Instagram's copies in either direction.
 
@@ -19,7 +21,8 @@ Idempotent. Run against a *staged* copy — never against `layout/` in the repo.
 
 Usage: isolate-ffmpeg-dylibs.py <path to ffmpeg.framework>
 
-From Tangerie/theta (github.com/Tangerie/theta, commit 5d0a2ef, authored by Claude), unchanged.
+From Tangerie/theta (github.com/Tangerie/theta, commit 5d0a2ef, authored by Claude); the
+`.dylib` names are this fork's change.
 """
 
 import os
@@ -102,7 +105,7 @@ def rewriter(known):
         name = m.group(1)
         if name.decode() not in known:
             return None
-        return b"@loader_path/" + name
+        return b"@loader_path/" + name + b".dylib"
     return rewrite
 
 
@@ -125,7 +128,8 @@ def main(argv):
         if os.path.isfile(os.path.join(root, entry, name)):
             known.add(name)
     if os.path.isdir(dest):
-        known.update(n for n in os.listdir(dest) if os.path.isfile(os.path.join(dest, n)))
+        known.update(n[: -len(".dylib")] for n in os.listdir(dest)
+                     if n.endswith(".dylib") and os.path.isfile(os.path.join(dest, n)))
     if not known:
         sys.stderr.write("error: no framework binaries found under %s\n" % root)
         return 1
@@ -135,7 +139,7 @@ def main(argv):
     moved, patched, skipped = [], [], []
 
     for name in sorted(known):
-        target = os.path.join(dest, name)
+        target = os.path.join(dest, name + ".dylib")
         source = os.path.join(root, name + ".framework", name)
         if os.path.isfile(source):
             shutil.copy2(source, target)

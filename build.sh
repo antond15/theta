@@ -506,6 +506,12 @@ build_sideload() {
 		# under Frameworks/ — they belong to Instagram.
 		python3 "$SCRIPT_DIR/scripts/isolate-ffmpeg-dylibs.py" "$out_app/ffmpeg.framework" \
 			| sed 's/^/[Build] /'
+		# The vendored dylibs ship unsigned. Ad-hoc sign them so a re-signer that only re-signs
+		# already-signed Mach-Os still picks them up.
+		local ffmpeg_dylib
+		for ffmpeg_dylib in "$out_app/ffmpeg.framework/dylibs/"*.dylib; do
+			strip_entitlements "$ffmpeg_dylib"
+		done
 	fi
 
 	# Housekeeping

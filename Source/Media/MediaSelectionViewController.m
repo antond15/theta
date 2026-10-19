@@ -2339,12 +2339,12 @@ static void * const playerKey = &playerKey;
             __block NSString *frameworkPath;
 
             dispatch_once(&onceToken, ^{
-                /* dylibs/ffmpegkit is where scripts/isolate-ffmpeg-dylibs.py puts it, with its
+                /* dylibs/ffmpegkit.dylib is where scripts/isolate-ffmpeg-dylibs.py puts it, with its
                    @rpath dependencies rewritten to @loader_path so it binds to our libav* and not
                    to the stripped ones Instagram bundles. The other paths are older layouts. */
 #ifndef SIDELOAD
                 NSString *ffmpegRoot = ROOT_PATH_NS(@"/Library/Application Support/ffmpeg.framework");
-                for (NSString *rel in @[@"dylibs/ffmpegkit", @"ffmpegkit.framework/ffmpegkit", @"ffmpegkit"]) {
+                for (NSString *rel in @[@"dylibs/ffmpegkit.dylib", @"ffmpegkit.framework/ffmpegkit", @"ffmpegkit"]) {
                     frameworkPath = [ffmpegRoot stringByAppendingPathComponent:rel];
                     ffmpegkitHandle = dlopen([frameworkPath UTF8String], RTLD_NOW);
                     if (ffmpegkitHandle) break;
@@ -2356,7 +2356,7 @@ static void * const playerKey = &playerKey;
                 for (NSString *dir in @[bundlePath ?: @"", frameworksPath ?: @""]) {
                     if (!dir.length) continue;
                     NSString *root = [dir stringByAppendingPathComponent:@"ffmpeg.framework"];
-                    for (NSString *rel in @[@"dylibs/ffmpegkit", @"ffmpegkit.framework/ffmpegkit", @"ffmpegkit"]) {
+                    for (NSString *rel in @[@"dylibs/ffmpegkit.dylib", @"ffmpegkit.framework/ffmpegkit", @"ffmpegkit"]) {
                         [sideloadPaths addObject:[root stringByAppendingPathComponent:rel]];
                     }
                 }
