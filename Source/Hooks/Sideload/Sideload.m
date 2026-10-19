@@ -50,8 +50,39 @@ static void SideloadEnsureDirectoryPath(id fileManager, NSString *path) {
 	                           path, YES, nil, NULL);
 }
 
+/* Result per group ID, so the write probe runs once per group instead of on every call. */
+static NSMutableDictionary<NSString *, NSURL *> *sResolvedGroupURLs;
+
+static NSURL *SideloadCachedGroupURL(NSString *groupIdentifier) {
+	@synchronized ([NSFileManager class]) {
+		return sResolvedGroupURLs[groupIdentifier];
+	}
+}
+
+static NSURL *SideloadCacheGroupURL(NSString *groupIdentifier, NSURL *url) {
+	if (!groupIdentifier.length || !url) return url;
+	@synchronized ([NSFileManager class]) {
+		if (!sResolvedGroupURLs) sResolvedGroupURLs = [NSMutableDictionary dictionary];
+		sResolvedGroupURLs[groupIdentifier] = url;
+	}
+	return url;
+}
+
+static void SideloadEnsureFakeGroupDirectories(id fileManager, NSURL *fakeURL) {
+	SideloadEnsureDirectoryPath(fileManager, fakeURL.path);
+	SideloadEnsureDirectoryPath(fileManager, [fakeURL URLByAppendingPathComponent:@"Library"].path);
+	SideloadEnsureDirectoryPath(fileManager, [fakeURL URLByAppendingPathComponent:@"Library/Caches"].path);
+}
+
 static NSURL *hook_NSFileManager(id self, SEL _cmd, NSString *groupIdentifier) {
 	@try {
+		NSURL *cached = groupIdentifier.length ? SideloadCachedGroupURL(groupIdentifier) : nil;
+		if (cached) {
+			// Fake containers can be emptied at runtime; re-checking them is a stat, not a write.
+			if (fakeGroupContainerURL && [cached.path hasPrefix:fakeGroupContainerURL.path])
+				SideloadEnsureFakeGroupDirectories(self, cached);
+			return cached;
+		}
 		if (orig_NSFileManager && groupIdentifier.length) {
 			NSURL *realURL = orig_NSFileManager(self, _cmd, groupIdentifier);
 			if (realURL.path.length) {
@@ -59,7 +90,7 @@ static NSURL *hook_NSFileManager(id self, SEL _cmd, NSString *groupIdentifier) {
 				BOOL ok = [@"ok" writeToFile:probe atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 				if (ok) {
 					[[NSFileManager defaultManager] removeItemAtPath:probe error:NULL];
-					return realURL;
+					return SideloadCacheGroupURL(groupIdentifier, realURL);
 				}
 			}
 		}
@@ -72,11 +103,9 @@ static NSURL *hook_NSFileManager(id self, SEL _cmd, NSString *groupIdentifier) {
 			return orig_NSFileManager ? orig_NSFileManager(self, _cmd, groupIdentifier) : nil;
 		}
 
-		SideloadEnsureDirectoryPath(self, fakeURL.path);
-		SideloadEnsureDirectoryPath(self, [fakeURL URLByAppendingPathComponent:@"Library"].path);
-		SideloadEnsureDirectoryPath(self, [fakeURL URLByAppendingPathComponent:@"Library/Caches"].path);
+		SideloadEnsureFakeGroupDirectories(self, fakeURL);
 
-		return fakeURL;
+		return SideloadCacheGroupURL(groupIdentifier, fakeURL);
 	} @catch (NSException *exception) {
 		NSLog(@"Error in NSFileManager hook: %@", exception);
 		return orig_NSFileManager ? orig_NSFileManager(self, _cmd, groupIdentifier) : nil;
