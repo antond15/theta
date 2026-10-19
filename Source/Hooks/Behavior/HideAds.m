@@ -153,63 +153,6 @@ static id hook_hideAds4(id self, SEL _cmd, id arg1) {
     }
 }
 
-static void (*orig_hideSuggestedReels)(id self, SEL _cmd);
-static void hook_hideSuggestedReels(id self, SEL _cmd) {
-    if (!ENABLED(@"Disable Suggested Posts")) {
-        orig_hideSuggestedReels(self, _cmd);
-        return;
-    }
-
-    @try {
-        NSString *accessibilityLabel = [self valueForKey:@"accessibilityLabel"];
-        if ([accessibilityLabel isEqualToString:@"Suggested reels"]) {
-            [self removeFromSuperview];
-            return;
-        }
-    } @catch (NSException *exception) {
-        NSLog(@"Error in hideSuggestedReels hook: %@", exception);
-        orig_hideSuggestedReels(self, _cmd);
-    }
-}
-
-static void (*orig_hideSuggestedReels2)(id self, SEL _cmd);
-static void hook_hideSuggestedReels2(id self, SEL _cmd) {
-    if (!ENABLED(@"Disable Suggested Posts")) {
-        orig_hideSuggestedReels2(self, _cmd);
-        return;
-    }
-
-    @try {
-        NSString *accessibilityLabel = [self valueForKey:@"accessibilityLabel"];
-        if ([accessibilityLabel isEqualToString:@"Suggested reels"]) {
-            [self removeFromSuperview];
-            return;
-        }
-    } @catch (NSException *exception) {
-        NSLog(@"Error in hideSuggestedReels2 hook: %@", exception);
-        orig_hideSuggestedReels2(self, _cmd);
-    }
-}
-
-static void (*orig_hideSuggestedReels3)(id self, SEL _cmd);
-static void hook_hideSuggestedReels3(id self, SEL _cmd) {
-    if (!ENABLED(@"Disable Suggested Posts")) {
-        orig_hideSuggestedReels3(self, _cmd);
-        return;
-    }
-
-    @try {
-        UILabel *label = [self valueForKey:@"_titleLabel"];
-        if ([label.text isEqualToString:@"Suggested Posts"]) {
-            [self removeFromSuperview];
-            return;
-        }
-    } @catch (NSException *exception) {
-        NSLog(@"Error in hideSuggestedReels3 hook: %@", exception);
-        orig_hideSuggestedReels3(self, _cmd);
-    }
-}
-
 static void (*orig_hideAds5)(id self, SEL _cmd, id adItem, NSInteger overlayStyle, BOOL ctaEnabled, id delegate, NSUInteger surfaceType, id analyticsModule, NSUInteger labelAlignment);
 static void hook_hideAds5(id self, SEL _cmd, id adItem, NSInteger overlayStyle, BOOL ctaEnabled, id delegate, NSUInteger surfaceType, id analyticsModule, NSUInteger labelAlignment) {
     if (!ENABLED(@"Disable Ads")) {
@@ -226,10 +169,4 @@ void THRegisterHideAdsCoreHooks(void) {
     NullHookMessageIfPresent(objc_getClass("IGSundialAdsResponseParser"), @selector(parsedObjectFromResponse:), (void *)hook_hideAds4, &orig_hideAds4);
     NullHookMessageIfPresent(objc_getClass("IGFeedItemChain"), @selector(allChainItems), (void *)hook_hideAds3, &orig_hideAds3);
     NullHookMessageIfPresent(objc_getClass("IGDiscoveryGridAdNoCTAOverlayView"), @selector(configureWithAdItem:overlayViewStyle:ctaEnabled:delegate:surfaceType:analyticsModule:labelAlignment:), (void *)hook_hideAds5, &orig_hideAds5);
-}
-
-void THRegisterHideSuggestedReelsHooks(void) {
-    NullHookMessageIfPresent(objc_getClass("IGStoryTrayCollectionViewCell"), @selector(layoutSubviews), (void *)hook_hideSuggestedReels, &orig_hideSuggestedReels);
-    NullHookMessageIfPresent(objc_getClass("IGStoryTraySectionHeaderCell"), @selector(layoutSubviews), (void *)hook_hideSuggestedReels2, &orig_hideSuggestedReels2);
-    NullHookMessageIfPresent(objc_getClass("IGFeedGroupHeaderCell"), @selector(layoutSubviews), (void *)hook_hideSuggestedReels3, &orig_hideSuggestedReels3);
 }

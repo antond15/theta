@@ -46,7 +46,6 @@ static void InitializeHooks(void) {
     THRegisterCreateGroupConfirmationHooks();
     THRegisterHideCreateGroupButtonHooks();
     THRegisterBypassReelPasswordHooks();
-    THRegisterHideSuggestedReelsHooks();
     THRegisterSaveAudioMessageHooks();
     THRegisterUploadAudioMessageHooks();
     THRegisterHideCreateButtonHooks();
