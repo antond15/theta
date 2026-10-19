@@ -153,7 +153,7 @@ static void RunSideloadSetupOnce(void) {
                 NSLog(@"[Theta] Sideload NSFileManager hooks incomplete (orig_container=%p orig_mkdir=%p)",
                       orig_NSFileManager, orig_createDirectoryAtPath);
             } else {
-                NSLog(@"[Theta] Sideload keychain/container hooks installed");
+                THDebugLog(@"[Theta] Sideload keychain/container hooks installed");
             }
 #if THETA_DEBUG
             NSString *root = [NSBundle mainBundle].bundlePath;
@@ -238,7 +238,7 @@ static void ThetaLoad(void) {
     if ([thetaProject hasPrefix:@"theta "]) {
         thetaProject = [thetaProject substringFromIndex:6];
     }
-    NSLog(@"Theta %@ | Instagram %s | Hello!", thetaProject, appVersion.UTF8String);
+    THDebugLog(@"Theta %@ | Instagram %s | Hello!", thetaProject, appVersion.UTF8String);
 
     [ThetaHelper cleanupTemporaryMediaFiles];
 
@@ -252,5 +252,5 @@ static void ThetaLoad(void) {
 
 __attribute__((destructor))
 static void ThetaUnload(void) {
-    NSLog(@"Theta %s | Instagram %s | Goodbye!", THETA_VERSION, appVersion.UTF8String);
+    THDebugLog(@"Theta %s | Instagram %s | Goodbye!", THETA_VERSION, appVersion.UTF8String);
 }

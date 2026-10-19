@@ -1,4 +1,5 @@
 #import "Include/AV1Transcoder.h"
+#import "Include/ThetaDebug.h"
 #import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
 
@@ -97,7 +98,7 @@ static void *theta_dlopenFFmpegLibrary(NSArray<NSString *> *bases, NSString *lib
             if (![fm fileExistsAtPath:full]) continue;
             void *handle = dlopen(full.UTF8String, flags);
             if (handle) {
-                NSLog(@"[Theta] ffmpeg: loaded %@ from %@", libName, full);
+                THDebugLog(@"[Theta] ffmpeg: loaded %@ from %@", libName, full);
                 return handle;
             }
             NSLog(@"[Theta] ffmpeg: dlopen failed for %@: %s", full, dlerror());
@@ -438,7 +439,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
         // Photos app has issues with HEVC when saving via NSData in sandboxed apps
         encoder = p_avcodec_find_encoder_by_name("h264_videotoolbox");
         if (!encoder) {
-            NSLog(@"VideoToolbox encoder not available, falling back to libx264");
+            THDebugLog(@"VideoToolbox encoder not available, falling back to libx264");
             encoder = p_avcodec_find_encoder(AV_CODEC_ID_H264);
         }
     #else
@@ -448,7 +449,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
             encoder = p_avcodec_find_encoder_by_name("hevc_videotoolbox");
             if (encoder) {
             } else {
-                NSLog(@"HEVC VideoToolbox not available, trying software HEVC for HDR");
+                THDebugLog(@"HEVC VideoToolbox not available, trying software HEVC for HDR");
                 encoder = p_avcodec_find_encoder(AV_CODEC_ID_HEVC);
             }
         }

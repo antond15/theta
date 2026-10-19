@@ -1,4 +1,5 @@
 #import "Include/SettingsViewController.h"
+#import "Include/ThetaDebug.h"
 #import "Include/SubMenuViewController.h"
 #import "Include/AudioNotesViewController.h"
 #import "Include/CustomSwitchCell.h"
@@ -1039,7 +1040,7 @@ NSData *compressData(NSData *uncompressedData) {
 
 - (void)importSettings {
     NSString *encryptedString = [[UIPasteboard generalPasteboard] string];
-    NSLog(@"Encrypted string: %@", encryptedString);
+    THDebugLog(@"Encrypted string: %@", encryptedString);
 
     if (!encryptedString || encryptedString.length == 0) {
         [ThetaHelper showToastWithTitle:@"Import Error" subtitle:@"No settings string provided." icon:[ThetaHelper imageFromEmojiString:@"❌" width:200] autoHide:2 openURL:nil];
@@ -1053,7 +1054,7 @@ NSData *compressData(NSData *uncompressedData) {
     }
 
     NSData *decompressedData = [self decompressData:data];
-    NSLog(@"Decompressed data: %@", decompressedData);
+    THDebugLog(@"Decompressed data: %@", decompressedData);
     if (!decompressedData) {
         [ThetaHelper showToastWithTitle:@"Import Error" subtitle:@"Decompression failed." icon:[ThetaHelper imageFromEmojiString:@"❌" width:200] autoHide:2 openURL:nil];
         return;

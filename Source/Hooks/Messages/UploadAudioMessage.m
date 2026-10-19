@@ -247,7 +247,7 @@ static void ThetaDirectSendOnController(id target, NSInteger entryPoint, NSURL *
 			} @catch (__unused id e) {}
 		}
 		NSInteger sendButtonType = 0;
-		NSLog(@"[Theta] Directly invoking upload with selected audio (bypassing mic UI).");
+		THDebugLog(@"[Theta] Directly invoking upload with selected audio (bypassing mic UI).");
 
 		SEL selAIType = ThetaUploadAudioSelAIType();
 		BOOL sent = NO;
@@ -284,7 +284,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 	CGFloat useDuration = gThetaSelectedVideoDuration > 0.0 ? gThetaSelectedVideoDuration : duration;
 	id useWaveform = gThetaComputedWaveform ?: waveform;
 	if (gThetaSelectedVideoURL) {
-		NSLog(@"[Theta] Hook using saved picked video: %@ (%.2fs)", gThetaSelectedVideoURL, gThetaSelectedVideoDuration);
+		THDebugLog(@"[Theta] Hook using saved picked video: %@ (%.2fs)", gThetaSelectedVideoURL, gThetaSelectedVideoDuration);
 	}
 	if (orig_uploadAudioMessage3)
 		orig_uploadAudioMessage3(self, _cmd, viewController, useURL, useWaveform, useDuration, entryPoint, aiVoiceEffectApplied, aiVoiceEffectType, sendButtonTypeTapped);
@@ -312,9 +312,9 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 	self.selectedMediaURL = videoURL;
 
 	if (videoURL) {
-		NSLog(@"[Theta] Selected video. type=%@ url=%@", mediaType, videoURL);
+		THDebugLog(@"[Theta] Selected video. type=%@ url=%@", mediaType, videoURL);
 	} else {
-		NSLog(@"[Theta] Selected non-video media. type=%@", mediaType);
+		THDebugLog(@"[Theta] Selected non-video media. type=%@", mediaType);
 	}
 
 	[picker dismissViewControllerAnimated:YES completion:^{
@@ -325,7 +325,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 
 		// Guard against concurrent exports
 		if (gThetaExportInProgress) {
-			NSLog(@"[Theta] Export already in progress; ignoring new selection");
+			THDebugLog(@"[Theta] Export already in progress; ignoring new selection");
 			return;
 		}
 		gThetaExportInProgress = YES;
@@ -360,7 +360,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 			if (exporter.status == AVAssetExportSessionStatusCompleted) {
 				gThetaSelectedVideoURL = mp4URL;
 				gThetaSelectedVideoDuration = durationSeconds;
-				NSLog(@"[Theta] Exported audio-only MP4 to %@ (%.2fs)", mp4URL, durationSeconds);
+				THDebugLog(@"[Theta] Exported audio-only MP4 to %@ (%.2fs)", mp4URL, durationSeconds);
 				
 				// Build waveform then send directly, bypassing mic UI
 				dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -390,7 +390,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 					if (fallback.status == AVAssetExportSessionStatusCompleted) {
 						gThetaSelectedVideoURL = m4aURL;
 						gThetaSelectedVideoDuration = durationSeconds;
-						NSLog(@"[Theta] Exported audio to M4A %@ (%.2fs)", m4aURL, durationSeconds);
+						THDebugLog(@"[Theta] Exported audio to M4A %@ (%.2fs)", m4aURL, durationSeconds);
 						
 						// Build waveform then send directly, bypassing mic UI
 						dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -431,7 +431,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 	
 	// Guard against concurrent exports
 	if (gThetaExportInProgress) {
-		NSLog(@"[Theta] Export already in progress; ignoring new Files selection");
+		THDebugLog(@"[Theta] Export already in progress; ignoring new Files selection");
 		if (shouldStop) [docURL stopAccessingSecurityScopedResource];
 		return;
 	}
@@ -456,7 +456,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 	void (^finishWithURL)(NSURL *) = ^(NSURL *finalURL) {
 		gThetaSelectedVideoURL = finalURL;
 		gThetaSelectedVideoDuration = durationSeconds;
-		NSLog(@"[Theta] Prepared audio from Files %@ (%.2fs)", finalURL, durationSeconds);
+		THDebugLog(@"[Theta] Prepared audio from Files %@ (%.2fs)", finalURL, durationSeconds);
 		
 		// Build waveform then send directly, bypassing mic UI
 		dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{

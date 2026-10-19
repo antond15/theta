@@ -1,4 +1,5 @@
 #import "Include/ThetaDashManifest.h"
+#import "Include/ThetaDebug.h"
 #import <Photos/Photos.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
@@ -634,13 +635,13 @@ NSString *ThetaPrepareDashAudioForMerge(NSString *audioPath) {
     NSString *transcoded = ThetaTranscodeAudioToM4A(asset, path);
     if (transcoded.length) {
         if (![transcoded isEqualToString:path]) [fm removeItemAtPath:path error:nil];
-        NSLog(@"ThetaPrepareDashAudioForMerge: transcoded DASH audio to AAC");
+        THDebugLog(@"ThetaPrepareDashAudioForMerge: transcoded DASH audio to AAC");
         return transcoded;
     }
 
     AVAssetTrack *track = [[asset tracksWithMediaType:AVMediaTypeAudio] firstObject];
     if (track) {
-        NSLog(@"ThetaPrepareDashAudioForMerge: using original audio (AAC export unavailable)");
+        THDebugLog(@"ThetaPrepareDashAudioForMerge: using original audio (AAC export unavailable)");
         return path;
     }
     NSLog(@"ThetaPrepareDashAudioForMerge: no decodable audio track in %@", path);
@@ -877,7 +878,7 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
 
             NSDictionary *attrs = [fm attributesOfItemAtPath:outputPath error:nil];
             if (writer.status == AVAssetWriterStatusCompleted && attrs.fileSize > 0) {
-                NSLog(@"ThetaReaderWriter: wrote %@ (%llu bytes) pix=%@", outputPath, (unsigned long long)attrs.fileSize, pixelFormat);
+                THDebugLog(@"ThetaReaderWriter: wrote %@ (%llu bytes) pix=%@", outputPath, (unsigned long long)attrs.fileSize, pixelFormat);
                 return YES;
             }
             NSLog(@"ThetaReaderWriter: write failed status=%ld err=%@ pix=%@", (long)writer.status, writer.error, pixelFormat);

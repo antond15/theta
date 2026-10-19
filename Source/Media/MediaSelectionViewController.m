@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import "Include/ThetaDebug.h"
 #import <Photos/Photos.h>
 #import <AssetsLibrary/AssetsLibrary.h>
 #import "Include/MediaSelectionViewController.h"
@@ -784,30 +785,30 @@ static void * const playerKey = &playerKey;
     BOOL isHDVideo = indexPath.item >= self.mediaItems.count;
     NSInteger videoIndex = indexPath.item - self.mediaItems.count;
     
-    NSLog(@"Selection changed - item: %ld, isHDVideo: %@, videoIndex: %ld", (long)indexPath.item, isHDVideo ? @"YES" : @"NO", (long)videoIndex);
+    THDebugLog(@"Selection changed - item: %ld, isHDVideo: %@, videoIndex: %ld", (long)indexPath.item, isHDVideo ? @"YES" : @"NO", (long)videoIndex);
     
     if (isHDVideo) {
         NSNumber *index = @(videoIndex);
         if ([self.selectedVideoIndexes containsObject:index]) {
             [self.selectedVideoIndexes removeObject:index];
-            NSLog(@"Deselected HD video %ld", (long)videoIndex);
+            THDebugLog(@"Deselected HD video %ld", (long)videoIndex);
         } else {
             [self.selectedVideoIndexes addObject:index];
-            NSLog(@"Selected HD video %ld", (long)videoIndex);
+            THDebugLog(@"Selected HD video %ld", (long)videoIndex);
         }
     } else {
         NSNumber *index = @(indexPath.item);
         if ([self.selectedIndexes containsObject:index]) {
             [self.selectedIndexes removeObject:index];
-            NSLog(@"Deselected regular media %ld", (long)indexPath.item);
+            THDebugLog(@"Deselected regular media %ld", (long)indexPath.item);
         } else {
             [self.selectedIndexes addObject:index];
-            NSLog(@"Selected regular media %ld", (long)indexPath.item);
+            THDebugLog(@"Selected regular media %ld", (long)indexPath.item);
         }
     }
     
     NSInteger totalSelected = self.selectedIndexes.count + self.selectedVideoIndexes.count;
-    NSLog(@"Total selected: %ld (regular: %ld, videos: %ld)", (long)totalSelected, (long)self.selectedIndexes.count, (long)self.selectedVideoIndexes.count);
+    THDebugLog(@"Total selected: %ld (regular: %ld, videos: %ld)", (long)totalSelected, (long)self.selectedIndexes.count, (long)self.selectedVideoIndexes.count);
     
     self.downloadButton.enabled = totalSelected > 0;
     [self updateSelectAllButtonTitle];
@@ -2020,7 +2021,7 @@ static void * const playerKey = &playerKey;
 - (void)generateHDVideoThumbnail:(IGVideo *)video forIndex:(NSInteger)index {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
-            NSLog(@"Starting thumbnail generation for HD video %ld", (long)index);
+            THDebugLog(@"Starting thumbnail generation for HD video %ld", (long)index);
             
             // First, create a placeholder immediately
             UIImage *placeholder = [self createVideoPlaceholder];
@@ -2031,14 +2032,14 @@ static void * const playerKey = &playerKey;
                 // Reload the specific cell immediately with placeholder
                 NSIndexPath *indexPath = [NSIndexPath indexPathForItem:index + self.mediaItems.count inSection:0];
                 [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
-                NSLog(@"Created initial placeholder for HD video %ld", (long)index);
+                THDebugLog(@"Created initial placeholder for HD video %ld", (long)index);
             });
             
             // Try to get video info and attempt thumbnail generation
             NSSet *videoURLs = [video allVideoURLs];
             if (videoURLs && videoURLs.count > 0) {
                 NSURL *firstVideoURL = [videoURLs anyObject];
-                NSLog(@"Found video URL for HD video %ld: %@", (long)index, firstVideoURL);
+                THDebugLog(@"Found video URL for HD video %ld: %@", (long)index, firstVideoURL);
                 
                 // Try to download a small portion and generate thumbnail
                 [self attemptThumbnailFromURL:firstVideoURL forIndex:index];
@@ -2121,7 +2122,7 @@ static void * const playerKey = &playerKey;
             return;
         }
         
-        NSLog(@"Downloaded %ld bytes for thumbnail generation %ld", (long)data.length, (long)index);
+        THDebugLog(@"Downloaded %ld bytes for thumbnail generation %ld", (long)data.length, (long)index);
         
         // Check if we got a valid response
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
@@ -2167,7 +2168,7 @@ static void * const playerKey = &playerKey;
                 UIImage *thumbnail = [UIImage imageWithCGImage:cgImage];
                 CGImageRelease(cgImage);
                 
-                NSLog(@"Successfully generated thumbnail for HD video %ld", (long)index);
+                THDebugLog(@"Successfully generated thumbnail for HD video %ld", (long)index);
                 
                 dispatch_async(dispatch_get_main_queue(), ^{
                     NSString *cacheKey = [NSString stringWithFormat:@"hd_video_%ld", (long)index];
@@ -2176,7 +2177,7 @@ static void * const playerKey = &playerKey;
                     // Reload the specific cell with actual thumbnail
                     NSIndexPath *indexPath = [NSIndexPath indexPathForItem:index + self.mediaItems.count inSection:0];
                     [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
-                    NSLog(@"Updated HD video %ld with actual thumbnail", (long)index);
+                    THDebugLog(@"Updated HD video %ld with actual thumbnail", (long)index);
                 });
             } else {
                 NSLog(@"Failed to generate thumbnail for HD video %ld: %@", (long)index, imageError);
@@ -2233,7 +2234,7 @@ static void * const playerKey = &playerKey;
         return;
     }
     
-    NSLog(@"Preloading HD video players for %ld videos", (long)hdVideos.count);
+    THDebugLog(@"Preloading HD video players for %ld videos", (long)hdVideos.count);
     
     dispatch_group_t group = dispatch_group_create();
     NSMutableDictionary *videoPlayers = [[NSMutableDictionary alloc] init];
@@ -2281,7 +2282,7 @@ static void * const playerKey = &playerKey;
             if (player.currentItem.status == AVPlayerItemStatusReadyToPlay) {
                 NSString *key = [NSString stringWithFormat:@"video_player_%ld", (long)i];
                 videoPlayers[key] = player;
-                NSLog(@"Preloaded video player %ld", (long)i);
+                THDebugLog(@"Preloaded video player %ld", (long)i);
             } else {
                 NSLog(@"Failed to preload video player %ld (timeout)", (long)i);
             }
@@ -2300,7 +2301,7 @@ static void * const playerKey = &playerKey;
             [sharedCache setObject:videoPlayers[key] forKey:key];
         }
         
-        NSLog(@"Preloaded %ld HD video players", (long)videoPlayers.count);
+        THDebugLog(@"Preloaded %ld HD video players", (long)videoPlayers.count);
         if (completion) completion();
     });
 }

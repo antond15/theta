@@ -216,7 +216,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                         [progressToast hideAfter:3.0];
                                                                         return;
                                                                     }
-                                                                    NSLog(@"Created AudioNotes directory at: %@", audioNotesDir);
+                                                                    THDebugLog(@"Created AudioNotes directory at: %@", audioNotesDir);
                                                                 }
                                                                 
                                                                 // Create user subfolder if it doesn't exist
@@ -236,7 +236,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                         [progressToast hideAfter:3.0];
                                                                         return;
                                                                     }
-                                                                    NSLog(@"Created user directory at: %@", userFolderPath);
+                                                                    THDebugLog(@"Created user directory at: %@", userFolderPath);
                                                                 }
                                                                 
                                                                 NSString *filePath = [userFolderPath stringByAppendingPathComponent:filename];

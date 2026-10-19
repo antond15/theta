@@ -1,4 +1,5 @@
 #import "Include/SubMenuViewController.h"
+#import "Include/ThetaDebug.h"
 #import "Include/CustomSwitchCell.h"
 #import "Include/CustomToastView.h"
 #import "Include/InstagramHeaders.h"
@@ -55,7 +56,7 @@ static inline BOOL isBiometricOrPasscodeSet() {
 
 - (void)refreshSettingsOnForeground {
     if (!isBiometricOrPasscodeSet() && [[[NSUserDefaults standardUserDefaults] objectForKey:@"Lock Instagram_Enabled"] boolValue]) {
-        NSLog(@"biometrics/passcode not set but Lock Instagram is enabled, disabling it");
+        THDebugLog(@"biometrics/passcode not set but Lock Instagram is enabled, disabling it");
         [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"Lock Instagram_Enabled"];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }

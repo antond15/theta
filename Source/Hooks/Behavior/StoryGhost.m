@@ -647,7 +647,7 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
             [clsNames addObject:cn];
             NSArray *sels = thetaStoryMarkSeenSelectorNamesOn(t);
             if (sels.count)
-                NSLog(@"[Theta] StoryGhost: %@ mark-sels=%@", cn, [sels componentsJoinedByString:@","]);
+                THDebugLog(@"[Theta] StoryGhost: %@ mark-sels=%@", cn, [sels componentsJoinedByString:@","]);
         }
         NSLog(@"[Theta] StoryGhost: no mark-seen IMP targets=%@", [clsNames componentsJoinedByString:@","]);
     }

@@ -122,7 +122,7 @@ static BOOL theta_tryInstallLiquidGlassTabBarCSymbolHooks(void) {
      */
     static dispatch_once_t sideloadOnce;
     dispatch_once(&sideloadOnce, ^{
-        NSLog(@"[Theta] Liquid Glass: skipping C-symbol inline hooks — unsafe in a re-signed app");
+        THDebugLog(@"[Theta] Liquid Glass: skipping C-symbol inline hooks — unsafe in a re-signed app");
     });
     return NO;
 #else

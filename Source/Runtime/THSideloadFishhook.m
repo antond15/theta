@@ -227,7 +227,7 @@ static void install_fishhook_rebindings(void) {
     };
     size_t n = sizeof(rebindings) / sizeof(rebindings[0]);
     if (rebind_symbols(rebindings, n) == 0) {
-        NSLog(@"[Theta] strlen/SecItem* hooks installed (sideload session persist)");
+        THDebugLog(@"[Theta] strlen/SecItem* hooks installed (sideload session persist)");
     }
 #endif
 }

@@ -81,7 +81,7 @@ static id getToastControllerFromPresenter(id presenter) {
         if (!name || !type || type[0] != '@') continue;
         id val = object_getIvar(presenter, iv);
         if (val && [val isKindOfClass:controllerClass]) {
-            NSLog(@"Theta: found controller on presenter via ivar %s", name);
+            THDebugLog(@"Theta: found controller on presenter via ivar %s", name);
             free(ivars);
             return val;
         }
@@ -171,7 +171,7 @@ static id ThetaToastViewModelCreate(NSString *title, NSString * _Nullable subtit
             __unsafe_unretained id result = nil;
             [inv getReturnValue:&result];
             if (result) {
-                NSLog(@"Theta: viewModel from viewModelWithTitle:subtitle:thumbnail:");
+                THDebugLog(@"Theta: viewModel from viewModelWithTitle:subtitle:thumbnail:");
                 return result;
             }
         }
@@ -193,7 +193,7 @@ static id ThetaToastViewModelCreate(NSString *title, NSString * _Nullable subtit
                 __unsafe_unretained id result = nil;
                 [inv getReturnValue:&result];
                 if (result) {
-                    NSLog(@"Theta: viewModel from initWithTitle:subtitle:thumbnail:");
+                    THDebugLog(@"Theta: viewModel from initWithTitle:subtitle:thumbnail:");
                     return result;
                 }
             }
@@ -214,7 +214,7 @@ static id ThetaToastViewModelCreate(NSString *title, NSString * _Nullable subtit
                 __unsafe_unretained id result = nil;
                 [inv getReturnValue:&result];
                 if (result) {
-                    NSLog(@"Theta: viewModel from initWithTitle:subtitle:");
+                    THDebugLog(@"Theta: viewModel from initWithTitle:subtitle:");
                     return result;
                 }
             }
@@ -350,11 +350,11 @@ static id getExistingViewModelFromHierarchy(id controllerOrNil, id presenterOrNi
             }
         }
         if (!viewModel) viewModel = findViewModelInIvars(controllerOrNil, viewModelClass);
-        if (viewModel) NSLog(@"Theta: viewModel from controller");
+        if (viewModel) THDebugLog(@"Theta: viewModel from controller");
     }
     if (!viewModel && presenterOrNil) {
         viewModel = findViewModelInIvars(presenterOrNil, viewModelClass);
-        if (viewModel) NSLog(@"Theta: viewModel from presenter ivar scan");
+        if (viewModel) THDebugLog(@"Theta: viewModel from presenter ivar scan");
     }
     if (!viewModel && viewClass) {
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
@@ -384,7 +384,7 @@ static id getExistingViewModelFromHierarchy(id controllerOrNil, id presenterOrNi
         [viewModel setValue:title forKey:@"title"];
     if (subtitle && [viewModel respondsToSelector:NSSelectorFromString(@"setSubtitle:")])
         [viewModel setValue:subtitle forKey:@"subtitle"];
-    NSLog(@"Theta: using existing viewModel from hierarchy (title/subtitle set via KVC)");
+    THDebugLog(@"Theta: using existing viewModel from hierarchy (title/subtitle set via KVC)");
     return viewModel;
 }
 
@@ -397,8 +397,8 @@ static void presentTextOnlyToast(id presenter, UIViewController *fromVC) {
                                         onlyShowOnSpecifiedViewController:NO];
     if (!context) return;
 
-    void (^presentedHandler)(UIView *) = ^(UIView * _Nullable toastView) { NSLog(@"Theta: toast did appear"); };
-    void (^dismissedHandler)(UIView *) = ^(UIView * _Nullable toastView) { NSLog(@"Theta: toast did dismiss"); };
+    void (^presentedHandler)(UIView *) = ^(UIView * _Nullable toastView) { THDebugLog(@"Theta: toast did appear"); };
+    void (^dismissedHandler)(UIView *) = ^(UIView * _Nullable toastView) { THDebugLog(@"Theta: toast did dismiss"); };
 
     SEL internalSel = NSSelectorFromString(@"_showAlertWithViewModel:presentationContext:isAnimated:animationDuration:presentationPriority:origin:toastType:tapActionBlock:tapToastBlock:presentedHandler:dismissedHandler:");
     if ([presenter respondsToSelector:internalSel]) {

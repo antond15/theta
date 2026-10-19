@@ -96,7 +96,7 @@ static NSArray *theta_sortedObjectsForListAdapter(id selfObj, SEL _cmd, id adapt
     }
 
     if (sortableObjects.count <= 1) {
-        NSLog(@"[SortUserGridPosts] objectsForListAdapter: not enough sortable items; returning original. sample=%@", sampleLog);
+        THDebugLog(@"[SortUserGridPosts] objectsForListAdapter: not enough sortable items; returning original. sample=%@", sampleLog);
         return objects;
     }
 
@@ -119,7 +119,7 @@ static NSArray *theta_sortedObjectsForListAdapter(id selfObj, SEL _cmd, id adapt
         rebuilt[pos] = sortableObjects[k];
     }
 
-    NSLog(@"[SortUserGridPosts] objectsForListAdapter: reordered sortable=%@ (ascending=%@) sample=%@", @(sortableObjects.count), ascending ? @"YES" : @"NO", sampleLog);
+    THDebugLog(@"[SortUserGridPosts] objectsForListAdapter: reordered sortable=%@ (ascending=%@) sample=%@", @(sortableObjects.count), ascending ? @"YES" : @"NO", sampleLog);
     return rebuilt;
 }
 static void (*orig_sortUserPostsGrid)(id self, SEL _cmd);
@@ -151,14 +151,14 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
 
             UIViewController *nearestViewController = [ThetaHelper nearestViewController:(UIView *)strongSelf];
             if (![nearestViewController isKindOfClass:NSClassFromString(@"IGProfileViewController")]) {
-                NSLog(@"[SortUserGridPosts] Not on profile view controller; aborting");
+                THDebugLog(@"[SortUserGridPosts] Not on profile view controller; aborting");
                 return;
             }
-            NSLog(@"[SortUserGridPosts] On IGProfileViewController");
+            THDebugLog(@"[SortUserGridPosts] On IGProfileViewController");
 
             id currentPage = [nearestViewController valueForKey:@"currentPageViewController"];
             if (!currentPage) {
-                NSLog(@"[SortUserGridPosts] currentPageViewController missing; aborting");
+                THDebugLog(@"[SortUserGridPosts] currentPageViewController missing; aborting");
                 return;
             }
 
@@ -167,7 +167,7 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                 currentPageView = [currentPage valueForKey:@"view"];
             }
             if (![currentPageView isKindOfClass:[UIView class]]) {
-                NSLog(@"[SortUserGridPosts] currentPage view not a UIView; aborting");
+                THDebugLog(@"[SortUserGridPosts] currentPage view not a UIView; aborting");
                 return;
             }
 
@@ -179,7 +179,7 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                 }
             }
             if (!collectionView) {
-                NSLog(@"[SortUserGridPosts] IGProfileTabCollectionView not found; aborting");
+                THDebugLog(@"[SortUserGridPosts] IGProfileTabCollectionView not found; aborting");
                 return;
             }
 
@@ -190,10 +190,10 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                 }
             }
             if (cells.count == 0) {
-                NSLog(@"[SortUserGridPosts] No IGMediaThumbnailCell subviews found; aborting");
+                THDebugLog(@"[SortUserGridPosts] No IGMediaThumbnailCell subviews found; aborting");
                 return;
             }
-            NSLog(@"[SortUserGridPosts] Found %lu IGMediaThumbnailCell views", (unsigned long)cells.count);
+            THDebugLog(@"[SortUserGridPosts] Found %lu IGMediaThumbnailCell views", (unsigned long)cells.count);
 
             NSTimeInterval (^timestampForCell)(UIView *) = ^NSTimeInterval(UIView *cell) {
                 id taken = [cell valueForKeyPath:@"delegate.media.takenAtDate"];
@@ -215,13 +215,13 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                 if (t0 > t1) { currentDescending = YES; break; }
             }
             NSString *detected = currentAscending ? @"ascending (oldest->newest)" : (currentDescending ? @"descending (newest->oldest)" : @"unknown/equal");
-            NSLog(@"[SortUserGridPosts] Detected current order: %@", detected);
+            THDebugLog(@"[SortUserGridPosts] Detected current order: %@", detected);
 
             NSNumber *storedAscending = objc_getAssociatedObject(collectionView, &kThetaSortGridAscendingKey);
             BOOL targetAscending;
             if (storedAscending != nil) {
                 targetAscending = !storedAscending.boolValue;
-                NSLog(@"[SortUserGridPosts] Stored order exists (%@); toggling", storedAscending.boolValue ? @"ascending" : @"descending");
+                THDebugLog(@"[SortUserGridPosts] Stored order exists (%@); toggling", storedAscending.boolValue ? @"ascending" : @"descending");
             } else {
                 if (currentAscending) {
                     targetAscending = NO;
@@ -230,43 +230,43 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                 } else {
                     targetAscending = YES;
                 }
-                NSLog(@"[SortUserGridPosts] No stored order; toggling relative to detected current order");
+                THDebugLog(@"[SortUserGridPosts] No stored order; toggling relative to detected current order");
             }
-            NSLog(@"[SortUserGridPosts] Target order: %@", targetAscending ? @"ascending (oldest->newest)" : @"descending (newest->oldest)");
+            THDebugLog(@"[SortUserGridPosts] Target order: %@", targetAscending ? @"ascending (oldest->newest)" : @"descending (newest->oldest)");
 
             @try {
                 UIViewController *topController = nearestViewController;
                 id feedSourcesManager = [topController valueForKey:@"_feedSourcesManager"];
                 if (!feedSourcesManager) {
-                    NSLog(@"[SortUserGridPosts] feedSourcesManager not found; cannot reorder data source");
+                    THDebugLog(@"[SortUserGridPosts] feedSourcesManager not found; cannot reorder data source");
                 } else {
                     NSMutableDictionary *sources = [feedSourcesManager valueForKey:@"_sources"];
                     id source = sources.count > 0 ? [sources allValues][0] : nil;
                     if (!source || ![source isKindOfClass:NSClassFromString(@"IGProfileFeedSource")]) {
-                        NSLog(@"[SortUserGridPosts] IGProfileFeedSource source not found; cannot reorder data source");
+                        THDebugLog(@"[SortUserGridPosts] IGProfileFeedSource source not found; cannot reorder data source");
                     } else {
-                        NSLog(@"[SortUserGridPosts] _gridItems present; skipping direct mutation, using adapter sorting only");
+                        THDebugLog(@"[SortUserGridPosts] _gridItems present; skipping direct mutation, using adapter sorting only");
                         UICollectionView *cv = (UICollectionView *)collectionView;
 
                         id ds = cv.dataSource;
                         id dl = cv.delegate;
-                        NSLog(@"[SortUserGridPosts] cv=%@ ds=%@ dl=%@", NSStringFromClass([cv class]), NSStringFromClass([ds class]), NSStringFromClass([dl class]));
+                        THDebugLog(@"[SortUserGridPosts] cv=%@ ds=%@ dl=%@", NSStringFromClass([cv class]), NSStringFromClass([ds class]), NSStringFromClass([dl class]));
                         NSInteger sectionsBefore = [cv numberOfSections];
-                        NSLog(@"[SortUserGridPosts] Sections before: %ld", (long)sectionsBefore);
+                        THDebugLog(@"[SortUserGridPosts] Sections before: %ld", (long)sectionsBefore);
 
                         [cv reloadData];
                         [cv.collectionViewLayout invalidateLayout];
                         [cv setNeedsLayout];
                         [cv layoutIfNeeded];
-                        NSLog(@"[SortUserGridPosts] Collection view reloaded after data reorder");
+                        THDebugLog(@"[SortUserGridPosts] Collection view reloaded after data reorder");
 
                         NSInteger sectionsAfter = [cv numberOfSections];
-                        NSLog(@"[SortUserGridPosts] Sections after: %ld", (long)sectionsAfter);
+                        THDebugLog(@"[SortUserGridPosts] Sections after: %ld", (long)sectionsAfter);
 
                         if (sectionsAfter > 0) {
                             NSIndexSet *all = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, sectionsAfter)];
                             [cv reloadSections:all];
-                            NSLog(@"[SortUserGridPosts] Called reloadSections on all sections");
+                            THDebugLog(@"[SortUserGridPosts] Called reloadSections on all sections");
                         }
 
                         [cv setNeedsDisplay];
@@ -277,11 +277,11 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                                 SEL selReloadWithCompletion = NSSelectorFromString(@"reloadDataWithCompletion:");
                                 SEL selPerformUpdates = NSSelectorFromString(@"performUpdatesAnimated:completion:");
                                 if ([candidate respondsToSelector:selReloadWithCompletion]) {
-                                    NSLog(@"[SortUserGridPosts] Invoking adapter reloadDataWithCompletion:");
+                                    THDebugLog(@"[SortUserGridPosts] Invoking adapter reloadDataWithCompletion:");
                                     void (*msgSend)(id, SEL, id) = (void (*)(id, SEL, id))objc_msgSend;
                                     msgSend(candidate, selReloadWithCompletion, nil);
                                 } else if ([candidate respondsToSelector:selPerformUpdates]) {
-                                    NSLog(@"[SortUserGridPosts] Invoking adapter performUpdatesAnimated:NO");
+                                    THDebugLog(@"[SortUserGridPosts] Invoking adapter performUpdatesAnimated:NO");
                                     void (*msgSendBoolBlock)(id, SEL, BOOL, id) = (void (*)(id, SEL, BOOL, id))objc_msgSend;
                                     msgSendBoolBlock(candidate, selPerformUpdates, NO, nil);
                                 }
@@ -300,22 +300,22 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                             id dsLocal = cv.dataSource;
                             if (dsLocal && [NSStringFromClass([dsLocal class]) containsString:@"IGListAdapter"]) {
                                 adapter = dsLocal;
-                                NSLog(@"[SortUserGridPosts] Using dataSource as adapter: %@", NSStringFromClass([adapter class]));
+                                THDebugLog(@"[SortUserGridPosts] Using dataSource as adapter: %@", NSStringFromClass([adapter class]));
                             }
                         }
                                 if (adapter) {
-                            NSLog(@"[SortUserGridPosts] Found IGListAdapter-like candidate: %@", NSStringFromClass([adapter class]));
+                            THDebugLog(@"[SortUserGridPosts] Found IGListAdapter-like candidate: %@", NSStringFromClass([adapter class]));
                             id dataSource = nil;
                             @try { dataSource = [adapter valueForKey:@"dataSource"]; } @catch (__unused NSException *e) {}
                             if (dataSource) {
                                 theta_installObjectsHookIfNeeded(dataSource);
                                         objc_setAssociatedObject(adapter, &kThetaSortGridAscendingKey, @(targetAscending), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                                         objc_setAssociatedObject(adapter, &kThetaSortApplyOnceKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                                NSLog(@"[SortUserGridPosts] Installed objectsForListAdapter: hook and set ascending=%@", targetAscending ? @"YES" : @"NO");
+                                THDebugLog(@"[SortUserGridPosts] Installed objectsForListAdapter: hook and set ascending=%@", targetAscending ? @"YES" : @"NO");
                             }
                             tryAdapterReload(adapter);
                         } else {
-                            NSLog(@"[SortUserGridPosts] No IGListAdapter found via KVC; relying on reloadData");
+                            THDebugLog(@"[SortUserGridPosts] No IGListAdapter found via KVC; relying on reloadData");
                         }
 
                         dispatch_async(dispatch_get_main_queue(), ^{
@@ -323,7 +323,7 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                                 [cv.collectionViewLayout invalidateLayout];
                                 [cv setNeedsLayout];
                                 [cv layoutIfNeeded];
-                                NSLog(@"[SortUserGridPosts] Final layout invalidate after data reorder (finished=%@)", finished ? @"YES" : @"NO");
+                                THDebugLog(@"[SortUserGridPosts] Final layout invalidate after data reorder (finished=%@)", finished ? @"YES" : @"NO");
                             }];
                         });
 
@@ -335,7 +335,7 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
                             if (name) [ivarNames addObject:[NSString stringWithUTF8String:name]];
                         }
                         free(ivars);
-                        NSLog(@"[SortUserGridPosts] DataSource ivars: %@", ivarNames);
+                        THDebugLog(@"[SortUserGridPosts] DataSource ivars: %@", ivarNames);
                     }
                 }
             } @catch (NSException *exception) {
@@ -343,7 +343,7 @@ static void hook_sortUserPostsGrid(id self, SEL _cmd) {
             }
 
             objc_setAssociatedObject(collectionView, &kThetaSortGridAscendingKey, @(targetAscending), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            NSLog(@"[SortUserGridPosts] Stored order flag set to %@", targetAscending ? @"ascending" : @"descending");
+            THDebugLog(@"[SortUserGridPosts] Stored order flag set to %@", targetAscending ? @"ascending" : @"descending");
         };
         [(UIView *)self addGestureRecognizer:longPress];
 

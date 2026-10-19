@@ -3,19 +3,19 @@
 
 static void (*orig_deviceLockedStatusLogger)(id self, SEL _cmd, id source, id ndid, id extra);
 static void hook_deviceLockedStatusLogger(id self, SEL _cmd, id source, id ndid, id extra) {
-    NSLog(@"device status logger returning nothing");
+    THDebugLog(@"device status logger returning nothing");
     return;
 }
 
 static void (*orig_forcedLogoutPushHandler)(id self, SEL _cmd, id userID, id token, id authLoginType);
 static void hook_forcedLogoutPushHandler(id self, SEL _cmd, id userID, id token, id authLoginType) {
-    NSLog(@"forced logout push handler returning nothing");
+    THDebugLog(@"forced logout push handler returning nothing");
     return;
 }
 
 static void (*orig_handleForcedLogoutLoginPush)(id self, SEL _cmd, id push, id presentedUserSession, id deviceSession, id appNavigationHandler, id completion);
 static void hook_handleForcedLogoutLoginPush(id self, SEL _cmd, id push, id presentedUserSession, id deviceSession, id appNavigationHandler, id completion) {
-    NSLog(@"handle forced logout login push returning nothing");
+    THDebugLog(@"handle forced logout login push returning nothing");
     if (completion) {
         ((void (^)(void))completion)();
     }

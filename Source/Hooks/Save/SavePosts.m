@@ -747,7 +747,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 } else if (status == PHAuthorizationStatusNotDetermined) {
                     // Request authorization
                     [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus newStatus) {
-                        NSLog(@"Photo library authorization status after request: %ld", (long)newStatus);
+                        THDebugLog(@"Photo library authorization status after request: %ld", (long)newStatus);
                         if (newStatus == PHAuthorizationStatusAuthorized || newStatus == PHAuthorizationStatusLimited) {
                             ThetaPhotoLibraryImportVideoFromURL(outputURL, ^(BOOL success, NSError * _Nullable error) {
                                 if (success) {

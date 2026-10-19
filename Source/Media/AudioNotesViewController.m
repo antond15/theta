@@ -1,4 +1,5 @@
 #import "Include/AudioNotesViewController.h"
+#import "Include/ThetaDebug.h"
 #import "Include/CustomToastView.h"
 #import "Include/InstagramHeaders.h"
 #import "Include/ThetaHelper.h"
@@ -803,7 +804,7 @@
 
 - (void)documentInteractionControllerDidEndPreview:(UIDocumentInteractionController *)controller {
     // Clean up when preview ends
-    NSLog(@"Audio preview ended");
+    THDebugLog(@"Audio preview ended");
 }
 
 #pragma mark - AVAudioPlayerDelegate
