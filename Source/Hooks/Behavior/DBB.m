@@ -63,6 +63,7 @@ void THRegisterDeferredDBBHooks(void) {
     const char *pushHandlerNames[] = {
         "_TtC17IGPushCoordinator25IGForcedLogoutPushHandler",
         "IGForcedLogoutPushHandler",
+        "IGPushCoordinator",
         NULL
     };
     for (int i = 0; pushHandlerNames[i]; i++) {
