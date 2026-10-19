@@ -6,36 +6,18 @@ This is [antond15/theta](https://github.com/antond15/theta), a fork of [objcmsgS
 
 Tested as a **sideload** build against Instagram **451.0.0** on iOS 26.
 
-> **Jailbreak builds were not tested and will not be.** The rootful and rootless targets still exist and the jailbreak code paths are left in place, but nothing in this fork has been checked on a jailbroken device. Known gaps are listed under [Jailbreak caveats](#jailbreak-caveats).
+> **Jailbreak builds were not tested and will not be.** The rootful and rootless targets still exist, but nothing in this fork has been checked on a jailbroken device, and jailbreak support is planned for removal. Known gaps are listed under [Jailbreak caveats](#jailbreak-caveats).
 
-## Changes in this fork
+## What this fork changes
 
-### Instagram 451 fixes
+The full list is in [CHANGES.md](CHANGES.md). In short:
 
-- **Swift class renames.** Hooks look up the Swift mangled class name first and the old ObjC name after, for the classes Instagram 451 moved into Swift modules.
-- **Navigation** (tab order, swipe between tabs, launch tab, hide tabs, Messenger Mode). Tab hooks now also install from the constructor, because Instagram builds the tab bar before Theta's normal hook pass. Hidden tabs are filtered where Instagram builds the tab list, which covers the iOS 26 system tab bar.
-- **Story seen receipts stay local.** The 451 Swift pending-seen store sends `/media/seen/` through a direct (unhookable) `IGAPIRequest` call. Theta now hooks the one ObjC call on that path, `-[IGStorySeenStateUploader networker]`, and returns nil while receipts are blocked.
-- **Seen-request dropping** for stories and Instants moved to `-[IGTigonNetworkLayer startRequest:policy:callbacks:]`, the bottom of Instagram's network-layer chain. A dropped request fails the same way Tigon fails a request it won't start.
-- **Hide Create Button** works on the Swift profile header again. Its `leftButtons` is a Swift array with no getter, so it is read from the ivar directly.
-- **DBB:** the forced-logout push hook also looks on `IGPushCoordinator`, where the method moved.
-- **Liquid Glass**
-  - The toggles no longer force Instagram's "homecoming" experiment, which on 451 replaces the home feed with an All / Friends / Following feed.
-  - "Enable Liquid Glass Buttons" now sets Instagram's stored glass flag through its own `overrideIsEnabled:` / `setIsEnabled:` setters. Instagram reads the flag directly from Swift, so swizzling the getter alone had no visible effect.
-- **Profile pictures:** the save / fullscreen menu opens on a long press of the large avatar in a profile header only. Avatars elsewhere keep their normal behaviour.
-- Removed hooks and fallbacks for classes and selectors that no longer exist in 451 (old reaction, voice-message and cache-update variants, `LSKeychainItemController`, several Liquid Glass experiment switches).
+- **Instagram 451 support:** hooks for classes Instagram moved into Swift, plus working navigation, story seen-receipt blocking, Hide Create Button and Liquid Glass on 451 and iOS 26.
+- **Sideload stability:** no inline code patches that crash a re-signed app, safer reel saving, and an FFmpeg build that can't collide with Instagram's own libraries.
+- **Privacy and data:** diagnostic logging only in debug builds, fewer and more honest network requests, safer link handling, and a Clear App Cache that no longer deletes saved media.
+- **Tooling:** one-time toolchain setup, a pinned Theos, a checksummed Substrate, and `compat.py` for checking hooks against a new Instagram build.
 
-### Sideload fixes
-
-- **Inline-patch crashes.** Theta no longer inline-patches `__TEXT` in sideload builds: the Liquid Glass C-symbol hooks (a launch crash) and the Instants Swift hooks. A patched page no longer matches the app's code signature, and iOS kills the app the first time it runs that code.
-- **Reel saving.** Export sessions are guarded against unsupported file types, downloads use precise timing, and the single-reel path refuses to save a raw DASH segment.
-- **FFmpeg / AV1.** Instagram ships its own stripped `libavcodec` and `libavutil` with the same install names as Theta's FFmpeg. The sideload build therefore moves Theta's libraries to `ffmpeg.framework/dylibs/<name>.dylib`, rewrites their install names to `@loader_path/<name>.dylib` and ad-hoc signs them, so re-signers sign them and they can't bind to Instagram's copies. When a conversion fails, the toast says why.
-
-### Tooling
-
-- `scripts/setup-toolchain.sh` sets up Theos, the patched SDK and the toolchain on a Mac with only the command-line tools.
-- `scripts/compat.py` checks every hook against an unpacked Instagram build (see [Checking a new Instagram version](#checking-a-new-instagram-version)).
-
-### Credits
+## Credits
 
 Ported from other forks, credited by author, repo and commit in the commit messages:
 
@@ -62,7 +44,7 @@ Run once after cloning (safe to re-run):
 ./scripts/setup-toolchain.sh
 ```
 
-It installs `make` and `ldid` with Homebrew, clones Theos into `$THEOS` (default `~/theos`), and unpacks the patched SDK into `$THEOS/sdks`. It also patches two things the SDK and Makefile expect but current macOS no longer provides:
+It installs `make` and `ldid` with Homebrew, clones Theos into `$THEOS` (default `~/theos`) at the commit this fork is tested with, and unpacks the patched SDK into `$THEOS/sdks`. An existing Theos checkout is left alone; the script prints a warning and the checkout command if it is at a different commit. It also patches two things the SDK and Makefile expect but current macOS no longer provides:
 
 - **Toolchain link.** The Makefile uses `$THEOS/toolchain/Xcode14.xctoolchain/usr/bin/`. Xcode 14 does not install on current macOS, so the script links that path to the selected Xcode or command-line tools toolchain. A real Xcode 14 toolchain already there is left alone.
 - **libc++ headers.** The patched 14.5 SDK has no C++ headers, and clang 15 and later fail with `'cmath' file not found` from `simd/math.h`. The script copies libc++ headers into `$THEOS/sdks/iPhoneOS14.5.sdk/usr/include/c++`. Re-unpacking the SDK removes them, so re-run the script after that.
@@ -71,7 +53,7 @@ If you put Theos somewhere other than `~/theos`, export `THEOS` in your shell pr
 
 ## Build
 
-Prefer `./build.sh` from the repo root. Do not set `SIDELOAD` and `ROOTLESS` at the same time.
+Use `./build.sh` from the repo root. Sideload is the tested target.
 
 ```sh
 ./build.sh              # rootful .deb → packages/
@@ -80,17 +62,18 @@ Prefer `./build.sh` from the repo root. Do not set `SIDELOAD` and `ROOTLESS` at 
 ./build.sh sideload debug   # same, with diagnostic logging compiled in
 ```
 
-Diagnostic logging (hook-install misses, keychain and notification-extension traces, `THDebugLog`) only exists in `debug` builds (`THETA_DEBUG=1`). Normal builds contain none of it.
+Diagnostic logging (hook-install misses, keychain and notification-extension traces, `THDebugLog`) only exists in `debug` builds. Normal builds contain none of it. `debug` also works after `rootful` and `rootless`.
 
-Equivalent Make invocations (use GNU make; `THEOS` must be exported):
+Equivalent Make invocations (use GNU make; `THEOS` must be exported). These only compile and package; the IPA injection is done by `build.sh`. Do not set `SIDELOAD` and `ROOTLESS` at the same time.
 
 ```sh
 gmake package
 gmake package ROOTLESS=1
 gmake package SIDELOAD=1
+gmake package SIDELOAD=1 THETA_DEBUG=1
 ```
 
-FFmpeg headers and frameworks live at `layout/Library/Application Support/ffmpeg.framework`. Sideload builds copy that framework into the app when it is present, then run `scripts/isolate-ffmpeg-dylibs.py` and ad-hoc sign the result (see [Sideload fixes](#sideload-fixes)). Reel save still works without FFmpeg via a native AVFoundation fallback, but AV1 reels need FFmpeg.
+FFmpeg headers and frameworks live at `layout/Library/Application Support/ffmpeg.framework`. Sideload builds copy that framework into the app when it is present, then run `scripts/isolate-ffmpeg-dylibs.py` and ad-hoc sign the result (see [Sideload fixes](CHANGES.md#sideload-fixes)). Reel save still works without FFmpeg via a native AVFoundation fallback, but AV1 reels need FFmpeg.
 
 ## Install
 
@@ -134,7 +117,7 @@ If Theos device install is already configured (`THEOS_DEVICE_IP`), `make install
    - **Sideloadly / AltStore / SideStore** — open `output/Instagram_patched.ipa` and let the tool re-sign it with your Apple ID.
    - **TrollStore** — install the IPA on-device.
 
-4. Open Instagram. Theta settings use the same gear / home-tab long-press as jailbreak.
+4. Open Instagram, then open Theta from the settings gear on the home feed or by long-pressing the home tab.
 
 The bundled Substrate is `third_party/CydiaSubstrate.framework`, the binary from Saurik's `mobilesubstrate_0.9.6301` package. `build.sh` checks its SHA-256 before staging it. To use a different build, set `SUBSTRATE_FRAMEWORK_PATH` to a `CydiaSubstrate.framework` directory; that copy is not verified.
 
@@ -176,7 +159,8 @@ Source/
   UI/               Settings, toasts, helpers, lock screen
   Media/            Download UI, AV1 transcoder, DASH
   ProfileAnalyzer/  Follower analytics
-Include/            Public headers
+Include/            Public headers (ThetaDebug.h: THDebugLog, debug builds only)
+third_party/        CydiaSubstrate.framework bundled into sideload builds (checksummed by build.sh)
 scripts/assemble.py Builds TweakCOMPILE.xm (single TU for static hooks)
 scripts/compat.py   Checks Theta's hooks against an Instagram build
 scripts/objcdump.py Mach-O / ObjC metadata parser used by compat.py
