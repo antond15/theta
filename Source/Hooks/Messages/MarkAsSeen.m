@@ -1205,24 +1205,6 @@ static void hook_seenOnSend2(id self, SEL _cmd) {
 	}
 }
 
-static void (*orig_messageReactionSelection)(id self, SEL _cmd, id arg1, id arg2, BOOL arg3, BOOL arg4, NSInteger arg5);
-static void hook_messageReactionSelection(id self, SEL _cmd, id arg1, id arg2, BOOL arg3, BOOL arg4, NSInteger arg5) {
-    orig_messageReactionSelection(self, _cmd, arg1, arg2, arg3, arg4, arg5);
-
-    @try {
-        if (!ENABLED(@"Seen On React")) return;
-        id threadViewController = [[self valueForKey:@"delegate"] valueForKey:@"delegate"];
-        if (!threadViewController) threadViewController = theta_threadVCFromWindow();
-        if (!threadViewController) return;
-        if (!theta_hasUnreadFromRecipient(threadViewController)) return;
-        id listViewController = [self valueForKey:@"delegate"];
-        theta_performMarkLastMessageAsSeen(threadViewController, listViewController);
-        theta_showMarkedAsSeenToastDeferred();
-    } @catch (NSException *exception) {
-        NSLog(@"Error: %@", exception);
-    }
-}
-
 static void (*orig_messageReactionSelection2)(id self, SEL _cmd, id arg1, id arg2, BOOL arg3);
 static void hook_messageReactionSelection2(id self, SEL _cmd, id arg1, id arg2, BOOL arg3) {
 	orig_messageReactionSelection2(self, _cmd, arg1, arg2, arg3);
@@ -1413,7 +1395,6 @@ void THRegisterMarkAsSeenThreadAndReactionHooks(void) {
 
 	Class reaction = s_reactionControllerClass();
 	NullHookMessageIfPresent(reaction, @selector(messageReactionSelectionViewController:didToggleEmoji:isSelected:isSuperReact:actionSource:bottomSheetSessionId:), (void *)hook_messageReactionSelection5, &orig_messageReactionSelection5);
-	NullHookMessageIfPresent(reaction, @selector(messageReactionSelectionViewController:didToggleEmoji:isSelected:isSuperReact:actionSource:), (void *)hook_messageReactionSelection, &orig_messageReactionSelection);
 	NullHookMessageIfPresent(reaction, @selector(performDoubleTapActionForCell:withViewModel:animated:), (void *)hook_messageReactionSelection2, &orig_messageReactionSelection2);
 	NullHookMessageIfPresent(objc_getClass("IGDirectMessageSectionComponents"), @selector(performDoubleTapActionForCell:withViewModel:), (void *)hook_doubleTapTwoArg, &orig_doubleTapTwoArg);
 }
