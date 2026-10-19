@@ -14,7 +14,7 @@ static inline BOOL theta_liquidGlassSurfacesWanted(void) {
     return theta_osSupportsLiquidGlass() && ENABLED(@"Enable Liquid Glass Surfaces");
 }
 
-/** Homecoming experiment bypass: either LG toggle. */
+/** Liquid Glass local experiments: either LG toggle. */
 static inline BOOL theta_liquidGlassFloatingBarWanted(void) {
     return theta_osSupportsLiquidGlass() &&
         (ENABLED(@"Enable Liquid Glass Surfaces") || ENABLED(@"Enable Liquid Glass Buttons"));
@@ -189,7 +189,8 @@ static BOOL theta_tryInstallLiquidGlassTabBarCSymbolHooks(void) {
 #endif
 }
 
-// ── Floating glass tab bar: homecoming experiment gate bypass ─────────────────
+// ── Liquid Glass local experiments ────────────────────────────────────────────
+// Homecoming is not forced: on 451 it swaps the home feed for the All/Friends/Following feed.
 
 // Read the experiment name stored in the _experimentName / _experimentGroupName ivar.
 static NSString *theta_expName(id obj) {
@@ -206,11 +207,10 @@ static NSString *theta_expName(id obj) {
     return nil;
 }
 
-static inline BOOL theta_isHomecomingExp(NSString *name) {
+static inline BOOL theta_isGlassExp(NSString *name) {
     if (![name isKindOfClass:[NSString class]] || !name.length) return NO;
     NSString *lower = name.lowercaseString;
-    return [lower containsString:@"homecoming"] ||
-           [lower containsString:@"lucent"] ||
+    return [lower containsString:@"lucent"] ||
            [lower containsString:@"floating_tab"] ||
            [lower containsString:@"floating_tab_bar"] ||
            [lower containsString:@"floatingtab"] ||
@@ -223,72 +223,22 @@ static inline BOOL theta_isHomecomingExp(NSString *name) {
 
 static id (*orig_meta_groupName)(id, SEL) = NULL;
 static id hook_meta_groupName(id self, SEL _cmd) {
-    if (theta_liquidGlassFloatingBarWanted() && theta_isHomecomingExp(theta_expName(self)))
+    if (theta_liquidGlassFloatingBarWanted() && theta_isGlassExp(theta_expName(self)))
         return @"test";
     return orig_meta_groupName ? orig_meta_groupName(self, _cmd) : nil;
 }
 
 static id (*orig_meta_peekGroupName)(id, SEL) = NULL;
 static id hook_meta_peekGroupName(id self, SEL _cmd) {
-    if (theta_liquidGlassFloatingBarWanted() && theta_isHomecomingExp(theta_expName(self)))
+    if (theta_liquidGlassFloatingBarWanted() && theta_isGlassExp(theta_expName(self)))
         return @"test";
     return orig_meta_peekGroupName ? orig_meta_peekGroupName(self, _cmd) : nil;
-}
-
-static Class theta_resolveIGNavConfigurationClass(void) {
-    static Class cached = Nil;
-    if (cached) return cached;
-
-    NSArray *mangledAttempts = @[
-        @"IGNavConfiguration",
-        @"_TtC18IGNavConfiguration18IGNavConfiguration",
-        @"_TtC19IGNavConfiguration19IGNavConfiguration",
-        @"_TtC20IGNavConfiguration20IGNavConfiguration",
-        @"_TtC17IGNavConfiguration17IGNavConfiguration",
-        @"_TtC21IGNavConfiguration21IGNavConfiguration",
-        @"_TtC16IGNavConfiguration16IGNavConfiguration",
-    ];
-    SEL isHC = NSSelectorFromString(@"isHomecomingEnabled");
-    for (NSString *n in mangledAttempts) {
-        Class c = NSClassFromString(n);
-        if (c && class_getInstanceMethod(c, isHC)) {
-            cached = c;
-            return cached;
-        }
-    }
-    return Nil;
-}
-
-// IGNavConfiguration (Swift)  -isHomecomingEnabled
-static BOOL (*orig_navCfg_isHomecoming)(id, SEL) = NULL;
-static BOOL hook_navCfg_isHomecoming(id self, SEL _cmd) {
-    if (theta_liquidGlassFloatingBarWanted()) return YES;
-    return orig_navCfg_isHomecoming ? orig_navCfg_isHomecoming(self, _cmd) : NO;
-}
-
-// ── Homecoming UI hooks (installed from THRegisterLiquidGlassHooks) ───────────
-
-// IGTabBarViewControllerManager  -_isHomecomingEnabled
-static BOOL (*orig_tbvcm_isHomecoming)(id, SEL) = NULL;
-static BOOL hook_tbvcm_isHomecoming(id self, SEL _cmd) {
-    if (theta_liquidGlassFloatingBarWanted()) return YES;
-    return orig_tbvcm_isHomecoming ? orig_tbvcm_isHomecoming(self, _cmd) : NO;
-}
-
-// IGMainAppSurfaceIntent  +resolvedHomeAppSurfaceIntentWithIsHomecomingEnabled:
-static id (*orig_surfaceIntent_resolved)(id, SEL, BOOL) = NULL;
-static id hook_surfaceIntent_resolved(id self, SEL _cmd, BOOL enabled) {
-    if (theta_liquidGlassFloatingBarWanted()) enabled = YES;
-    return orig_surfaceIntent_resolved ? orig_surfaceIntent_resolved(self, _cmd, enabled) : nil;
 }
 
 // Install FBShared-framework experiment hooks once each; retry after framework load.
 static void theta_tryInstallLiquidGlassExperimentHooksOnce(void) {
     static BOOL metaGroupDone = NO;
     static BOOL metaPeekDone = NO;
-    static BOOL navDone = NO;
-
-    SEL isHC = NSSelectorFromString(@"isHomecomingEnabled");
 
     Class metaCls = NSClassFromString(@"MetaLocalExperiment");
     if (metaCls) {
@@ -301,14 +251,6 @@ static void theta_tryInstallLiquidGlassExperimentHooksOnce(void) {
         if (!metaPeekDone && (class_getInstanceMethod(metaCls, peek) || class_getClassMethod(metaCls, peek))) {
             NullHookMessageIfPresent(metaCls, peek, (void *)hook_meta_peekGroupName, &orig_meta_peekGroupName);
             metaPeekDone = YES;
-        }
-    }
-
-    if (!navDone) {
-        Class navCfg = theta_resolveIGNavConfigurationClass();
-        if (navCfg && class_getInstanceMethod(navCfg, isHC)) {
-            NullHookMessageIfPresent(navCfg, isHC, (void *)hook_navCfg_isHomecoming, &orig_navCfg_isHomecoming);
-            navDone = YES;
         }
     }
 }
@@ -339,7 +281,7 @@ void THRegisterLiquidGlassTabBarEarlyHooks(void) {
                        dispatch_get_main_queue(), ^{
             theta_tryInstallLiquidGlassTabBarCSymbolHooks();
             theta_tryInstallLiquidGlassExperimentHooksOnce();
-        });
+            });
     });
 }
 
@@ -374,18 +316,4 @@ void THRegisterLiquidGlassHooks(void) {
     }
 
     theta_tryInstallLiquidGlassExperimentHooksOnce();
-
-    // Floating glass tab bar: homecoming UI enablement
-    // These classes are loaded post-auth so we hook them here.
-    Class tbvcm = NSClassFromString(@"IGTabBarViewControllerManager");
-    NullHookMessageIfPresent(tbvcm,
-        NSSelectorFromString(@"_isHomecomingEnabled"),
-        (void *)hook_tbvcm_isHomecoming, &orig_tbvcm_isHomecoming);
-
-    // Class method — hook via metaclass so class_replaceMethod targets the right dispatch table
-    Class surfaceIntentMeta = object_getClass(NSClassFromString(@"IGMainAppSurfaceIntent"));
-    NullHookMessageIfPresent(surfaceIntentMeta,
-        NSSelectorFromString(@"resolvedHomeAppSurfaceIntentWithIsHomecomingEnabled:"),
-        (void *)hook_surfaceIntent_resolved, &orig_surfaceIntent_resolved);
-
 }
