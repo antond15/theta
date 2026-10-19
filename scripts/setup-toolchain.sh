@@ -10,7 +10,6 @@
 #   3. unpack the patched iPhoneOS 14.5 SDK into $THEOS/sdks
 #   4. point $THEOS/toolchain/Xcode14.xctoolchain at the local Xcode / CLT toolchain
 #   5. graft libc++ headers into the 14.5 SDK (modern clang needs <cmath>)
-#   6. make sure $THEOS/vendor/lib has CydiaSubstrate.framework (sideload link step)
 # Safe to re-run; each step skips itself when already done.
 set -euo pipefail
 
@@ -105,16 +104,6 @@ else
 		fi
 	done
 	[[ "$grafted" -eq 1 ]] || die "could not find libc++ headers to graft into $SDK_DIR"
-fi
-
-# 6. CydiaSubstrate for the link step (-F$THEOS/vendor/lib -weak_framework CydiaSubstrate)
-if [[ -d "$THEOS/vendor/lib/CydiaSubstrate.framework/Headers" ]]; then
-	log "Theos vendors CydiaSubstrate.framework"
-else
-	log "Copying third_party/CydiaSubstrate.framework into $THEOS/vendor/lib"
-	mkdir -p "$THEOS/vendor/lib"
-	rm -rf "$THEOS/vendor/lib/CydiaSubstrate.framework"
-	cp -R "$REPO_DIR/third_party/CydiaSubstrate.framework" "$THEOS/vendor/lib/"
 fi
 
 log "Done. Toolchain: $("$TOOLCHAIN_LINK/usr/bin/clang" --version | head -1)"

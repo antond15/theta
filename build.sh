@@ -193,15 +193,6 @@ inject_theta_nse() {
 
 		mkdir -p "$appex/Frameworks"
 		stage_theta_nse_framework "$nse_src" "$appex/Frameworks/ThetaNSE.framework" "$fw_id"
-		if [[ -d "$app_dir/CydiaSubstrate.framework" ]]; then
-			rm -rf "$appex/Frameworks/CydiaSubstrate.framework"
-			rsync -a "$app_dir/CydiaSubstrate.framework/" "$appex/Frameworks/CydiaSubstrate.framework/"
-			if [[ -f "$appex/Frameworks/CydiaSubstrate.framework/CydiaSubstrate" ]]; then
-				install_name_tool -id "@rpath/CydiaSubstrate.framework/CydiaSubstrate" \
-					"$appex/Frameworks/CydiaSubstrate.framework/CydiaSubstrate" 2>/dev/null || true
-				strip_entitlements "$appex/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"
-			fi
-		fi
 
 		local old
 		for old in \
@@ -286,48 +277,6 @@ ensure_insert_dylib() {
 		echo "[Build] Compiling insert_dylib..."
 		cc -O2 -o "$bin" "$src"
 	fi
-}
-
-# SHA-256 of third_party/CydiaSubstrate.framework/CydiaSubstrate: identical to the binary in Saurik's
-# mobilesubstrate_0.9.6301_iphoneos-arm.deb (checked 2026-10-19).
-SUBSTRATE_SHA256="1778e37c08925eca6145e0be052a951fcb2c61b13ae859f74353b4b8a6c53faa"
-
-stage_substrate_framework() {
-	# Copies CydiaSubstrate.framework into $1 (Instagram.app root)
-	local app_dir="$1"
-	local dest="$app_dir/CydiaSubstrate.framework"
-	local src="$SCRIPT_DIR/third_party/CydiaSubstrate.framework"
-	local sum
-
-	if [[ -n "${SUBSTRATE_FRAMEWORK_PATH:-}" ]]; then
-		src="$SUBSTRATE_FRAMEWORK_PATH"
-	fi
-	if [[ ! -f "$src/CydiaSubstrate" ]]; then
-		echo "[Build] ERROR: no CydiaSubstrate binary in $src"
-		exit 1
-	fi
-	sum="$(shasum -a 256 "$src/CydiaSubstrate" | awk '{print $1}')"
-	if [[ -n "${SUBSTRATE_FRAMEWORK_PATH:-}" ]]; then
-		echo "[Build] Using SUBSTRATE_FRAMEWORK_PATH (unverified, sha256 $sum)"
-	elif [[ "$sum" != "$SUBSTRATE_SHA256" ]]; then
-		echo "[Build] ERROR: third_party/CydiaSubstrate.framework/CydiaSubstrate checksum mismatch"
-		echo "[Build]   expected $SUBSTRATE_SHA256"
-		echo "[Build]   got      $sum"
-		exit 1
-	fi
-
-	rm -rf "$dest"
-	mkdir -p "$dest"
-	rsync -a "$src/" "$dest/"
-	install_name_tool -id "@executable_path/CydiaSubstrate.framework/CydiaSubstrate" "$dest/CydiaSubstrate" 2>/dev/null || true
-	# Also stage under Frameworks/ so the NSE can dlopen via its existing rpath.
-	mkdir -p "$app_dir/Frameworks"
-	rm -rf "$app_dir/Frameworks/CydiaSubstrate.framework"
-	rsync -a "$dest/" "$app_dir/Frameworks/CydiaSubstrate.framework/"
-	install_name_tool -id "@rpath/CydiaSubstrate.framework/CydiaSubstrate" \
-		"$app_dir/Frameworks/CydiaSubstrate.framework/CydiaSubstrate" 2>/dev/null || true
-	strip_entitlements "$dest/CydiaSubstrate"
-	echo "[Build] Staged CydiaSubstrate.framework → $dest"
 }
 
 resolve_app_binary() {
@@ -435,13 +384,7 @@ build_sideload() {
 
 	echo "[Build] Installing Theta.dylib into app root..."
 	install_and_verify_dylib "$dylib_src" "$out_app/Theta.dylib" \
-		"@executable_path/Theta.dylib" \
-		"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate" \
-		"@executable_path/CydiaSubstrate.framework/CydiaSubstrate" \
-		"@rpath/CydiaSubstrate.framework/CydiaSubstrate" \
-		"@executable_path/CydiaSubstrate.framework/CydiaSubstrate"
-
-	stage_substrate_framework "$out_app"
+		"@executable_path/Theta.dylib"
 
 	inject_theta_nse "$out_app" "$nse_src"
 

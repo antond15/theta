@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Optional merge onto Instagram.app and InstagramNotificationExtension.appex EXECUTABLES only.
-  Do not apply to ThetaNSE.framework, CydiaSubstrate, or any other dylib.
+  Do not apply to ThetaNSE.framework or any other dylib.
   AMFI rejects libraries that carry entitlements ("has entitlements but is not a main binary").
 
   Replace TEAMID with the signing Team ID. Official Instagram uses TEAMID.platformFamily

@@ -2,7 +2,7 @@
  * Tiny sideload helper loaded into InstagramNotificationExtension.
  * Full Theta.dylib is too large for the NSE jetsam cap and fishhook cannot
  * patch LC_DYLD_CHAINED_FIXUPS, so this dylib only:
- *   - MSHookFunction SecItem* (remap Meta keychain groups onto the host app's)
+ *   - Rebind SecItem* (remap Meta keychain groups onto the host app's)
  *   - Swizzle FB/UIC keychain accessGroup + app-group containerURL
  */
 
@@ -511,7 +511,7 @@ static int ThetaNSERebindImage(const struct mach_header *mh, intptr_t slide, con
 
 static BOOL ThetaNSEShouldRebindImage(const char *name) {
     if (!name) return YES;
-    if (strstr(name, "ThetaNSE") || strstr(name, "CydiaSubstrate")) return NO;
+    if (strstr(name, "ThetaNSE")) return NO;
     if (strstr(name, "/usr/lib/") || strstr(name, "/System/")) return NO;
     if (strstr(name, "Security.framework")) return NO;
     return YES;

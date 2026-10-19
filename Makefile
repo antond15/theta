@@ -28,9 +28,6 @@ Theta_FRAMEWORKS = UIKit Foundation CoreGraphics Photos CoreServices SystemConfi
 Theta_LDFLAGS = -lsqlite3
 Theta_PRIVATE_FRAMEWORKS = Preferences
 
-Theta_CFLAGS += -I$(THEOS)/vendor/lib/CydiaSubstrate.framework/Headers
-Theta_LDFLAGS += -F$(THEOS)/vendor/lib -weak_framework CydiaSubstrate
-
 Theta_CFLAGS += -fobjc-arc \
 	-Wno-unused-variable -Wno-unused-value -Wno-deprecated-declarations \
 	-Wno-nullability-completeness -Wno-unused-function -Wno-incompatible-pointer-types \
