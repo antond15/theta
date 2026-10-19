@@ -10,20 +10,31 @@ static NSSet *THTrackingParamSet(void) {
         s = [NSSet setWithArray:@[
             @"utm_source", @"utm_medium", @"utm_campaign", @"utm_content",
             @"utm_term", @"utm_id", @"fbclid", @"igshid", @"igsh",
-            @"ig_rid", @"campaign_id", @"ad_id", @"aem"
+            @"ig_rid", @"campaign_id", @"ad_id", @"aem",
+            @"gclid", @"ttclid", @"mc_eid"
         ]];
     });
     return s;
 }
 
-// Unwrap l.instagram.com redirects and strip tracking params
+// Meta link-shim hosts that wrap the real target in ?u=
+static BOOL THIsLinkShimHost(NSString *host) {
+    static NSSet *hosts;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        hosts = [NSSet setWithArray:@[@"l.instagram.com", @"lm.instagram.com", @"l.facebook.com"]];
+    });
+    return host && [hosts containsObject:host.lowercaseString];
+}
+
+// Unwrap link-shim redirects and strip tracking params
 static NSURL *THCleanBrowserURL(NSURL *url) {
     if (!url) return url;
 
     NSString *urlStr = url.absoluteString;
 
     // Unwrap l.instagram.com/?u=ENCODED_URL redirect
-    if ([url.host isEqualToString:@"l.instagram.com"]) {
+    if (THIsLinkShimHost(url.host)) {
         NSURLComponents *comps = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
         for (NSURLQueryItem *q in comps.queryItems) {
             // queryItems values are already percent-decoded.
