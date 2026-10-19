@@ -54,7 +54,8 @@ def main() -> None:
         lines.append("\n")
 
     append_hook(PRIORITY)
-    for dirpath, _, filenames in os.walk(HOOKS):
+    for dirpath, dirnames, filenames in os.walk(HOOKS):
+        dirnames.sort()  # deterministic order on every filesystem
         for name in sorted(filenames):
             if name.endswith(".m"):
                 append_hook(Path(dirpath) / name)
