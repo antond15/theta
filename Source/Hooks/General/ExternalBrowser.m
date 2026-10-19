@@ -26,9 +26,9 @@ static NSURL *THCleanBrowserURL(NSURL *url) {
     if ([url.host isEqualToString:@"l.instagram.com"]) {
         NSURLComponents *comps = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
         for (NSURLQueryItem *q in comps.queryItems) {
+            // queryItems values are already percent-decoded.
             if ([q.name isEqualToString:@"u"] && q.value.length) {
-                NSString *decoded = [q.value stringByRemovingPercentEncoding];
-                if (decoded) urlStr = decoded;
+                urlStr = q.value;
                 break;
             }
         }
@@ -53,6 +53,11 @@ static NSURL *THCleanBrowserURL(NSURL *url) {
     return result ?: url;
 }
 
+static BOOL THIsWebURL(NSURL *url) {
+    NSString *scheme = url.scheme.lowercaseString;
+    return [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"];
+}
+
 static void (*orig_viewWillAppear_Browser)(id self, SEL _cmd, BOOL animated);
 static void hook_viewWillAppear_Browser(id self, SEL _cmd, BOOL animated) {
     @try {
@@ -61,17 +66,20 @@ static void hook_viewWillAppear_Browser(id self, SEL _cmd, BOOL animated) {
         NSURLRequest *req = urlIvar ? object_getIvar(session, urlIvar) : nil;
         NSURL *url = req.URL;
 
+        // Only web links leave the app; anything else stays with Instagram's own handling.
         if (url && ENABLED(@"Open Links in External Browser")) {
             NSURL *cleaned = THCleanBrowserURL(url);
-            [[UIApplication sharedApplication] openURL:cleaned options:@{} completionHandler:nil];
-            [(UIViewController *)self dismissViewControllerAnimated:NO completion:nil];
-            return;
+            if (THIsWebURL(cleaned)) {
+                [[UIApplication sharedApplication] openURL:cleaned options:@{} completionHandler:nil];
+                [(UIViewController *)self dismissViewControllerAnimated:NO completion:nil];
+                return;
+            }
         }
 
         // Strip tracking params in the in-app browser too
         if (url && ENABLED(@"Strip Tracking from Links") && urlIvar) {
             NSURL *cleaned = THCleanBrowserURL(url);
-            if (![cleaned isEqual:url]) {
+            if (THIsWebURL(cleaned) && ![cleaned isEqual:url]) {
                 NSURLRequest *cleanReq = [NSURLRequest requestWithURL:cleaned];
                 object_setIvar(session, urlIvar, cleanReq);
             }
