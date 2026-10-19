@@ -9,24 +9,7 @@ static NSInteger currentAuthAttempts = 0;
 static NSTimer *authTimeoutTimer = nil;
 
 static void closeApp(void) {
-	// Enhanced app termination with multiple fallback methods
-	@try {
-		// Method 1: Standard exit
-		exit(0);
-	} @catch (NSException *exception) {
-		@try {
-			// Method 2: Force quit
-			[[UIApplication sharedApplication] performSelector:@selector(terminateWithSuccess)];
-		} @catch (NSException *exception) {
-			@try {
-				// Method 3: Kill process
-				kill(getpid(), SIGKILL);
-			} @catch (NSException *exception) {
-				// Method 4: Abort
-				abort();
-			}
-		}
-	}
+	exit(0);
 }
 
 static void closeAppWithAnimation(void) {
