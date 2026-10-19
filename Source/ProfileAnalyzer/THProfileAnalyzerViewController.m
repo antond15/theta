@@ -1168,6 +1168,23 @@ static BOOL _userPKInArray(NSString *pk, NSArray<THProfileAnalyzerUser *> *arr) 
 @interface THProfileAnalyzerNetworkDelegate : NSObject <THProfileAnalyzerAPIClientNetworkDelegate>
 @end
 
+/* Instagram's own API user agent (IGUserAgent in FBSharedFramework), so the fallback request matches the running app. */
+static NSString * _Nullable THProfileAnalyzerInstagramUserAgent(void) {
+    Class cls = NSClassFromString(@"_TtC11IGUserAgent11IGUserAgent");
+    if (!cls) return nil;
+    id ua = nil;
+    @try {
+        if ([cls respondsToSelector:@selector(shared)]) {
+            id shared = [cls performSelector:@selector(shared)];
+            if ([shared respondsToSelector:@selector(APIRequestString)])
+                ua = [shared performSelector:@selector(APIRequestString)];
+        }
+        if (![ua isKindOfClass:[NSString class]] && [cls respondsToSelector:@selector(staticAPIRequestString)])
+            ua = [cls performSelector:@selector(staticAPIRequestString)];
+    } @catch (NSException *e) { (void)e; return nil; }
+    return [ua isKindOfClass:[NSString class]] && [(NSString *)ua length] ? ua : nil;
+}
+
 @implementation THProfileAnalyzerNetworkDelegate
 - (void)performGETRequestWithURL:(NSURL *)url success:(void (^)(NSDictionary * _Nullable))success failure:(void (^)(NSError * _Nonnull))failure {
     id networker = THProfileAnalyzerGetNetworker();
@@ -1265,7 +1282,8 @@ static BOOL _userPKInArray(NSString *pk, NSArray<THProfileAnalyzerUser *> *arr) 
     /* 2) Fallback: manual request (often 401). */
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     [request setHTTPMethod:@"GET"];
-    [request setValue:@"Instagram 329.0.0.0.0 (iPhone; iOS 17_0; en_US; en; scale=3.00; 1179x2556; 0)" forHTTPHeaderField:@"User-Agent"];
+    NSString *userAgent = THProfileAnalyzerInstagramUserAgent();
+    if (userAgent) [request setValue:userAgent forHTTPHeaderField:@"User-Agent"];
     [request setValue:@"124024574287414" forHTTPHeaderField:@"X-IG-App-ID"];
     [request setValue:@"XMLHttpRequest" forHTTPHeaderField:@"X-Requested-With"];
     [request setValue:@"en-US" forHTTPHeaderField:@"Accept-Language"];
