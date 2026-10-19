@@ -24,10 +24,20 @@ static char kThetaProfilePicLongPressDelegateKey;
 }
 @end
 
-static void (*orig_saveProfilePictures)(id self, SEL _cmd);
-static void hook_saveProfilePictures(id self, SEL _cmd) {
-    orig_saveProfilePictures(self, _cmd);
+static void performProfilePictureDownloadWithURL(NSURL *imageURL);
 
+// Only the large avatar in a user's profile header should offer the menu;
+// avatars in comments, feed, DMs etc. keep their normal behavior.
+static BOOL thetaIsProfileHeaderPicture(UIView *view) {
+	for (UIView *v = view.superview; v; v = v.superview) {
+		if ([NSStringFromClass([v class]) containsString:@"ProfileHeader"]) return YES;
+	}
+	UIResponder *r = view.nextResponder;
+	while (r && ![r isKindOfClass:[UIViewController class]]) r = r.nextResponder;
+	return [NSStringFromClass([r class]) containsString:@"ProfileViewController"] && view.bounds.size.width >= 60.0;
+}
+
+static void thetaShowProfilePictureMenu(id self) {
     if (ENABLED(@"Save Profile Pictures") || ENABLED(@"Fullscreen Profile Pictures")) {
 		NSURL *imageURL = nil;
 		@try {
@@ -205,6 +215,26 @@ static void performProfilePictureDownloadWithURL(NSURL *imageURL) {
     }
 }
 
+static void (*orig_profilePictureDidMoveToWindow)(UIView *self, SEL _cmd);
+static void hook_profilePictureDidMoveToWindow(UIView *self, SEL _cmd) {
+	orig_profilePictureDidMoveToWindow(self, _cmd);
+	if (!self.window || objc_getAssociatedObject(self, &kThetaProfilePicLongPressKey)) return;
+
+	ThetaGestureDelegate *delegate = [ThetaGestureDelegate new];
+	UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] init];
+	longPress.minimumPressDuration = 0.5;
+	longPress.delegate = delegate;
+	__weak UIView *weakSelf = self;
+	[longPress addActionBlock:^(UIGestureRecognizer *recognizer) {
+		if (recognizer.state != UIGestureRecognizerStateBegan) return;
+		UIView *view = weakSelf;
+		if (view && thetaIsProfileHeaderPicture(view)) thetaShowProfilePictureMenu(view);
+	}];
+	[self addGestureRecognizer:longPress];
+	objc_setAssociatedObject(self, &kThetaProfilePicLongPressKey, longPress, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+	objc_setAssociatedObject(self, &kThetaProfilePicLongPressDelegateKey, delegate, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
 void THRegisterSaveProfilePicturesHooks(void) {
-    NullHookMessageEx(objc_getClass("IGProfilePictureImageView"), @selector(buttonDidReceiveTouchDown), (void *)hook_saveProfilePictures, &orig_saveProfilePictures);
+    NullHookMessageEx(objc_getClass("IGProfilePictureImageView"), @selector(didMoveToWindow), (void *)hook_profilePictureDidMoveToWindow, &orig_profilePictureDidMoveToWindow);
 }
