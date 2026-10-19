@@ -483,7 +483,7 @@ static UIColor *THColorFromHexString(NSString *hexString) {
         self.instagramVersion = @"Unknown";
     }
     
-    // Get Theta build version from THEOS_PACKAGE_BASE_VERSION
+    // Get Theta build version (THETA_VERSION_NUMBER in the Makefile)
     #ifdef THETA_VERSION
         self.thetaVersion = @THETA_VERSION;
     #else

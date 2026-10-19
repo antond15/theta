@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Theta build helper
-#   ./build.sh           → rootful .deb
-#   ./build.sh rootless  → rootless .deb
-#   ./build.sh sideload  → inject into input/Payload → output/Instagram_patched.ipa
+#   ./build.sh [sideload] [debug]  → inject into input/Payload → output/Instagram_patched.ipa
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,42 +20,33 @@ if [[ ! -f "$THEOS/makefiles/common.mk" ]]; then
 	exit 1
 fi
 
-MODE="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')"
-# Default = rootful
-if [[ -z "$MODE" || "$MODE" == "rootful" ]]; then
-	MODE="rootful"
-fi
-
-# Optional second argument: "debug" compiles in diagnostic logging (THETA_DEBUG=1).
-THETA_DEBUG=0
-if [[ "$(echo "${2:-}" | tr '[:upper:]' '[:lower:]')" == "debug" ]]; then
-	THETA_DEBUG=1
-fi
-
 usage() {
 	cat <<'EOF'
-Usage: ./build.sh [rootful|rootless|sideload] [debug]
+Usage: ./build.sh [sideload] [debug]
 
-  (no args) / rootful   Build a rootful jailbreak package
-  rootless              Build a rootless jailbreak package
-  sideload              Build SIDELOAD=1 dylibs (Theta + ThetaNSE) and inject
-                        Theta into the app and ThetaNSE into the notification
+  (no args) / sideload  Build the dylibs (Theta + ThetaNSE) and inject Theta
+                        into the app and ThetaNSE into the notification
                         service extension (required for decrypted banners)
   debug                 Also compile in diagnostic logging (THETA_DEBUG=1)
 
-Sideload expects a decrypted Instagram IPA unpacked as:
+Expects a decrypted Instagram IPA unpacked as:
   input/Payload/Instagram.app/...
 
 Output:
-  packages/*.deb                (rootful / rootless)
-  output/Instagram_patched.ipa  (sideload)
+  output/Instagram_patched.ipa
 EOF
 }
 
-if [[ "$MODE" == "-h" || "$MODE" == "--help" || "$MODE" == "help" ]]; then
-	usage
-	exit 0
-fi
+# "sideload" is the only target and may be omitted; "debug" compiles in diagnostic logging.
+THETA_DEBUG=0
+for arg in "$@"; do
+	case "$(echo "$arg" | tr '[:upper:]' '[:lower:]')" in
+		sideload) ;;
+		debug) THETA_DEBUG=1 ;;
+		-h|--help|help) usage; exit 0 ;;
+		*) echo "[Build] Invalid argument: $arg"; usage; exit 1 ;;
+	esac
+done
 
 strip_entitlements() {
 	local target="$1"
@@ -127,10 +116,7 @@ find_built_dylib() {
 	for cand in \
 		"$SCRIPT_DIR/.theos/obj/${name}" \
 		"$SCRIPT_DIR/.theos/obj/debug/${name}" \
-		"$SCRIPT_DIR/.theos/obj/arm64/${name}" \
-		"$SCRIPT_DIR/.theos/_/Library/MobileSubstrate/DynamicLibraries/${name}" \
-		"$SCRIPT_DIR/.theos/_/usr/lib/TweakInject/${name}" \
-		"$SCRIPT_DIR/.theos/_/usr/lib/${name}"
+		"$SCRIPT_DIR/.theos/obj/arm64/${name}"
 	do
 		if is_macho_dylib "$cand"; then
 			printf '%s\n' "$cand"
@@ -344,20 +330,6 @@ stage_substrate_framework() {
 	echo "[Build] Staged CydiaSubstrate.framework → $dest"
 }
 
-build_jailbreak() {
-	local label="$1"
-	$make_cmd clean
-	if [[ "$label" == "rootless" ]]; then
-		echo "[Build] Building rootless package..."
-		$make_cmd package ROOTLESS=1 THETA_DEBUG="$THETA_DEBUG"
-	else
-		echo "[Build] Building rootful package..."
-		$make_cmd package THETA_DEBUG="$THETA_DEBUG"
-	fi
-	echo "[Build] Done. Packages in ./packages/"
-	ls -la packages/*.deb 2>/dev/null || true
-}
-
 resolve_app_binary() {
 	# Prints: <app_dir>|<binary_basename>
 	local payload_dir="$1"
@@ -415,9 +387,9 @@ build_sideload() {
 	app_name="$(basename "$app_dir")"
 
 	echo "[Build] App: $app_name  binary: $binary_name"
-	echo "[Build] Building sideload dylib..."
+	echo "[Build] Building dylibs..."
 	$make_cmd clean
-	$make_cmd package SIDELOAD=1 THETA_DEBUG="$THETA_DEBUG"
+	$make_cmd THETA_DEBUG="$THETA_DEBUG"
 
 	local dylib_src nse_src
 	dylib_src="$(find_built_dylib Theta.dylib)" || {
@@ -427,7 +399,7 @@ build_sideload() {
 	nse_src="$(find_built_dylib ThetaNSE.dylib || true)"
 	if [[ -z "$nse_src" ]]; then
 		compile_theta_nse_clang || {
-			echo "[Build] ERROR: ThetaNSE.dylib not found after SIDELOAD build"
+			echo "[Build] ERROR: ThetaNSE.dylib not found after build"
 			exit 1
 		}
 		nse_src="$(find_built_dylib ThetaNSE.dylib)" || {
@@ -478,7 +450,7 @@ build_sideload() {
 		rm -rf "$out_app/ThetaResources.bundle"
 		cp -f -R "$SCRIPT_DIR/ThetaResources.bundle" "$out_app/ThetaResources.bundle"
 	fi
-	local ffmpeg_src="$SCRIPT_DIR/layout/Library/Application Support/ffmpeg.framework"
+	local ffmpeg_src="$SCRIPT_DIR/vendor/ffmpeg.framework"
 	if [[ -d "$ffmpeg_src" ]]; then
 		echo "[Build] Embedding ffmpeg.framework..."
 		rm -rf "$out_app/ffmpeg.framework"
@@ -514,19 +486,4 @@ build_sideload() {
 	ls -lh "$ipa_out"
 }
 
-case "$MODE" in
-	rootful)
-		build_jailbreak rootful
-		;;
-	rootless)
-		build_jailbreak rootless
-		;;
-	sideload)
-		build_sideload
-		;;
-	*)
-		echo "[Build] Invalid mode: $MODE"
-		usage
-		exit 1
-		;;
-esac
+build_sideload

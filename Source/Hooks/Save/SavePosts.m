@@ -562,7 +562,6 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                         [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Adding to camera roll..."];
                                     });
                                     
-                                    #ifdef SIDELOAD
                                         // For sideload builds, must load video into memory (file URLs don't work in sandbox)
                                         // Verify file exists and has content
                                         NSDictionary *fileAttrs = [fm attributesOfItemAtPath:h264OutputPath error:nil];
@@ -628,37 +627,6 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 dispatch_semaphore_signal(semaphore);
                                             }
                                         }
-                                    #else
-                                        // For jailbreak builds, use file URL (faster, no memory copy)
-                                        NSURL *h264OutputURL = [NSURL fileURLWithPath:h264OutputPath];
-                                        ThetaPhotoLibraryImportVideoFromURL(h264OutputURL, ^(BOOL success, NSError * _Nullable error) {
-                                            if (success) {
-                                                
-                                                dispatch_async(dispatch_get_main_queue(), ^{
-                                                    NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                                                    NSString *finalTitle = (saveMethod == 0) ? @"Saved to camera roll!" : @"Saved to local folder!";
-                                                    NSString *finalSubtitle = (saveMethod == 0) ? @"Tap here to go to camera roll." : @"";
-                                                    NSURL *finalURL = (saveMethod == 0) ? [NSURL URLWithString:@"photos-redirect://"] : nil;
-                                                    showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
-                                                });
-                                                
-                                                // Clean up all temporary files
-                                                [fm removeItemAtPath:videoPath error:nil];
-                                                if (hasAudio) {
-                                                    [fm removeItemAtPath:audioPath error:nil];
-                                                }
-                                                [fm removeItemAtPath:outputPath error:nil];
-                                                [fm removeItemAtPath:h264OutputPath error:nil];
-                                            } else {
-                                                NSLog(@"Failed to save H.264 video to camera roll: %@", error);
-                                                dispatch_async(dispatch_get_main_queue(), ^{
-                                                    showCompletionToast(progressToast, NO, @"Error", @"Failed to save to camera roll", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                                                });
-                                            }
-                                                                    finishJob();
-                dispatch_semaphore_signal(semaphore);
-                                        });
-                                    #endif
                                 } else {
                                     // Save to AudioNotes folder
                                     dispatch_async(dispatch_get_main_queue(), ^{

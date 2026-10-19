@@ -1,5 +1,4 @@
 #import "Include/ThetaTweakCommon.h"
-#import "Include/ThetaSubstrate.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <stdlib.h>
@@ -7,11 +6,6 @@
 /** Liquid Glass shipped with iOS 26. IG 444 can still enable the experiment on older OS versions; that path crashes when banners/toasts appear. */
 static inline BOOL theta_osSupportsLiquidGlass(void) {
     return [[NSProcessInfo processInfo] operatingSystemVersion].majorVersion >= 26;
-}
-
-/** Floating tab bar C hooks key off liquid glass surfaces only. */
-static inline BOOL theta_liquidGlassSurfacesWanted(void) {
-    return theta_osSupportsLiquidGlass() && ENABLED(@"Enable Liquid Glass Surfaces");
 }
 
 /** Liquid Glass local experiments: either LG toggle. */
@@ -62,132 +56,9 @@ static BOOL hook_lgIconBar(id self, SEL _cmd) {
     return orig_lgIconBar ? orig_lgIconBar(self, _cmd) : NO;
 }
 
-// ── Floating glass tab bar: C symbols via MSHookFunction ─
-// fishhook rebind_symbols corrupts FBSharedFramework GOT; Substrate hooks the real fn.
-//
-// IG 444+: these take the launcher set in x0 (IGFloatingTabBarEnabled forwards it to
-// IGTabBarStyleForLauncherSet, which objc_retains it). A BOOL(void) hook clobbers x0
-// while reading prefs, then tail-calls orig → SIGSEGV in objc_retain. Extra unused x0
-// is harmless if an older binary still uses a no-arg signature.
-
-static BOOL (*orig_IGFloatingTabBarEnabled)(id) = NULL;
-static BOOL (*orig_IGTabBarDynamicSizingEnabled)(id) = NULL;
-static BOOL (*orig_IGTabBarEnhancedDynamicSizingEnabled)(id) = NULL;
-static BOOL (*orig_IGTabBarHomecomingWithFloatingTabEnabled)(id) = NULL;
-static BOOL (*orig_IGTabBarViewPointFixEnabled)(id) = NULL;
-static NSInteger (*orig_IGTabBarStyleForLauncherSet)(id) = NULL;
-
-static BOOL hook_IGFloatingTabBarEnabled(id launcherSet) {
-    if (theta_liquidGlassSurfacesWanted()) return YES;
-    return orig_IGFloatingTabBarEnabled ? orig_IGFloatingTabBarEnabled(launcherSet) : NO;
-}
-static BOOL hook_IGTabBarDynamicSizingEnabled(id launcherSet) {
-    if (theta_liquidGlassSurfacesWanted()) return YES;
-    return orig_IGTabBarDynamicSizingEnabled ? orig_IGTabBarDynamicSizingEnabled(launcherSet) : NO;
-}
-static BOOL hook_IGTabBarEnhancedDynamicSizingEnabled(id launcherSet) {
-    if (theta_liquidGlassSurfacesWanted()) return YES;
-    return orig_IGTabBarEnhancedDynamicSizingEnabled ? orig_IGTabBarEnhancedDynamicSizingEnabled(launcherSet) : NO;
-}
-static BOOL hook_IGTabBarHomecomingWithFloatingTabEnabled(id launcherSet) {
-    if (theta_liquidGlassSurfacesWanted()) return YES;
-    return orig_IGTabBarHomecomingWithFloatingTabEnabled ? orig_IGTabBarHomecomingWithFloatingTabEnabled(launcherSet) : NO;
-}
-static BOOL hook_IGTabBarViewPointFixEnabled(id launcherSet) {
-    if (theta_liquidGlassSurfacesWanted()) return YES;
-    return orig_IGTabBarViewPointFixEnabled ? orig_IGTabBarViewPointFixEnabled(launcherSet) : NO;
-}
-static NSInteger hook_IGTabBarStyleForLauncherSet(id launcherSet) {
-    if (theta_liquidGlassSurfacesWanted()) return 1;
-    return orig_IGTabBarStyleForLauncherSet ? orig_IGTabBarStyleForLauncherSet(launcherSet) : 0;
-}
-
-static BOOL theta_tryInstallLiquidGlassTabBarCSymbolHooks(void) {
-#ifdef SIDELOAD
-    /* Never inline-patch __TEXT in a sideloaded build.
-     *
-     * Substrate implements MSHookFunction by making the target page writable and writing a branch
-     * into it. On a jailbroken device that is fine. In a re-signed app it is fatal: the page ends
-     * up rw- (non-executable) and dirty, so it no longer matches the code signature, and the first
-     * call into it is killed by the kernel — EXC_BAD_ACCESS / KERN_PROTECTION_FAILURE with
-     * termination namespace CODESIGNING, indicator "Invalid Page".
-     *
-     * Seen on IG 441.0.0 / iOS 26.6 as a 100% launch crash: pc landed in a rw- 16K hole inside
-     * FBSharedFramework's __TEXT at IGFloatingTabBarEnabled, reached from METARunPreApplicationMain
-     * during startup. It only appears once a working Substrate is actually loadable in the bundle,
-     * which is why some sideload builds survived.
-     *
-     * The ObjC swizzles in THRegisterLiquidGlassHooks() only touch runtime dispatch tables, never
-     * signed pages, so they stay enabled — Liquid Glass just loses the C-flag overrides.
-     */
-    static dispatch_once_t sideloadOnce;
-    dispatch_once(&sideloadOnce, ^{
-        THDebugLog(@"[Theta] Liquid Glass: skipping C-symbol inline hooks — unsafe in a re-signed app");
-    });
-    return NO;
-#else
-    static BOOL floatingDone = NO;
-    static BOOL dynamicDone = NO;
-    static BOOL enhancedDone = NO;
-    static BOOL homecomingDone = NO;
-    static BOOL viewpointDone = NO;
-    static BOOL styleDone = NO;
-
-    if (!ThetaSubstrateLoad()) return NO;
-
-    /* Don't touch __TEXT at all unless a Liquid Glass toggle is on. The hook bodies already defer
-       to the original when disabled, so this is behaviour-neutral — both toggles are documented as
-       requiring a restart anyway. */
-    if (!ENABLED(@"Enable Liquid Glass Surfaces") && !ENABLED(@"Enable Liquid Glass Buttons")) {
-        return NO;
-    }
-
-    if (!floatingDone) {
-        void *sym = ThetaResolveInstagramExecutableSymbol("IGFloatingTabBarEnabled");
-        if (sym) {
-            ThetaMSHookFunction(sym, (void *)hook_IGFloatingTabBarEnabled, (void **)&orig_IGFloatingTabBarEnabled);
-            floatingDone = YES;
-        }
-    }
-    if (!dynamicDone) {
-        void *sym = ThetaResolveInstagramExecutableSymbol("IGTabBarDynamicSizingEnabled");
-        if (sym) {
-            ThetaMSHookFunction(sym, (void *)hook_IGTabBarDynamicSizingEnabled, (void **)&orig_IGTabBarDynamicSizingEnabled);
-            dynamicDone = YES;
-        }
-    }
-    if (!enhancedDone) {
-        void *sym = ThetaResolveInstagramExecutableSymbol("IGTabBarEnhancedDynamicSizingEnabled");
-        if (sym) {
-            ThetaMSHookFunction(sym, (void *)hook_IGTabBarEnhancedDynamicSizingEnabled, (void **)&orig_IGTabBarEnhancedDynamicSizingEnabled);
-            enhancedDone = YES;
-        }
-    }
-    if (!homecomingDone) {
-        void *sym = ThetaResolveInstagramExecutableSymbol("IGTabBarHomecomingWithFloatingTabEnabled");
-        if (sym) {
-            ThetaMSHookFunction(sym, (void *)hook_IGTabBarHomecomingWithFloatingTabEnabled, (void **)&orig_IGTabBarHomecomingWithFloatingTabEnabled);
-            homecomingDone = YES;
-        }
-    }
-    if (!viewpointDone) {
-        void *sym = ThetaResolveInstagramExecutableSymbol("IGTabBarViewPointFixEnabled");
-        if (sym) {
-            ThetaMSHookFunction(sym, (void *)hook_IGTabBarViewPointFixEnabled, (void **)&orig_IGTabBarViewPointFixEnabled);
-            viewpointDone = YES;
-        }
-    }
-    if (!styleDone) {
-        void *sym = ThetaResolveInstagramExecutableSymbol("IGTabBarStyleForLauncherSet");
-        if (sym) {
-            ThetaMSHookFunction(sym, (void *)hook_IGTabBarStyleForLauncherSet, (void **)&orig_IGTabBarStyleForLauncherSet);
-            styleDone = YES;
-        }
-    }
-
-    return floatingDone && styleDone;
-#endif
-}
+// IGFloatingTabBarEnabled and the other IGTabBar* flags are C functions. Hooking them means
+// inline-patching __TEXT, which breaks the code signature of a re-signed app (100% launch crash
+// on IG 441 / iOS 26.6), so only the ObjC paths below are hooked.
 
 // ── Liquid Glass local experiments ────────────────────────────────────────────
 // Homecoming is not forced: on 451 it swaps the home feed for the All/Friends/Following feed.
@@ -283,28 +154,23 @@ static void theta_tryInstallLiquidGlassExperimentHooksOnce(void) {
 // runs before prefs may hydrate and before FBSharedFramework exposes MetaLocalExperiment —
 // repeat attempts on main + when THRegisterLiquidGlassHooks runs.
 void THRegisterLiquidGlassTabBarEarlyHooks(void) {
-    theta_tryInstallLiquidGlassTabBarCSymbolHooks();
     theta_tryInstallLiquidGlassExperimentHooksOnce();
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        theta_tryInstallLiquidGlassTabBarCSymbolHooks();
-        theta_tryInstallLiquidGlassExperimentHooksOnce();
+            theta_tryInstallLiquidGlassExperimentHooksOnce();
         theta_applyLiquidGlassOverrides();
         dispatch_async(dispatch_get_main_queue(), ^{
-            theta_tryInstallLiquidGlassTabBarCSymbolHooks();
-            theta_tryInstallLiquidGlassExperimentHooksOnce();
+                    theta_tryInstallLiquidGlassExperimentHooksOnce();
         });
     });
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_MSEC)),
                    dispatch_get_main_queue(),
                    ^{
-        theta_tryInstallLiquidGlassTabBarCSymbolHooks();
-        theta_tryInstallLiquidGlassExperimentHooksOnce();
+            theta_tryInstallLiquidGlassExperimentHooksOnce();
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            theta_tryInstallLiquidGlassTabBarCSymbolHooks();
-            theta_tryInstallLiquidGlassExperimentHooksOnce();
+                    theta_tryInstallLiquidGlassExperimentHooksOnce();
             theta_applyLiquidGlassOverrides();
         });
     });
@@ -312,7 +178,6 @@ void THRegisterLiquidGlassTabBarEarlyHooks(void) {
 
 // ── Main registration (call from InitializeHooks post-auth) ───────────────────
 void THRegisterLiquidGlassHooks(void) {
-    theta_tryInstallLiquidGlassTabBarCSymbolHooks();
     theta_tryInstallLiquidGlassExperimentHooksOnce();
 
     // lucent.navigation override follows the buttons toggle

@@ -119,8 +119,6 @@ static BOOL loadFFmpegLibraries(NSError **error) {
         [bundleRoot stringByAppendingPathComponent:@"ffmpeg.framework"],
         [bundleRoot stringByAppendingPathComponent:@"Frameworks/ffmpeg.framework"],
         [bundleRoot stringByAppendingPathComponent:@"Frameworks"],
-        @"/var/jb/Library/Application Support/ffmpeg.framework",
-        @"/Library/Application Support/ffmpeg.framework",
     ];
     /* Keep every directory that exists, not just the first. A sideloaded IPA can carry more than
        one ffmpeg install (e.g. ffmpeg.framework/ plus loose Frameworks/libav*.framework), and a
@@ -434,7 +432,6 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Find encoder - Use HEVC for HDR content (better HDR support), H.264 for SDR
     const AVCodec *encoder = NULL;
     
-    #ifdef SIDELOAD
         // For sideload builds, always use H.264 for better Photos compatibility
         // Photos app has issues with HEVC when saving via NSData in sandboxed apps
         encoder = p_avcodec_find_encoder_by_name("h264_videotoolbox");
@@ -442,26 +439,6 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
             THDebugLog(@"VideoToolbox encoder not available, falling back to libx264");
             encoder = p_avcodec_find_encoder(AV_CODEC_ID_H264);
         }
-    #else
-        // For jailbreak builds, use HEVC for HDR content (full quality)
-        if (isHDR) {
-            // Try HEVC VideoToolbox first for HDR
-            encoder = p_avcodec_find_encoder_by_name("hevc_videotoolbox");
-            if (encoder) {
-            } else {
-                THDebugLog(@"HEVC VideoToolbox not available, trying software HEVC for HDR");
-                encoder = p_avcodec_find_encoder(AV_CODEC_ID_HEVC);
-            }
-        }
-        
-        // Fall back to H.264 if HEVC not available or not HDR
-        if (!encoder) {
-            encoder = p_avcodec_find_encoder_by_name("h264_videotoolbox");
-            if (!encoder) {
-                encoder = p_avcodec_find_encoder(AV_CODEC_ID_H264);
-            }
-        }
-    #endif
     
     if (!encoder) {
         NSLog(@"Could not find any suitable encoder");

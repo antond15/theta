@@ -4,7 +4,6 @@
  * presentations (including Theta's NUX) and can crash with PC=0.
  */
 
-#ifdef SIDELOAD
 
 static void theta_dismissTestFlightNag(UIViewController *vc) {
     if (![vc isKindOfClass:[UIViewController class]]) return;
@@ -55,9 +54,3 @@ void THRegisterHideTestFlightNagHooks(void) {
     NullHookMessageIfPresent(nag, @selector(viewDidAppear:), (void *)hook_tfNag_viewDidAppear, (void **)&orig_tfNag_viewDidAppear);
 }
 
-#else
-
-void THRegisterHideTestFlightNagHooks(void) {
-}
-
-#endif

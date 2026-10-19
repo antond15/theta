@@ -1,12 +1,10 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
-#import <dlfcn.h>
 #import <stdint.h>
 #import <Photos/Photos.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import "Include/ThetaHelper.h"
-#import "Include/ThetaSubstrate.h"
 #import "Include/MediaSelectionViewController.h"
 
 static const NSInteger kThetaInstantSaveButtonTag = 0x74685356; // 'thSV'
@@ -14,8 +12,6 @@ static const NSInteger kThetaInstantSeenButtonTag = 0x74685353; // 'thSS'
 static char kThetaInstantHostVCKey;
 
 static NSString *sThetaInstantGhostAllowMediaId = nil;
-static NSString *sThetaInstantCurrentGraphQLID = nil;
-static BOOL sThetaInstantSkipConsumptionTransition = NO;
 static __weak id sThetaInstantQuickSnapService;
 
 static id (*orig_instantSeenRequestInit)(id self, SEL _cmd, id mediaIds);
@@ -831,8 +827,6 @@ static NSString *thetaInstantIdFromSpecifier(id specifier) {
 }
 
 static NSString *thetaInstantVisibleMediaId(UIView *host, id viewController) {
-    if (sThetaInstantCurrentGraphQLID.length) return sThetaInstantCurrentGraphQLID;
-
     NSArray<UIView *> *views = thetaInstantAllViews(host, viewController);
     NSString *fromStack = thetaInstantIdFromStack(views);
     if (fromStack.length) return fromStack;
@@ -1206,77 +1200,6 @@ static void hook_instantDefaultsSetObject(id self, SEL _cmd, id obj, id key) {
     if (orig_instantDefaultsSetObject) orig_instantDefaultsSetObject(self, _cmd, obj, key);
 }
 
-/* Swift Instant mark-seen: self lives in x20. Save/restore around ObjC work so orig still sees the store/VC. */
-static uint64_t thetaInstantLoadX20(void) {
-    uint64_t value;
-    __asm__ volatile("mov %0, x20" : "=r"(value));
-    return value;
-}
-
-static void thetaInstantStoreX20(uint64_t value) {
-    __asm__ volatile("mov x20, %0" :: "r"(value) : "x20");
-}
-
-/* IDA 0x100000000: didPanConsumptionView: 0x10a74d26c, consumption mark-seen 0x10a1e8840, seenSnapPks writer 0x10a2e6fbc, syncSeenSnaps 0x1084afa6c, current snap 0x101afeaec, consumption transition 0x102df1ec8 */
-static const uintptr_t kThetaIDADidPanConsumption = 0x10a74d26c;
-static const uintptr_t kThetaIDASyncSeenSnaps = 0x1084afa6c;
-static const uintptr_t kThetaIDAConsumptionMarkSeen = 0x10a1e8840;
-static const uintptr_t kThetaIDAStoreSeenPks = 0x10a2e6fbc;
-static const uintptr_t kThetaIDACurrentSnap = 0x101afeaec;
-static const uintptr_t kThetaIDAConsumptionTransition = 0x102df1ec8;
-
-static void *thetaInstantResolveFromAnchor(void *anchor, uintptr_t idaAnchor, uintptr_t idaTarget) {
-    if (!anchor || !idaAnchor) return NULL;
-    void *target = (void *)((uintptr_t)anchor + (idaTarget - idaAnchor));
-    Dl_info anchorInfo, targetInfo;
-    if (!dladdr(anchor, &anchorInfo) || !dladdr(target, &targetInfo)) return NULL;
-    if (anchorInfo.dli_fbase != targetInfo.dli_fbase) return NULL;
-    return target;
-}
-
-static void (*orig_instantConsumptionMarkSeen)(uint8_t shouldMark);
-static void hook_instantConsumptionMarkSeen(uint8_t shouldMark) {
-    uint64_t swiftSelf = thetaInstantLoadX20();
-    BOOL block = thetaInstantGhostShouldBlockNetwork();
-    thetaInstantStoreX20(swiftSelf);
-    if (orig_instantConsumptionMarkSeen) orig_instantConsumptionMarkSeen(block ? 0 : shouldMark);
-}
-
-static void (*orig_instantStoreSeenPks)(void *pks);
-static void hook_instantStoreSeenPks(void *pks) {
-    uint64_t swiftSelf = thetaInstantLoadX20();
-    BOOL block = thetaInstantGhostShouldBlockNetwork();
-    thetaInstantStoreX20(swiftSelf);
-    if (block) return;
-    if (orig_instantStoreSeenPks) orig_instantStoreSeenPks(pks);
-}
-
-static void *(*orig_instantCurrentSnap)(void);
-static void *hook_instantCurrentSnap(void) {
-    uint64_t swiftSelf = thetaInstantLoadX20();
-    thetaInstantStoreX20(swiftSelf);
-    void *snap = orig_instantCurrentSnap ? orig_instantCurrentSnap() : NULL;
-    thetaInstantStoreX20(swiftSelf);
-    if (snap) {
-        @try {
-            NSString *mediaId = thetaInstantMediaId((__bridge id)snap);
-            if (mediaId.length) sThetaInstantCurrentGraphQLID = [mediaId copy];
-        } @catch (__unused NSException *e) {}
-    }
-    return snap;
-}
-
-static int64_t (*orig_instantConsumptionTransition)(int64_t, int64_t, int64_t);
-static int64_t hook_instantConsumptionTransition(int64_t a1, int64_t a2, int64_t a3) {
-    uint64_t swiftSelf = thetaInstantLoadX20();
-    if (sThetaInstantSkipConsumptionTransition) {
-        thetaInstantStoreX20(swiftSelf);
-        return 0;
-    }
-    thetaInstantStoreX20(swiftSelf);
-    return orig_instantConsumptionTransition ? orig_instantConsumptionTransition(a1, a2, a3) : 0;
-}
-
 static void (*orig_instantDidPanConsumption)(id, SEL, id);
 static void hook_instantDidPanConsumption(id self, SEL _cmd, id gesture) {
     thetaInstantEnsureGhostHooks();
@@ -1287,32 +1210,6 @@ static void (*orig_instantSwipeDownGesture)(id, SEL, id);
 static void hook_instantSwipeDownGesture(id self, SEL _cmd, id gesture) {
     thetaInstantEnsureGhostHooks();
     if (orig_instantSwipeDownGesture) orig_instantSwipeDownGesture(self, _cmd, gesture);
-}
-
-static BOOL thetaInstantPickAnchor(void **outAnchor, uintptr_t *outIDA) {
-    if (!outAnchor || !outIDA) return NO;
-    if (orig_instantDidPanConsumption && orig_instantDidPanConsumption != hook_instantDidPanConsumption) {
-        *outAnchor = (void *)orig_instantDidPanConsumption;
-        *outIDA = kThetaIDADidPanConsumption;
-        return YES;
-    }
-    Class pan = ThetaFirstClass(@[
-        @"_TtC40IGQuickSnapNavigationV3PanGestureHandler40IGQuickSnapNavigationV3PanGestureHandler",
-        @"IGQuickSnapNavigationV3PanGestureHandler",
-    ]);
-    Method panMethod = pan ? class_getInstanceMethod(pan, NSSelectorFromString(@"didPanConsumptionView:")) : NULL;
-    IMP panImp = panMethod ? method_getImplementation(panMethod) : NULL;
-    if (panImp && panImp != (IMP)hook_instantDidPanConsumption) {
-        *outAnchor = (void *)panImp;
-        *outIDA = kThetaIDADidPanConsumption;
-        return YES;
-    }
-    if (orig_instantSyncSeenSnaps && orig_instantSyncSeenSnaps != hook_instantSyncSeenSnaps) {
-        *outAnchor = (void *)orig_instantSyncSeenSnaps;
-        *outIDA = kThetaIDASyncSeenSnaps;
-        return YES;
-    }
-    return NO;
 }
 
 static void thetaInstantEnsureGhostHooks(void) {
@@ -1365,33 +1262,6 @@ static void thetaInstantEnsureGhostHooks(void) {
     if (!orig_instantDefaultsSetObject)
         NullHookMessageIfPresent([NSUserDefaults class], @selector(setObject:forKey:), (void *)hook_instantDefaultsSetObject, &orig_instantDefaultsSetObject);
 
-#ifndef SIDELOAD
-    /* Inline Swift hooks: never in a sideloaded build, where patching __TEXT breaks the code signature
-       (see theta_tryInstallLiquidGlassTabBarCSymbolHooks). The IDA offsets are also from another build:
-       on 451 they resolve to unrelated code. */
-    if (!orig_instantConsumptionMarkSeen || !orig_instantStoreSeenPks || !orig_instantCurrentSnap || !orig_instantConsumptionTransition) {
-        void *anchor = NULL;
-        uintptr_t idaAnchor = 0;
-        if (thetaInstantPickAnchor(&anchor, &idaAnchor)) {
-            if (!orig_instantConsumptionMarkSeen) {
-                void *sym = thetaInstantResolveFromAnchor(anchor, idaAnchor, kThetaIDAConsumptionMarkSeen);
-                if (sym) ThetaMSHookFunction(sym, (void *)hook_instantConsumptionMarkSeen, (void **)&orig_instantConsumptionMarkSeen);
-            }
-            if (!orig_instantStoreSeenPks) {
-                void *sym = thetaInstantResolveFromAnchor(anchor, idaAnchor, kThetaIDAStoreSeenPks);
-                if (sym) ThetaMSHookFunction(sym, (void *)hook_instantStoreSeenPks, (void **)&orig_instantStoreSeenPks);
-            }
-            if (!orig_instantCurrentSnap) {
-                void *sym = thetaInstantResolveFromAnchor(anchor, idaAnchor, kThetaIDACurrentSnap);
-                if (sym) ThetaMSHookFunction(sym, (void *)hook_instantCurrentSnap, (void **)&orig_instantCurrentSnap);
-            }
-            if (!orig_instantConsumptionTransition) {
-                void *sym = thetaInstantResolveFromAnchor(anchor, idaAnchor, kThetaIDAConsumptionTransition);
-                if (sym) ThetaMSHookFunction(sym, (void *)hook_instantConsumptionTransition, (void **)&orig_instantConsumptionTransition);
-            }
-        }
-    }
-#endif
 
     if (!orig_instantDidPanConsumption) {
         NullHookMessageIfPresent(ThetaFirstClass(@[
@@ -1464,51 +1334,6 @@ static BOOL thetaInstantAddSeenIdToDefaults(id defaults, NSString *mediaId) {
     }
 }
 
-static id thetaInstantFindNavConsumptionVC(id start) {
-    UIViewController *root = nil;
-    if ([start isKindOfClass:[UIViewController class]]) {
-        UIViewController *cursor = (UIViewController *)start;
-        while (cursor) {
-            NSString *name = NSStringFromClass([cursor class]);
-            if ([name containsString:@"IGQuickSnapNavigationV3ConsumptionViewController"]) return cursor;
-            root = cursor;
-            cursor = cursor.parentViewController;
-        }
-    }
-    NSMutableArray *queue = [NSMutableArray array];
-    NSMutableSet *seen = [NSMutableSet set];
-    if (root) [queue addObject:root];
-    else if ([start isKindOfClass:[UIViewController class]]) [queue addObject:start];
-    while (queue.count) {
-        UIViewController *item = queue.firstObject;
-        [queue removeObjectAtIndex:0];
-        if (![item isKindOfClass:[UIViewController class]] || [seen containsObject:item]) continue;
-        [seen addObject:item];
-        NSString *name = NSStringFromClass([item class]);
-        if ([name containsString:@"IGQuickSnapNavigationV3ConsumptionViewController"]) return item;
-        for (UIViewController *child in item.childViewControllers) [queue addObject:child];
-        if (item.presentedViewController) [queue addObject:item.presentedViewController];
-    }
-    return nil;
-}
-
-static BOOL thetaInstantMarkSeenWithInstagram(id viewController) {
-    thetaInstantEnsureGhostHooks();
-    if (!orig_instantConsumptionMarkSeen || !orig_instantConsumptionTransition) return NO;
-    id nav = thetaInstantFindNavConsumptionVC(viewController);
-    if (!nav) return NO;
-    sThetaInstantSkipConsumptionTransition = YES;
-    uint64_t saved = thetaInstantLoadX20();
-    @try {
-        thetaInstantStoreX20((uint64_t)(__bridge void *)nav);
-        orig_instantConsumptionMarkSeen(1);
-    } @finally {
-        thetaInstantStoreX20(saved);
-        sThetaInstantSkipConsumptionTransition = NO;
-    }
-    return YES;
-}
-
 static BOOL thetaInstantCommitLocalSeen(id viewController, NSString *mediaId) {
     if (!mediaId.length) return NO;
     id service = thetaInstantFindQuickSnapService(viewController);
@@ -1559,9 +1384,8 @@ static void thetaInstantMarkCurrentSeen(UIView *host, id viewController) {
         }
         id service = thetaInstantFindQuickSnapService(viewController);
         sThetaInstantGhostAllowMediaId = [mediaId copy];
-        BOOL started = thetaInstantMarkSeenWithInstagram(viewController);
-        if (!started) started = thetaInstantCommitLocalSeen(viewController, mediaId);
-        else thetaInstantCommitLocalSeen(viewController, mediaId);
+        thetaInstantEnsureGhostHooks();
+        BOOL started = thetaInstantCommitLocalSeen(viewController, mediaId);
         if (orig_instantSeenRequestData) {
             Class reqCls = NSClassFromString(@"IGXDTMarkQuickSnapSeenRequest");
             if (reqCls) {

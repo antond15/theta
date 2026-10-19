@@ -9,7 +9,6 @@
 #import <SystemConfiguration/SystemConfiguration.h>
 #import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
-#import "Include/rootless.h"
 #import "Include/ThetaHelper.h"
 #import "Include/AV1Transcoder.h"
 #import "Include/ThetaDashManifest.h"
@@ -1873,7 +1872,6 @@ static void * const playerKey = &playerKey;
                 
                 if (saveMethod == 0) {
                     // Save to camera roll
-                    #ifdef SIDELOAD
                     // For sideload builds, copy to Caches and use ALAssetsLibrary
                     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
                     NSString *cachesDir = [paths firstObject];
@@ -1931,34 +1929,6 @@ static void * const playerKey = &playerKey;
                             });
                         });
                     }
-                    #else
-                    // Jailbreak: Photos import (creation-request path when available)
-                    NSURL *outputURL = [NSURL fileURLWithPath:outputPath];
-                    ThetaPhotoLibraryImportVideoFromURL(outputURL, ^(BOOL success, NSError *error) {
-                        // Cleanup
-                        [fm removeItemAtPath:videoPath error:nil];
-                        if (audioPath) [fm removeItemAtPath:audioPath error:nil];
-                        [fm removeItemAtPath:outputPath error:nil];
-                        
-                        dispatch_async(statsQueue, ^{
-                            if (success) {
-                            } else {
-                                NSLog(@"Failed to save video %ld: %@", (long)videoIndex, error);
-                                failedVideos++;
-                            }
-                            completedVideos++;
-                            
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                                
-                                if (completedVideos >= totalVideos) {
-                                    [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                    [MediaSelectionViewController setDownloadInProgress:NO];
-                                }
-                            });
-                        });
-                    });
-                    #endif
                 } else {
                     // Save to AudioNotes folder
                     NSString *audioNotesDir = [documentsPath stringByAppendingPathComponent:@"AudioNotes"];
@@ -2330,14 +2300,6 @@ static void * const playerKey = &playerKey;
                 /* dylibs/ffmpegkit.dylib is where scripts/isolate-ffmpeg-dylibs.py puts it, with its
                    @rpath dependencies rewritten to @loader_path so it binds to our libav* and not
                    to the stripped ones Instagram bundles. The other paths are older layouts. */
-#ifndef SIDELOAD
-                NSString *ffmpegRoot = ROOT_PATH_NS(@"/Library/Application Support/ffmpeg.framework");
-                for (NSString *rel in @[@"dylibs/ffmpegkit.dylib", @"ffmpegkit.framework/ffmpegkit", @"ffmpegkit"]) {
-                    frameworkPath = [ffmpegRoot stringByAppendingPathComponent:rel];
-                    ffmpegkitHandle = dlopen([frameworkPath UTF8String], RTLD_NOW);
-                    if (ffmpegkitHandle) break;
-                }
-#else
                 NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
                 NSString *frameworksPath = [[NSBundle mainBundle] privateFrameworksPath];
                 NSMutableArray *sideloadPaths = [NSMutableArray array];
@@ -2355,7 +2317,6 @@ static void * const playerKey = &playerKey;
                         if (ffmpegkitHandle) break;
                     }
                 }
-#endif
                 FFmpegKitClass = objc_getClass("FFmpegKit");
             });
 

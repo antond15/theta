@@ -107,7 +107,7 @@ else
 	[[ "$grafted" -eq 1 ]] || die "could not find libc++ headers to graft into $SDK_DIR"
 fi
 
-# 6. CydiaSubstrate for SIDELOAD=1 (-F$THEOS/vendor/lib -weak_framework CydiaSubstrate)
+# 6. CydiaSubstrate for the link step (-F$THEOS/vendor/lib -weak_framework CydiaSubstrate)
 if [[ -d "$THEOS/vendor/lib/CydiaSubstrate.framework/Headers" ]]; then
 	log "Theos vendors CydiaSubstrate.framework"
 else

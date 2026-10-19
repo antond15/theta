@@ -117,7 +117,6 @@ static void InitializeHooks(void) {
     });
 }
 
-#ifdef SIDELOAD
 static void RunSideloadSetupOnce(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -172,7 +171,6 @@ static void RunSideloadSetupOnce(void) {
         }
     });
 }
-#endif
 
 static void StartTweakWhenReady(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -201,14 +199,11 @@ static void ObserveAppLifecycle(void) {
         StartTweakWhenReady();
     }];
     StartTweakWhenReady();
-#ifdef SIDELOAD
     RunSideloadSetupOnce();
-#endif
 }
 
 __attribute__((constructor))
 static void ThetaLoad(void) {
-#ifdef SIDELOAD
     // Discover the real keychain group before remapping SecItem* onto it.
     RunSideloadSetupOnce();
     install_fishhook_rebindings();
@@ -222,7 +217,6 @@ static void ThetaLoad(void) {
                    dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         ThetaHPKEMirrorKeychain(keychainAccessGroup, wildcard);
     });
-#endif
 
     THRegisterLiquidGlassTabBarEarlyHooks();
     // The tab bar is built before InitializeHooks runs, so its hooks must already be installed.

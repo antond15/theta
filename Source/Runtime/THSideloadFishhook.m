@@ -1,7 +1,6 @@
 /* Sideload fishhook rebindings (strlen / SecItem*) */
-#ifdef SIDELOAD
 #import "Source/SideloadNSE/ThetaHPKEKeyFile.h"
-#endif
+
 // Keychain hook via fishhook (file scope)
 static OSStatus (*original_SecItemCopyMatching)(CFDictionaryRef query, CFTypeRef *result);
 static OSStatus (*original_SecItemAdd)(CFDictionaryRef attributes, CFTypeRef *result);
@@ -9,65 +8,12 @@ static OSStatus (*original_SecItemUpdate)(CFDictionaryRef query, CFDictionaryRef
 static OSStatus (*original_SecItemDelete)(CFDictionaryRef query);
 #define kErrSecItemNotFoundKeychain ((OSStatus)-25300)
 
-// Don't block keychain reads for device/session/report/login — blocking them can leave nil
-// and cause crash (e.g. strlen(0) in device report or unhandled errSecItemNotFound on save-login).
-static BOOL isDeviceOrSessionKeychainQuery(CFDictionaryRef query) {
-    if (!query || CFGetTypeID(query) != CFDictionaryGetTypeID()) return NO;
-    const char *keywords[] = {
-        "device", "report", "essential", "session", "identifier", "DeviceReport",
-        "login", "password", "credential", "save", "token", "auth", "authentication", "user"
-    };
-    char buf[256];
-    CFTypeRef svcValue = CFDictionaryGetValue(query, kSecAttrService);
-    if (svcValue && CFGetTypeID(svcValue) == CFStringGetTypeID()) {
-        if (CFStringGetCString((CFStringRef)svcValue, buf, sizeof(buf), kCFStringEncodingUTF8)) {
-            for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
-                if (strstr(buf, keywords[k])) return YES;
-            }
-        }
-    }
-    CFTypeRef accValue = CFDictionaryGetValue(query, kSecAttrAccount);
-    if (accValue && CFGetTypeID(accValue) == CFStringGetTypeID()) {
-        if (CFStringGetCString((CFStringRef)accValue, buf, sizeof(buf), kCFStringEncodingUTF8)) {
-            for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
-                if (strstr(buf, keywords[k])) return YES;
-            }
-        }
-    }
-    return NO;
-}
-
-static BOOL isMetaKeychainQuery(CFDictionaryRef query) {
-    if (!query || CFGetTypeID(query) != CFDictionaryGetTypeID()) return NO;
-    if (isDeviceOrSessionKeychainQuery(query)) return NO;
-    CFTypeRef agValue = CFDictionaryGetValue(query, kSecAttrAccessGroup);
-    if (agValue && CFGetTypeID(agValue) == CFStringGetTypeID()) {
-        CFStringRef agStr = (CFStringRef)agValue;
-        char buf[256];
-        if (CFStringGetCString(agStr, buf, sizeof(buf), kCFStringEncodingUTF8)) {
-            if (strstr(buf, "facebook") || strstr(buf, "Facebook") ||
-                strstr(buf, "meta") || strstr(buf, "Meta") ||
-                strstr(buf, "fbkeychain") || strstr(buf, "keychainstore")) return YES;
-        }
-    }
-    CFTypeRef svcValue = CFDictionaryGetValue(query, kSecAttrService);
-    if (svcValue && CFGetTypeID(svcValue) == CFStringGetTypeID()) {
-        CFStringRef svcStr = (CFStringRef)svcValue;
-        char buf[256];
-        if (CFStringGetCString(svcStr, buf, sizeof(buf), kCFStringEncodingUTF8)) {
-            if (strstr(buf, "facebook") || strstr(buf, "Meta") || strstr(buf, "fbkeychain")) return YES;
-        }
-    }
-    return NO;
-}
-
 // Real SecItem* resolved once before we rebind (dlsym after rebind would return our hook).
 static OSStatus (*real_SecItemCopyMatching)(CFDictionaryRef query, CFTypeRef *result) = NULL;
 static OSStatus (*real_SecItemAdd)(CFDictionaryRef attributes, CFTypeRef *result) = NULL;
 static OSStatus (*real_SecItemUpdate)(CFDictionaryRef query, CFDictionaryRef attributesToUpdate) = NULL;
 static OSStatus (*real_SecItemDelete)(CFDictionaryRef query) = NULL;
 
-#ifdef SIDELOAD
 // Instagram writes tokens with Meta's team-id access group. Sideload signing
 // uses a different team, so those writes used to fail; faking success left
 // the next cold launch with no session. Rewrite onto the sideload group.
@@ -105,22 +51,12 @@ static CFDictionaryRef SideloadSecItemDictCopy(CFDictionaryRef dict, BOOL isQuer
     }
     return copy;
 }
-#endif
 
 static OSStatus hooked_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result) {
-#ifdef SIDELOAD
-    (void)isMetaKeychainQuery;
-#else
-    if (isMetaKeychainQuery(query)) {
-        if (result) *result = NULL;
-        return kErrSecItemNotFoundKeychain;
-    }
-#endif
     if (!real_SecItemCopyMatching) {
         if (result) *result = NULL;
         return kErrSecItemNotFoundKeychain;
     }
-#ifdef SIDELOAD
     CFDictionaryRef rewritten = SideloadSecItemDictCopy(query, YES);
     OSStatus status = real_SecItemCopyMatching(rewritten ? rewritten : query, result);
     if (rewritten) CFRelease(rewritten);
@@ -139,9 +75,6 @@ static OSStatus hooked_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *res
         if (fileSt == errSecSuccess) return fileSt;
     }
     return status;
-#else
-    return real_SecItemCopyMatching(query, result);
-#endif
 }
 
 // Guard strlen(NULL) in IGDeviceReportWithEssentialInfo on sideload.
@@ -159,7 +92,6 @@ static size_t safe_strlen_impl(const char *s) {
 
 static OSStatus hooked_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result) {
     if (!real_SecItemAdd) return -25243; // errSecUnimplemented
-#ifdef SIDELOAD
     CFDictionaryRef rewritten = SideloadSecItemDictCopy(attributes, NO);
     OSStatus status = real_SecItemAdd(rewritten ? rewritten : attributes, result);
     if (rewritten) CFRelease(rewritten);
@@ -171,14 +103,10 @@ static OSStatus hooked_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result)
         fflush(stderr);
     }
     return status;
-#else
-    return real_SecItemAdd(attributes, result);
-#endif
 }
 
 static OSStatus hooked_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attributesToUpdate) {
     if (!real_SecItemUpdate) return -25243;
-#ifdef SIDELOAD
     CFDictionaryRef q = SideloadSecItemDictCopy(query, YES);
     CFDictionaryRef a = SideloadSecItemDictCopy(attributesToUpdate, NO);
     OSStatus status = real_SecItemUpdate(q ? q : query, a ? a : attributesToUpdate);
@@ -186,25 +114,17 @@ static OSStatus hooked_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attr
     if (a) CFRelease(a);
     ThetaHPKESaveFromQueryAndAttrs(query, attributesToUpdate);
     return status;
-#else
-    return real_SecItemUpdate(query, attributesToUpdate);
-#endif
 }
 
 static OSStatus hooked_SecItemDelete(CFDictionaryRef query) {
     if (!real_SecItemDelete) return -25243;
-#ifdef SIDELOAD
     CFDictionaryRef rewritten = SideloadSecItemDictCopy(query, YES);
     OSStatus status = real_SecItemDelete(rewritten ? rewritten : query);
     if (rewritten) CFRelease(rewritten);
     return status;
-#else
-    return real_SecItemDelete(query);
-#endif
 }
 
 static void install_fishhook_rebindings(void) {
-#ifdef SIDELOAD
     // Resolve real implementations before rebinding (after rebind, dlsym would return our hooks).
     void *p = dlsym(RTLD_DEFAULT, "SecItemCopyMatching");
     real_SecItemCopyMatching = (OSStatus (*)(CFDictionaryRef, CFTypeRef *))p;
@@ -229,5 +149,4 @@ static void install_fishhook_rebindings(void) {
     if (rebind_symbols(rebindings, n) == 0) {
         THDebugLog(@"[Theta] strlen/SecItem* hooks installed (sideload session persist)");
     }
-#endif
 }

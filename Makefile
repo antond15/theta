@@ -1,21 +1,13 @@
 export ARCHS = arm64
 export SDKVERSION = 14.5
-INSTALL_TARGET_PROCESSES = Instagram
 
 GO_EASY_ON_ME = 1
 FINALPACKAGE = 1
 
+THETA_VERSION_NUMBER = 1.0.1
+
 # Non-obfuscating toolchain (no Hikari)
 export PREFIX = $(THEOS)/toolchain/Xcode14.xctoolchain/usr/bin/
-
-ifeq ($(filter 1,$(SIDELOAD) $(ROOTLESS)), 1 1)
-$(error "SIDELOAD and ROOTLESS cannot both be set")
-endif
-
-ifeq ($(ROOTLESS), 1)
-	THEOS_PACKAGE_SCHEME = rootless
-	Theta_CFLAGS += -DROOTLESS=1
-endif
 
 # Diagnostic logging (THDebugLog, notification extension traces). Off in normal builds.
 ifeq ($(THETA_DEBUG), 1)
@@ -24,7 +16,6 @@ ifeq ($(THETA_DEBUG), 1)
 endif
 
 include $(THEOS)/makefiles/common.mk
-include $(THEOS_MAKE_PATH)/aggregate.mk
 
 TWEAK_NAME = Theta
 
@@ -37,52 +28,37 @@ Theta_FRAMEWORKS = UIKit Foundation CoreGraphics Photos CoreServices SystemConfi
 Theta_LDFLAGS = -lsqlite3
 Theta_PRIVATE_FRAMEWORKS = Preferences
 
-ifneq ($(SIDELOAD),1)
-Theta_LIBRARIES += substrate
-else
-	Theta_CFLAGS += -I$(THEOS)/vendor/lib/CydiaSubstrate.framework/Headers
-	Theta_LDFLAGS += -F$(THEOS)/vendor/lib -weak_framework CydiaSubstrate
-	Theta_CFLAGS += -DSIDELOAD=1
-endif
+Theta_CFLAGS += -I$(THEOS)/vendor/lib/CydiaSubstrate.framework/Headers
+Theta_LDFLAGS += -F$(THEOS)/vendor/lib -weak_framework CydiaSubstrate
 
 Theta_CFLAGS += -fobjc-arc \
 	-Wno-unused-variable -Wno-unused-value -Wno-deprecated-declarations \
 	-Wno-nullability-completeness -Wno-unused-function -Wno-incompatible-pointer-types \
 	-I$(THEOS_PROJECT_DIR) \
-	-DTHETA_VERSION='"v$(THEOS_PACKAGE_BASE_VERSION)"'
+	-DTHETA_VERSION='"v$(THETA_VERSION_NUMBER)"' \
+	-DTHETA_PROJECT='"theta v$(THETA_VERSION_NUMBER)"'
 
 # FFmpeg headers (runtime loaded via dlopen)
-Theta_CFLAGS += -I"$(THEOS_PROJECT_DIR)/layout/Library/Application Support/ffmpeg.framework"
+Theta_CFLAGS += -I"$(THEOS_PROJECT_DIR)/vendor/ffmpeg.framework"
 
-ifeq ($(SIDELOAD), 1)
-	Theta_CFLAGS += -DTHETA_PROJECT='"theta Jailed v$(THEOS_PACKAGE_BASE_VERSION)"'
-	CODESIGN_IPA = 0
-	TARGET_CODESIGN =
-	LDID_FLAGS =
-	# dsymutil writes a same-named MH_DSYM under *.dSYM/; do not emit it for sideload.
-	TARGET_DSYMUTIL =
-else
-	Theta_CFLAGS += -DTHETA_PROJECT='"theta v$(THEOS_PACKAGE_BASE_VERSION)"'
-endif
+# build.sh injects the dylibs into the IPA; the re-signer signs them. No ldid, no dSYM
+# (dsymutil writes a same-named MH_DSYM under *.dSYM/).
+CODESIGN_IPA = 0
+TARGET_CODESIGN =
+LDID_FLAGS =
+TARGET_DSYMUTIL =
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
-ifeq ($(SIDELOAD),1)
 LIBRARY_NAME = ThetaNSE
 ThetaNSE_FILES = Source/SideloadNSE/ThetaNSE.m Source/SideloadNSE/ThetaHPKEKeyFile.m fishhook.c
 ThetaNSE_FRAMEWORKS = Foundation Security
 ThetaNSE_CFLAGS += -fobjc-arc -fvisibility=hidden -I$(THEOS_PROJECT_DIR)
 include $(THEOS_MAKE_PATH)/library.mk
-endif
 
 before-all::
 	@rm -f TweakCOMPILE.xm
 	@python3 scripts/assemble.py
-	@mkdir -p "ThetaResources.bundle"
-	@mkdir -p "layout/Library/Application Support/ThetaResources.bundle"
 
 after-all::
 	@rm -f TweakCOMPILE.xm
-
-after-install::
-	install.exec "uiopen --bundleid com.burbn.instagram"

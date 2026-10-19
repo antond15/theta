@@ -248,7 +248,5 @@ static void hook_hideIGDSPromoDialog(id self, SEL _cmd) {
 }
 
 void THRegisterDismissIGDSPromoDialogHooks(void) {
-#ifdef SIDELOAD
     NullHookMessageEx(objc_getClass("IGDSPromoDialog.IGDSPromoDialogView"), @selector(didMoveToWindow), (void *)hook_hideIGDSPromoDialog, &orig_hideIGDSPromoDialog);
-#endif
 }

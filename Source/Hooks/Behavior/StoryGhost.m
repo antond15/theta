@@ -1450,9 +1450,7 @@ static UIImage *thetaImageFromBundle(NSString *fileName) {
     NSArray<NSString *> *bundlePaths = @[
         rootBundlePath ?: @"",
         resourceBundlePath ?: @"",
-        resourcesBundlePath ?: @"",
-        @"/Library/Application Support/ThetaResources.bundle",
-        @"/var/jb/Library/Application Support/ThetaResources.bundle"
+        resourcesBundlePath ?: @""
     ];
     for (NSString *bundlePath in bundlePaths) {
         if (bundlePath.length == 0) continue;

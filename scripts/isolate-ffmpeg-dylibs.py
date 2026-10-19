@@ -17,7 +17,7 @@ folder, which iOS then refuses to dlopen. Those strings are shorter
 than the `@rpath/…` ones they replace, so they are patched in place with no load-command
 resizing, and they can never match Instagram's copies in either direction.
 
-Idempotent. Run against a *staged* copy — never against `layout/` in the repo.
+Idempotent. Run against a *staged* copy — never against `vendor/` in the repo.
 
 Usage: isolate-ffmpeg-dylibs.py <path to ffmpeg.framework>
 
