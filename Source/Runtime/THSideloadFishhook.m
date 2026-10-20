@@ -138,6 +138,19 @@ static OSStatus hooked_SecItemDelete(CFDictionaryRef query) {
     return status;
 }
 
+// Meta's caching defaults wrapper reads app-group suites through CFPreferences, not NSUserDefaults.
+static void theta_rebindPreferenceRemap(void) {
+    size_t count = 0;
+    const ThetaCFPrefsHook *hooks = ThetaCFPrefsHooks(&count);
+    struct rebinding rebindings[16];
+    size_t n = 0;
+    for (size_t i = 0; i < count && n < 16; i++) {
+        if (!hooks[i].real) continue;
+        rebindings[n++] = (struct rebinding){ hooks[i].name, hooks[i].replacement, NULL };
+    }
+    if (n) rebind_symbols(rebindings, n);
+}
+
 static void install_fishhook_rebindings(void) {
     // Resolve real implementations before rebinding (after rebind, dlsym would return our hooks).
     void *p = dlsym(RTLD_DEFAULT, "SecItemCopyMatching");
@@ -164,4 +177,5 @@ static void install_fishhook_rebindings(void) {
     original_strlen_fn = (size_t (*)(const char *))dlsym(RTLD_DEFAULT, "strlen");
     // Also called for images that are already loaded.
     _dyld_register_func_for_add_image(theta_rebindStrlenInFBShared);
+    theta_rebindPreferenceRemap();
 }

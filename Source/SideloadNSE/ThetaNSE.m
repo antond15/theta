@@ -493,6 +493,8 @@ static int ThetaNSERebindImage(const struct mach_header *mh, intptr_t slide, con
         { (void *)SecItemUpdate, (void *)hooked_Update },
         { (void *)SecItemDelete, (void *)hooked_Delete },
     };
+    size_t prefsCount = 0;
+    const ThetaCFPrefsHook *prefs = ThetaCFPrefsHooks(&prefsCount);
     for (uint32_t i = 0; i < mh64->ncmds; i++) {
         const struct load_command *lc = (const struct load_command *)cursor;
         cursor += lc->cmdsize;
@@ -512,6 +514,10 @@ static int ThetaNSERebindImage(const struct mach_header *mh, intptr_t slide, con
             void *start = (void *)(slide + sect->addr);
             for (size_t k = 0; k < sizeof(pairs) / sizeof(pairs[0]); k++)
                 patched += ThetaNSEPatchSlots(start, (size_t)sect->size, pairs[k].from, pairs[k].to);
+            for (size_t k = 0; k < prefsCount; k++) {
+                if (prefs[k].real)
+                    patched += ThetaNSEPatchSlots(start, (size_t)sect->size, prefs[k].real, prefs[k].replacement);
+            }
         }
     }
     return patched;

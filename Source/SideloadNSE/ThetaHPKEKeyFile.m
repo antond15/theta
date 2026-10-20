@@ -100,6 +100,100 @@ NSString *ThetaSideloadGroupForOfficial(NSString *gid) {
     return groups[i];
 }
 
+static CFStringRef ThetaMapPrefsApp(CFStringRef app) {
+    if (!app || CFGetTypeID(app) != CFStringGetTypeID()) return app;
+    NSString *mapped = ThetaSideloadGroupForOfficial((__bridge NSString *)app);
+    return mapped ? (__bridge CFStringRef)mapped : app;
+}
+
+static CFPropertyListRef (*real_CFPreferencesCopyAppValue)(CFStringRef, CFStringRef);
+static void (*real_CFPreferencesSetAppValue)(CFStringRef, CFPropertyListRef, CFStringRef);
+static Boolean (*real_CFPreferencesGetAppBooleanValue)(CFStringRef, CFStringRef, Boolean *);
+static CFIndex (*real_CFPreferencesGetAppIntegerValue)(CFStringRef, CFStringRef, Boolean *);
+static CFDictionaryRef (*real_CFPreferencesCopyMultiple)(CFArrayRef, CFStringRef, CFStringRef, CFStringRef);
+static void (*real_CFPreferencesSetMultiple)(CFDictionaryRef, CFArrayRef, CFStringRef, CFStringRef, CFStringRef);
+static CFPropertyListRef (*real_CFPreferencesCopyValue)(CFStringRef, CFStringRef, CFStringRef, CFStringRef);
+static void (*real_CFPreferencesSetValue)(CFStringRef, CFPropertyListRef, CFStringRef, CFStringRef, CFStringRef);
+static Boolean (*real_CFPreferencesAppSynchronize)(CFStringRef);
+static Boolean (*real_CFPreferencesSynchronize)(CFStringRef, CFStringRef, CFStringRef);
+static CFArrayRef (*real_CFPreferencesCopyKeyList)(CFStringRef, CFStringRef, CFStringRef);
+
+static CFPropertyListRef ThetaPrefsCopyAppValue(CFStringRef key, CFStringRef app) {
+    return real_CFPreferencesCopyAppValue(key, ThetaMapPrefsApp(app));
+}
+static void ThetaPrefsSetAppValue(CFStringRef key, CFPropertyListRef value, CFStringRef app) {
+    real_CFPreferencesSetAppValue(key, value, ThetaMapPrefsApp(app));
+}
+static Boolean ThetaPrefsGetAppBooleanValue(CFStringRef key, CFStringRef app, Boolean *valid) {
+    return real_CFPreferencesGetAppBooleanValue(key, ThetaMapPrefsApp(app), valid);
+}
+static CFIndex ThetaPrefsGetAppIntegerValue(CFStringRef key, CFStringRef app, Boolean *valid) {
+    return real_CFPreferencesGetAppIntegerValue(key, ThetaMapPrefsApp(app), valid);
+}
+static CFDictionaryRef ThetaPrefsCopyMultiple(CFArrayRef keys, CFStringRef app, CFStringRef user, CFStringRef host) {
+    CFStringRef mapped = ThetaMapPrefsApp(app);
+    CFDictionaryRef d = real_CFPreferencesCopyMultiple(keys, mapped, user, host);
+    if (mapped != app)
+        ThetaHPKELog(@"CFPreferencesCopyMultiple %@ -> %@ got=%ld", app, mapped, d ? (long)CFDictionaryGetCount(d) : 0L);
+    return d;
+}
+static void ThetaPrefsSetMultiple(CFDictionaryRef set, CFArrayRef remove, CFStringRef app, CFStringRef user, CFStringRef host) {
+    real_CFPreferencesSetMultiple(set, remove, ThetaMapPrefsApp(app), user, host);
+}
+static CFPropertyListRef ThetaPrefsCopyValue(CFStringRef key, CFStringRef app, CFStringRef user, CFStringRef host) {
+    return real_CFPreferencesCopyValue(key, ThetaMapPrefsApp(app), user, host);
+}
+static void ThetaPrefsSetValue(CFStringRef key, CFPropertyListRef value, CFStringRef app, CFStringRef user, CFStringRef host) {
+    real_CFPreferencesSetValue(key, value, ThetaMapPrefsApp(app), user, host);
+}
+static Boolean ThetaPrefsAppSynchronize(CFStringRef app) {
+    return real_CFPreferencesAppSynchronize(ThetaMapPrefsApp(app));
+}
+static Boolean ThetaPrefsSynchronize(CFStringRef app, CFStringRef user, CFStringRef host) {
+    return real_CFPreferencesSynchronize(ThetaMapPrefsApp(app), user, host);
+}
+static CFArrayRef ThetaPrefsCopyKeyList(CFStringRef app, CFStringRef user, CFStringRef host) {
+    return real_CFPreferencesCopyKeyList(ThetaMapPrefsApp(app), user, host);
+}
+
+static ThetaCFPrefsHook gCFPrefsHooks[] = {
+    { "CFPreferencesCopyAppValue", NULL, (void *)ThetaPrefsCopyAppValue },
+    { "CFPreferencesSetAppValue", NULL, (void *)ThetaPrefsSetAppValue },
+    { "CFPreferencesGetAppBooleanValue", NULL, (void *)ThetaPrefsGetAppBooleanValue },
+    { "CFPreferencesGetAppIntegerValue", NULL, (void *)ThetaPrefsGetAppIntegerValue },
+    { "CFPreferencesCopyMultiple", NULL, (void *)ThetaPrefsCopyMultiple },
+    { "CFPreferencesSetMultiple", NULL, (void *)ThetaPrefsSetMultiple },
+    { "CFPreferencesCopyValue", NULL, (void *)ThetaPrefsCopyValue },
+    { "CFPreferencesSetValue", NULL, (void *)ThetaPrefsSetValue },
+    { "CFPreferencesAppSynchronize", NULL, (void *)ThetaPrefsAppSynchronize },
+    { "CFPreferencesSynchronize", NULL, (void *)ThetaPrefsSynchronize },
+    { "CFPreferencesCopyKeyList", NULL, (void *)ThetaPrefsCopyKeyList },
+};
+
+void ThetaCFPrefsResolveReal(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        void **reals[] = {
+            (void **)&real_CFPreferencesCopyAppValue, (void **)&real_CFPreferencesSetAppValue,
+            (void **)&real_CFPreferencesGetAppBooleanValue, (void **)&real_CFPreferencesGetAppIntegerValue,
+            (void **)&real_CFPreferencesCopyMultiple, (void **)&real_CFPreferencesSetMultiple,
+            (void **)&real_CFPreferencesCopyValue, (void **)&real_CFPreferencesSetValue,
+            (void **)&real_CFPreferencesAppSynchronize, (void **)&real_CFPreferencesSynchronize,
+            (void **)&real_CFPreferencesCopyKeyList,
+        };
+        for (size_t i = 0; i < sizeof(gCFPrefsHooks) / sizeof(gCFPrefsHooks[0]); i++) {
+            gCFPrefsHooks[i].real = dlsym(RTLD_DEFAULT, gCFPrefsHooks[i].name);
+            *reals[i] = gCFPrefsHooks[i].real;
+        }
+    });
+}
+
+const ThetaCFPrefsHook *ThetaCFPrefsHooks(size_t *count) {
+    ThetaCFPrefsResolveReal();
+    if (count) *count = sizeof(gCFPrefsHooks) / sizeof(gCFPrefsHooks[0]);
+    return gCFPrefsHooks;
+}
+
 static id (*gOrigInitWithSuiteName)(id, SEL, NSString *);
 
 static id ThetaHookInitWithSuiteName(id self, SEL _cmd, NSString *suite) {

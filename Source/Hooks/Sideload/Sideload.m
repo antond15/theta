@@ -68,6 +68,7 @@ static NSURL *SideloadCacheGroupURL(NSString *groupIdentifier, NSURL *url) {
 		if (!sResolvedGroupURLs) sResolvedGroupURLs = [NSMutableDictionary dictionary];
 		sResolvedGroupURLs[groupIdentifier] = url;
 	}
+	THDebugLog(@"[Theta] group container %@ -> %@", groupIdentifier, url.path);
 	return url;
 }
 

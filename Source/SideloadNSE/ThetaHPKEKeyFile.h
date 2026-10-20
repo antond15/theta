@@ -24,6 +24,17 @@ NSString *ThetaSideloadGroupForOfficial(NSString *gid);
 /* Remap NSUserDefaults suites named after official app groups onto their sideload groups. */
 void ThetaInstallSuiteRemap(void);
 
+/* CFPreferences* replacements that apply the same group remap to their applicationID, for
+   callers (Meta's caching defaults wrapper) that bypass NSUserDefaults. Resolve the real
+   functions with ThetaCFPrefsResolveReal() before any slot is rebound to these. */
+typedef struct {
+    const char *name;
+    void *real;
+    void *replacement;
+} ThetaCFPrefsHook;
+void ThetaCFPrefsResolveReal(void);
+const ThetaCFPrefsHook *ThetaCFPrefsHooks(size_t *count);
+
 #ifdef __cplusplus
 }
 #endif
