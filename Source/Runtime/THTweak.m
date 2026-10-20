@@ -172,6 +172,23 @@ static void RunSideloadSetupOnce(void) {
     });
 }
 
+static void MirrorHPKEKeys(void) {
+    NSString *group = keychainAccessGroup;
+    NSString *wildcard = nil;
+    NSRange dot = [group rangeOfString:@"."];
+    if (dot.location != NSNotFound)
+        wildcard = [[group substringToIndex:dot.location] stringByAppendingString:@".*"];
+    ThetaHPKEMirrorKeychain(group, wildcard);
+}
+
+// The launch probe fails if iOS started the app while the device was still locked. Until it
+// succeeds nothing is remapped, so keep retrying once data protection lifts.
+static void RetryKeychainGroupIfNeeded(void) {
+    if (keychainAccessGroup.length) return;
+    loadKeychainAccessGroup();
+    if (keychainAccessGroup.length) MirrorHPKEKeys();
+}
+
 static void StartTweakWhenReady(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIApplicationState state = UIApplication.sharedApplication.applicationState;
@@ -200,6 +217,18 @@ static void ObserveAppLifecycle(void) {
     }];
     StartTweakWhenReady();
     RunSideloadSetupOnce();
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationProtectedDataDidBecomeAvailable
+                                                      object:nil
+                                                       queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(__unused NSNotification *note) {
+        RetryKeychainGroupIfNeeded();
+    }];
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                      object:nil
+                                                       queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(__unused NSNotification *note) {
+        RetryKeychainGroupIfNeeded();
+    }];
 }
 
 __attribute__((constructor))
@@ -208,14 +237,10 @@ static void ThetaLoad(void) {
     RunSideloadSetupOnce();
     install_fishhook_rebindings();
     dispatch_async(dispatch_get_main_queue(), ^{ RunSideloadSetupOnce(); });
-    NSString *wildcard = nil;
-    NSRange dot = [keychainAccessGroup rangeOfString:@"."];
-    if (dot.location != NSNotFound)
-        wildcard = [[keychainAccessGroup substringToIndex:dot.location] stringByAppendingString:@".*"];
-    ThetaHPKEMirrorKeychain(keychainAccessGroup, wildcard);
+    MirrorHPKEKeys();
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
                    dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        ThetaHPKEMirrorKeychain(keychainAccessGroup, wildcard);
+        MirrorHPKEKeys();
     });
 
     THRegisterLiquidGlassTabBarEarlyHooks();

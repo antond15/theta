@@ -3,10 +3,13 @@ static void loadKeychainAccessGroup() {
 		// Probe the group iOS actually assigns. Do not guess TEAM.bundleID —
 		// resigners often entitle a different first keychain-access-group, and
 		// writing to a guessed group makes the next launch look logged out.
+		// AfterFirstUnlock so the probe also works when iOS launches the app in the background
+		// while the device is locked (the default WhenUnlocked item reads as -25308 then).
 		NSDictionary* dummyItem = @{
 			(__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
-			(__bridge id)kSecAttrAccount : @"dummyItem",
-			(__bridge id)kSecAttrService : @"dummyService",
+			(__bridge id)kSecAttrAccount : @"thetaGroupProbe",
+			(__bridge id)kSecAttrService : @"thetaGroupProbe",
+			(__bridge id)kSecAttrAccessible : (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
 			(__bridge id)kSecReturnAttributes : @YES,
 		};
 

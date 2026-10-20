@@ -414,7 +414,10 @@ static id hook_getEnc2(id self, SEL _cmd, id keyFor, NSError **err) {
     return orig_getEnc2 ? orig_getEnc2(self, _cmd, keyFor, err) : nil;
 }
 
+static void ThetaNSEReprobeGroupIfNeeded(void);
+
 static void hook_didReceive(id self, SEL _cmd, id request, ThetaNSEContentHandler handler) {
+    ThetaNSEReprobeGroupIfNeeded();
     ThetaNSERebindAllNow("didReceive");
 #if THETA_DEBUG
     gSecLogLeft = 32;
@@ -602,26 +605,52 @@ static NSString *ThetaNSEPreferredSharedGroup(NSArray<NSString *> *entitled) {
     return wanted.firstObject;
 }
 
+static BOOL gKeychainGroupProbed;
+
+/* Same dummy probe as the main-app tweak: iOS returns the first entitled group. AfterFirstUnlock
+   because pushes usually arrive while the device is locked, where a WhenUnlocked item reads as -25308. */
+static NSString *ThetaNSEProbeGroup(OSStatus *outStatus) {
+    NSDictionary *dummy = @{
+        (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrAccount : @"thetaGroupProbe",
+        (__bridge id)kSecAttrService : @"thetaGroupProbe",
+        (__bridge id)kSecAttrAccessible : (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        (__bridge id)kSecReturnAttributes : @YES,
+    };
+    CFTypeRef result = NULL;
+    OSStatus st = real_SecItemCopyMatching ? real_SecItemCopyMatching((__bridge CFDictionaryRef)dummy, &result)
+                                           : SecItemCopyMatching((__bridge CFDictionaryRef)dummy, &result);
+    if (st == errSecItemNotFound)
+        st = real_SecItemAdd ? real_SecItemAdd((__bridge CFDictionaryRef)dummy, &result)
+                             : SecItemAdd((__bridge CFDictionaryRef)dummy, &result);
+    NSString *group = nil;
+    if (st == 0 && result && CFGetTypeID(result) == CFDictionaryGetTypeID())
+        group = ((__bridge NSDictionary *)result)[(__bridge id)kSecAttrAccessGroup];
+    if (result) CFRelease(result);
+    if (outStatus) *outStatus = st;
+    return group.length ? group : nil;
+}
+
+static void ThetaNSEReprobeGroupIfNeeded(void) {
+    if (gKeychainGroupProbed) return;
+    OSStatus st = 0;
+    NSString *group = ThetaNSEProbeGroup(&st);
+    if (!group) return;
+    gKeychainGroupProbed = YES;
+    gKeychainGroup = group;
+    if (ThetaNSEGroupIsWildcard(group)) gWildcardKeychainGroup = group;
+    ThetaNSELog("re-probed keychain group %s (status=%d)", group.UTF8String, (int)st);
+}
+
 static void ThetaNSELoadGroup(void) {
     NSArray<NSString *> *entitled = ThetaNSEEntitledKeychainGroups();
     ThetaNSELog("entitled keychain groups (%lu): %s",
                 (unsigned long)entitled.count,
                 entitled.description.UTF8String ?: "(none)");
 
-    // Same dummy probe as the main-app tweak: iOS returns the first entitled group.
-    NSDictionary *dummy = @{
-        (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrAccount : @"thetaNSEDummy",
-        (__bridge id)kSecAttrService : @"thetaNSEDummy",
-        (__bridge id)kSecReturnAttributes : @YES,
-    };
-    CFTypeRef result = NULL;
-    OSStatus st = SecItemCopyMatching((__bridge CFDictionaryRef)dummy, &result);
-    if (st == errSecItemNotFound) st = SecItemAdd((__bridge CFDictionaryRef)dummy, &result);
-    if (st == 0 && result) {
-        gKeychainGroup = ((__bridge NSDictionary *)result)[(__bridge id)kSecAttrAccessGroup];
-        CFRelease(result);
-    }
+    OSStatus st = 0;
+    gKeychainGroup = ThetaNSEProbeGroup(&st);
+    gKeychainGroupProbed = gKeychainGroup.length > 0;
 
     if (ThetaNSEGroupIsWildcard(gKeychainGroup))
         gWildcardKeychainGroup = gKeychainGroup;
