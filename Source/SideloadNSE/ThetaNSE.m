@@ -305,6 +305,11 @@ static BOOL ThetaNSECanWrite(NSURL *url) {
 }
 
 static NSURL *hook_containerURL(id self, SEL _cmd, NSString *groupIdentifier) {
+    NSString *mapped = ThetaSideloadGroupForOfficial(groupIdentifier);
+    if (mapped && orig_containerURL) {
+        NSURL *mappedURL = orig_containerURL(self, _cmd, mapped);
+        if (mappedURL.path.length) return mappedURL;
+    }
     if (orig_containerURL && groupIdentifier.length) {
         NSURL *realURL = orig_containerURL(self, _cmd, groupIdentifier);
         if (ThetaNSECanWrite(realURL)) return realURL;
@@ -703,6 +708,7 @@ static void ThetaNSEInit(void) {
         ThetaNSESwizzle(fm, @selector(containerURLForSecurityApplicationGroupIdentifier:),
                         (IMP)hook_containerURL, (void **)&orig_containerURL);
         ThetaHPKESetContainerOrig((ThetaHPKEContainerURLFn)orig_containerURL);
+        ThetaInstallSuiteRemap();
 
 #if THETA_DEBUG
         NSOperatingSystemVersion ver = [[NSProcessInfo processInfo] operatingSystemVersion];

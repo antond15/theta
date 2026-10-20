@@ -1,6 +1,7 @@
 #import "Source/SideloadNSE/ThetaHPKEKeyFile.h"
 #import <stdarg.h>
 #import <dlfcn.h>
+#import <objc/runtime.h>
 #import <os/log.h>
 #import <stdio.h>
 
@@ -72,6 +73,42 @@ static NSArray<NSString *> *ThetaHPKEEntitledAppGroups(void) {
         groups = [(__bridge NSArray *)raw copy];
     if (raw) CFRelease(raw);
     return groups ?: @[];
+}
+
+/* Re-signers rename the app groups (e.g. group.<hash>.1 … .5), so the app and the NSE no longer
+   share group.com.burbn.instagram: each gets a private, empty stand-in. IG's NSE reads the
+   logged-in accounts from that suite and hides the message text when it finds none. Map each
+   official group, by position, onto the sorted sideload groups both binaries are entitled to. */
+NSString *ThetaSideloadGroupForOfficial(NSString *gid) {
+    static NSArray<NSString *> *official;
+    static NSArray<NSString *> *entitled;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        official = @[ @"group.com.burbn.instagram", @"group.com.facebook.family", @"group.com.burbn.family" ];
+        entitled = [ThetaHPKEEntitledAppGroups() sortedArrayUsingSelector:@selector(compare:)];
+    });
+    if (![gid isKindOfClass:[NSString class]]) return nil;
+    NSUInteger i = [official indexOfObject:gid];
+    if (i == NSNotFound || [entitled containsObject:gid] || i >= entitled.count) return nil;
+    return entitled[i];
+}
+
+static id (*gOrigInitWithSuiteName)(id, SEL, NSString *);
+
+static id ThetaHookInitWithSuiteName(id self, SEL _cmd, NSString *suite) {
+    NSString *mapped = ThetaSideloadGroupForOfficial(suite);
+    return gOrigInitWithSuiteName(self, _cmd, mapped ?: suite);
+}
+
+void ThetaInstallSuiteRemap(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Method m = class_getInstanceMethod([NSUserDefaults class], @selector(initWithSuiteName:));
+        if (!m) return;
+        gOrigInitWithSuiteName = (id (*)(id, SEL, NSString *))method_setImplementation(m, (IMP)ThetaHookInitWithSuiteName);
+        ThetaHPKELog(@"suite remap group.com.burbn.instagram -> %@",
+                     ThetaSideloadGroupForOfficial(@"group.com.burbn.instagram") ?: @"(none)");
+    });
 }
 
 static NSURL *ThetaHPKETryGroup(id fm, SEL sel, NSString *gid) {

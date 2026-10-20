@@ -145,6 +145,7 @@ static void RunSideloadSetupOnce(void) {
             NullHookMessageEx(objc_getClass("NSFileManager"), @selector(createDirectoryAtPath:withIntermediateDirectories:attributes:error:), (void *)hook_createDirectoryAtPath, &orig_createDirectoryAtPath);
             NullHookMessageEx(objc_getClass("NSFileManager"), @selector(containerURLForSecurityApplicationGroupIdentifier:), (void *)hook_NSFileManager, &orig_NSFileManager);
             ThetaHPKESetContainerOrig((ThetaHPKEContainerURLFn)orig_NSFileManager);
+            ThetaInstallSuiteRemap();
             ThetaHPKEDumpStatus();
             if (!orig_NSFileManager || !orig_createDirectoryAtPath) {
                 NSLog(@"[Theta] Sideload NSFileManager hooks incomplete (orig_container=%p orig_mkdir=%p)",

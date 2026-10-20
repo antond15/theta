@@ -86,6 +86,12 @@ static NSURL *hook_NSFileManager(id self, SEL _cmd, NSString *groupIdentifier) {
 				SideloadEnsureFakeGroupDirectories(self, cached);
 			return cached;
 		}
+		// Use the re-signer's renamed group so the NSE sees the same container.
+		NSString *mapped = ThetaSideloadGroupForOfficial(groupIdentifier);
+		if (mapped && orig_NSFileManager) {
+			NSURL *mappedURL = orig_NSFileManager(self, _cmd, mapped);
+			if (mappedURL.path.length) return SideloadCacheGroupURL(groupIdentifier, mappedURL);
+		}
 		if (orig_NSFileManager && groupIdentifier.length) {
 			NSURL *realURL = orig_NSFileManager(self, _cmd, groupIdentifier);
 			if (realURL.path.length) {
