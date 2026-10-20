@@ -85,18 +85,26 @@ NSString *ThetaSideloadGroupForOfficial(NSString *gid) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         official = @[ @"group.com.burbn.instagram", @"group.com.facebook.family", @"group.com.burbn.family" ];
-        entitled = [ThetaHPKEEntitledAppGroups() sortedArrayUsingSelector:@selector(compare:)];
     });
     if (![gid isKindOfClass:[NSString class]]) return nil;
     NSUInteger i = [official indexOfObject:gid];
-    if (i == NSNotFound || [entitled containsObject:gid] || i >= entitled.count) return nil;
-    return entitled[i];
+    if (i == NSNotFound) return nil;
+    NSArray<NSString *> *groups;
+    @synchronized (official) {
+        // Retried until the entitlement read succeeds rather than cached empty.
+        if (!entitled.count)
+            entitled = [ThetaHPKEEntitledAppGroups() sortedArrayUsingSelector:@selector(compare:)];
+        groups = entitled;
+    }
+    if ([groups containsObject:gid] || i >= groups.count) return nil;
+    return groups[i];
 }
 
 static id (*gOrigInitWithSuiteName)(id, SEL, NSString *);
 
 static id ThetaHookInitWithSuiteName(id self, SEL _cmd, NSString *suite) {
     NSString *mapped = ThetaSideloadGroupForOfficial(suite);
+    if (mapped) ThetaHPKELog(@"suite %@ -> %@", suite, mapped);
     return gOrigInitWithSuiteName(self, _cmd, mapped ?: suite);
 }
 
@@ -105,7 +113,9 @@ void ThetaInstallSuiteRemap(void) {
     dispatch_once(&once, ^{
         Method m = class_getInstanceMethod([NSUserDefaults class], @selector(initWithSuiteName:));
         if (!m) return;
-        gOrigInitWithSuiteName = (id (*)(id, SEL, NSString *))method_setImplementation(m, (IMP)ThetaHookInitWithSuiteName);
+        // Save the original before publishing the hook so a concurrent init never sees NULL.
+        gOrigInitWithSuiteName = (id (*)(id, SEL, NSString *))method_getImplementation(m);
+        method_setImplementation(m, (IMP)ThetaHookInitWithSuiteName);
         ThetaHPKELog(@"suite remap group.com.burbn.instagram -> %@",
                      ThetaSideloadGroupForOfficial(@"group.com.burbn.instagram") ?: @"(none)");
     });
