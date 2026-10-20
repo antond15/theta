@@ -308,6 +308,7 @@ static NSURL *hook_containerURL(id self, SEL _cmd, NSString *groupIdentifier) {
     NSString *mapped = ThetaSideloadGroupForOfficial(groupIdentifier);
     if (mapped && orig_containerURL) {
         NSURL *mappedURL = orig_containerURL(self, _cmd, mapped);
+        ThetaNSELog("group container %s -> %s", groupIdentifier.UTF8String, mappedURL.path.UTF8String ?: "(nil)");
         if (mappedURL.path.length) return mappedURL;
     }
     if (orig_containerURL && groupIdentifier.length) {
