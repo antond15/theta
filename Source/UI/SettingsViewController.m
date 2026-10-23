@@ -185,6 +185,7 @@ static UIColor *THColorFromHexString(NSString *hexString) {
             @{@"title": @"Upload Audio Messages", @"detail": @"Upload audio messages.", @"info": @"When enabled, whenever you press the voice message button, you will get a dialog asking if you want to upload audio from a video that's in your camera roll or record a new one."},
             @{@"title": @"Bypass Character Limit", @"detail": @"Bypass the character limit in messages."},
             @{@"title": @"Hide Typing Indicator", @"detail": @"Recipients won't know you're typing."},
+            @{@"title": @"Mute Shared Reel Notifications", @"detail": @"No notification when someone sends you a reel.", @"info": @"Messages with a reel shared from the Reels tab no longer alert you. They still arrive in your inbox. Other messages, including posts and stories, notify as usual."},
             @{@"title": @"Mark As Seen", @"detail": @"Mark messages as seen with a button."},
             @{@"title": @"Mark As Seen Auto-Mark List", @"detail": @"Users in this list: their DMs are marked seen automatically.", @"type": @"view", @"viewController": @"ThetaUserListEditorViewController", @"listKey": @"Theta_MarkAsSeen_AutoMarkUserIds", @"listTitle": @"Mark as seen auto-mark list"},
             @{@"title": @"Seen On Typing", @"detail": @"Mark messages as seen when typing."},

@@ -34,6 +34,10 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - **Launch cleanup** deletes only Theta's own leftover temp files. It used to delete every audio and video file in `Documents/`.
 - Bulk-save and thumbnail temp files have unique names, so overlapping saves can't overwrite each other.
 
+## New settings
+
+- **Mute Shared Reel Notifications** (Messages). A DM that shares a reel is delivered without sound at the passive level, then removed from Notification Center. The notification extension does this, keyed on Instagram's `direct_v2_clips_share` category, and reads the toggle from the shared app group. A sideload can't drop a push outright: that needs Apple's notification-filtering entitlement.
+
 ## Removed
 
 - **Jailbreak builds.** The rootful and rootless `.deb` targets, `control`, `layout/` and the `SIDELOAD` switch are gone; `./build.sh` builds the sideload IPA. The jailbreak-only code went with them: the Liquid Glass C-symbol and Instants inline hooks, the keychain blocking path, and the `/var/jb` lookups. FFmpeg now lives in `vendor/ffmpeg.framework`.

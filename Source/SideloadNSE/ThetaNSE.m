@@ -4,12 +4,14 @@
  * patch LC_DYLD_CHAINED_FIXUPS, so this dylib only:
  *   - Rebind SecItem* (remap Meta keychain groups onto the host app's)
  *   - Swizzle FB/UIC keychain accessGroup + app-group containerURL
+ *   - Silence DMs that share a reel when Mute Shared Reel Notifications is on
  */
 
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
 #import <os/log.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <dlfcn.h>
 #import <mach/mach.h>
 #import <mach/vm_map.h>
@@ -422,6 +424,53 @@ static id hook_getEnc2(id self, SEL _cmd, id keyFor, NSError **err) {
 
 static void ThetaNSEReprobeGroupIfNeeded(void);
 
+/* IG's NSE sets this category on a DM that shares a reel ("clips" internally; "reel_share" is a story). */
+static NSString *const kThetaNSEClipsShareCategory = @"direct_v2_clips_share";
+
+static NSString *ThetaNSEStringValue(id obj, NSString *key) {
+    id value = nil;
+    @try { value = [obj valueForKey:key]; } @catch (__unused NSException *e) {}
+    return [value isKindOfClass:[NSString class]] ? value : nil;
+}
+
+static BOOL ThetaNSEIsMutedReelShare(id request, id content) {
+    NSString *category = ThetaNSEStringValue(content, @"categoryIdentifier");
+    if (!category.length) {
+        id original = nil;
+        @try { original = [request valueForKey:@"content"]; } @catch (__unused NSException *e) {}
+        category = ThetaNSEStringValue(original, @"categoryIdentifier");
+    }
+    ThetaNSELog("delivering category=%s", category.UTF8String ?: "-");
+    if (![category isEqualToString:kThetaNSEClipsShareCategory]) return NO;
+    NSUserDefaults *shared = [[NSUserDefaults alloc] initWithSuiteName:THETA_SHARED_SUITE];
+    return [shared boolForKey:THETA_SHARED_MUTE_REEL_SHARES];
+}
+
+/* Dropping a push outright needs the filtering entitlement, which a sideload can't have. Deliver
+   it without sound at the passive level instead (no banner, screen stays off), then remove it. */
+static id ThetaNSESilencedContent(id content) {
+    id quiet = nil;
+    @try { quiet = [content mutableCopy]; } @catch (__unused NSException *e) {}
+    if (!quiet) return content;
+    @try {
+        [quiet setValue:nil forKey:@"sound"];
+        if ([quiet respondsToSelector:NSSelectorFromString(@"setInterruptionLevel:")])
+            [quiet setValue:@0 forKey:@"interruptionLevel"]; // UNNotificationInterruptionLevelPassive
+    } @catch (__unused NSException *e) {}
+    return quiet;
+}
+
+static void ThetaNSERemoveDelivered(NSString *identifier) {
+    if (!identifier.length) return;
+    Class centerClass = objc_getClass("UNUserNotificationCenter");
+    if (!centerClass) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        id center = ((id (*)(Class, SEL))objc_msgSend)(centerClass, @selector(currentNotificationCenter));
+        ((void (*)(id, SEL, NSArray *))objc_msgSend)(center, @selector(removeDeliveredNotificationsWithIdentifiers:), @[identifier]);
+        ThetaNSELog("removed muted reel share %s", identifier.UTF8String);
+    });
+}
+
 static void hook_didReceive(id self, SEL _cmd, id request, ThetaNSEContentHandler handler) {
     ThetaNSEReprobeGroupIfNeeded();
     ThetaNSERebindAllNow("didReceive");
@@ -435,8 +484,10 @@ static void hook_didReceive(id self, SEL _cmd, id request, ThetaNSEContentHandle
         ThetaNSELog("didReceive keys=%lu", (unsigned long)[info count]);
         ThetaNSELogInfoTree(info, @"", 0);
     }
+#endif
     ThetaNSEContentHandler origHandler = handler;
     ThetaNSEContentHandler wrapped = ^(id notifContent) {
+#if THETA_DEBUG
         NSUInteger titleLen = 0, bodyLen = 0;
         @try {
             titleLen = [[notifContent valueForKey:@"title"] length];
@@ -444,11 +495,14 @@ static void hook_didReceive(id self, SEL _cmd, id request, ThetaNSEContentHandle
         } @catch (__unused NSException *e) {}
         ThetaNSELog("contentHandler titleLen=%lu bodyLen=%lu",
                     (unsigned long)titleLen, (unsigned long)bodyLen);
-        if (origHandler) origHandler(notifContent);
-    };
-    handler = wrapped;
 #endif
-    if (orig_didReceive) orig_didReceive(self, _cmd, request, handler);
+        id delivered = notifContent;
+        BOOL muted = notifContent && ThetaNSEIsMutedReelShare(request, notifContent);
+        if (muted) delivered = ThetaNSESilencedContent(notifContent);
+        if (origHandler) origHandler(delivered);
+        if (muted) ThetaNSERemoveDelivered(ThetaNSEStringValue(request, @"identifier"));
+    };
+    if (orig_didReceive) orig_didReceive(self, _cmd, request, origHandler ? wrapped : handler);
 }
 
 static BOOL ThetaNSEMakeDataWritable(void *addr, size_t len) {

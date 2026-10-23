@@ -24,6 +24,11 @@ NSString *ThetaSideloadGroupForOfficial(NSString *gid);
 /* Remap NSUserDefaults suites named after official app groups onto their sideload groups. */
 void ThetaInstallSuiteRemap(void);
 
+/* Settings the app mirrors into the shared suite for the NSE, which can't read the app's defaults.
+   The suite name is remapped like Instagram's own (ThetaInstallSuiteRemap). */
+#define THETA_SHARED_SUITE @"group.com.burbn.instagram"
+#define THETA_SHARED_MUTE_REEL_SHARES @"Theta_MuteSharedReelNotifications"
+
 /* CFPreferences* replacements that apply the same group remap to their applicationID, for
    callers (Meta's caching defaults wrapper) that bypass NSUserDefaults. Resolve the real
    functions with ThetaCFPrefsResolveReal() before any slot is rebound to these. */
