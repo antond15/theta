@@ -280,95 +280,49 @@ static void hook_directMessageCell_configure(id self, SEL _cmd, id viewModel, id
 	objc_setAssociatedObject(bubble, &kThetaProcessedMessageIdKey, serverId, OBJC_ASSOCIATION_COPY_NONATOMIC);
 }
 
+// Strips the server-ID keys out of a removeMessages update and saves them, so the
+// deletion becomes a no-op while the rest of the batch still applies. The update is
+// a plain FBIvarBasedEqualityObject, so its key list is replaced in place.
+static void thetaStripDeletedMessageKeys(id messageUpdate) {
+	NSArray *removeKeys = [messageUpdate valueForKey:@"_removeMessages_messageKeys"];
+	if (![removeKeys isKindOfClass:[NSArray class]] || removeKeys.count == 0) return;
+
+	Class keyClass = NSClassFromString(@"IGDirectMessageUpdateMessageKey");
+	NSMutableArray *remainingKeys = [NSMutableArray array];
+	for (id messageKey in removeKeys) {
+		id serverId = (keyClass && [messageKey isKindOfClass:keyClass]) ? [messageKey valueForKey:@"_messageServerId"] : nil;
+		if (![serverId isKindOfClass:[NSString class]] || [serverId length] == 0) {
+			// No server ID (e.g. an unsent local message): nothing to show later, let it go
+			[remainingKeys addObject:messageKey];
+			continue;
+		}
+		[[MessagesManager sharedManager] saveDeletedMessageWithID:serverId];
+	}
+	if (remainingKeys.count == removeKeys.count) return;
+	[messageUpdate setValue:[remainingKeys copy] forKey:@"_removeMessages_messageKeys"];
+}
+
 static void (*orig_messageCache3)(id self, SEL _cmd, id updates, id completion, id userAccess);
 static void hook_messageCache3(id self, SEL _cmd, id updates, id completion, id userAccess) {
-	if (!ENABLED(@"Keep Deleted Messages")) {
-		orig_messageCache3(self, _cmd, updates, completion, userAccess);
-		return;
-	}
-
-	BOOL shouldBlockUpdate = NO;
-
-	if (updates) {
-		id retained = updates;
-		static char kThetaRetainedUpdateKey;
-		objc_setAssociatedObject(self, &kThetaRetainedUpdateKey, retained, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-		NSString *debugDescription = [retained respondsToSelector:@selector(debugDescription)] ? [retained debugDescription] : [retained description];
-
-		id cacheThreadUpdate = nil;
-		if ([retained isKindOfClass:[NSArray class]] && [(NSArray *)retained count] > 0) {
-			cacheThreadUpdate = [(NSArray *)retained firstObject];
-		} else {
-			cacheThreadUpdate = retained;
-		}
-
-		id threadUpdates = nil;
-		if (cacheThreadUpdate && [cacheThreadUpdate respondsToSelector:@selector(valueForKey:)]) {
-			threadUpdates = [cacheThreadUpdate valueForKey:@"threadUpdates"];
-		}
-
-		id threadUpdateObj = nil;
-		if ([threadUpdates isKindOfClass:[NSArray class]] && [(NSArray *)threadUpdates count] > 0) {
-			threadUpdateObj = [(NSArray *)threadUpdates firstObject];
-		}
-
-		if (threadUpdateObj) {
-			static char kThetaRetainedThreadUpdateKey;
-			objc_setAssociatedObject(self, &kThetaRetainedThreadUpdateKey, threadUpdateObj, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+	if (ENABLED(@"Keep Deleted Messages")) {
+		// updates: [IGDirectCacheThreadUpdate] -> threadUpdates: [IGDirectThreadUpdate] -> _messageUpdate
+		NSArray *cacheThreadUpdates = [updates isKindOfClass:[NSArray class]] ? updates : (updates ? @[updates] : @[]);
+		for (id cacheThreadUpdate in cacheThreadUpdates) {
 			@try {
-				id messageUpdate = [threadUpdateObj valueForKey:@"_messageUpdate"];
-				if (messageUpdate) {
-					NSArray *removeKeys = [messageUpdate valueForKey:@"_removeMessages_messageKeys"];
-					if (removeKeys.count == 0) {
-						// No messages to remove, proceed normally
-						orig_messageCache3(self, _cmd, updates, completion, userAccess);
-						return;
-					}
-
-					// Process all removeKeys to save deleted messages
-					BOOL allValid = YES;
-					for (id messageKey in removeKeys) {
-						if (![messageKey isKindOfClass:NSClassFromString(@"IGDirectMessageUpdateMessageKey")]) {
-							// Invalid message key format, proceed normally
-							allValid = NO;
-							break;
-						}
-						IGDirectMessageUpdateMessageKey *updateKey = messageKey;
-
-						id serverIdValue = [updateKey valueForKey:@"_messageServerId"];
-						if (!serverIdValue) {
-							// No server ID, proceed normally
-							allValid = NO;
-							break;
-						}
-
-						NSString *MsgKey = serverIdValue;
-						[[MessagesManager sharedManager] saveDeletedMessageWithID:MsgKey];
-						shouldBlockUpdate = YES; // Mark that we should block this update
-					}
-
-					// If we found any invalid cases, proceed normally
-					if (!allValid) {
-						orig_messageCache3(self, _cmd, updates, completion, userAccess);
-						return;
-					}
+				NSArray *threadUpdates = [cacheThreadUpdate valueForKey:@"threadUpdates"];
+				if (![threadUpdates isKindOfClass:[NSArray class]]) continue;
+				for (id threadUpdate in threadUpdates) {
+					id messageUpdate = [threadUpdate valueForKey:@"_messageUpdate"];
+					if (messageUpdate) thetaStripDeletedMessageKeys(messageUpdate);
 				}
 			} @catch (NSException *e) {
 				NSLog(@"Error accessing IGDirectThreadUpdate: %@", e);
-				// On error, proceed normally
-				orig_messageCache3(self, _cmd, updates, completion, userAccess);
-				return;
 			}
 		}
 	}
 
-	// If we successfully saved deleted messages, block the update
-	if (shouldBlockUpdate) {
-		return;
-	}
-
-	// Otherwise, proceed with the original update
+	// Always hand the batch on: Instagram chains cache application and thread loading
+	// on the completion, so it has to run exactly once.
 	orig_messageCache3(self, _cmd, updates, completion, userAccess);
 }
 

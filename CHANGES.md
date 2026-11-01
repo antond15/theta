@@ -22,6 +22,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - **Reel saving.** Export sessions are guarded against unsupported file types, downloads use precise timing, and the single-reel path refuses to save a raw DASH segment.
 - **FFmpeg / AV1.** Instagram ships its own stripped `libavcodec` and `libavutil` with the same install names as Theta's FFmpeg. The sideload build therefore moves Theta's libraries to `ffmpeg.framework/dylibs/<name>.dylib`, rewrites their install names to `@loader_path/<name>.dylib` and ad-hoc signs them, so re-signers sign them and they can't bind to Instagram's copies. When a conversion fails, the toast says why.
 - **DMs opened from a notification on a cold launch** no longer stay on "Loading...". Instagram swaps its loading screen for the thread once, from `viewDidAppear:`, and on a cold launch that swap landed while its TestFlight update nudge was being presented and dismissed, so it was lost. Theta retries the same swap once the navigation controller settles.
+- **Keep Deleted Messages** no longer drops whole DM update batches or leaves threads loading. It used to swallow every batch that contained an unsend, including new messages and other threads, and never called Instagram's completion. Theta now removes only the unsent message keys from the batch and passes the rest on.
 - **App-group containers** are probed once per group instead of writing a probe file on every lookup.
 
 ## Privacy and data
