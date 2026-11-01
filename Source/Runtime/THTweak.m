@@ -249,6 +249,8 @@ static void ThetaLoad(void) {
     // The tab bar is built before InitializeHooks runs, so its hooks must already be installed.
     THRegisterNavigationHooks();
     THRegisterHideTabsHooks();
+    // A notification tap on cold launch is delivered before InitializeHooks runs.
+    THRegisterNotificationThreadOpenHooks();
 
     appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     NSString *thetaProject = [NSString stringWithUTF8String:THETA_PROJECT];
