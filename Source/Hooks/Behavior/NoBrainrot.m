@@ -7,6 +7,14 @@ static void hook_hideBrainBot(IGUnifiedVideoCollectionView *self, SEL _cmd) {
     }
 }
 
+/* Instagram turns scrolling off while the scrubber is dragged and back on afterwards, which
+   would undo the lock above. */
+static void (*orig_setScrollEnabled)(IGUnifiedVideoCollectionView *self, SEL _cmd, BOOL enabled);
+static void hook_setScrollEnabled(IGUnifiedVideoCollectionView *self, SEL _cmd, BOOL enabled) {
+    orig_setScrollEnabled(self, _cmd, enabled && !ENABLED(@"Disable Scrolling Reels"));
+}
+
 void THRegisterNoBrainrotHooks(void) {
     NullHookMessageEx(objc_getClass("IGUnifiedVideoCollectionView"), @selector(didMoveToWindow), (void *)hook_hideBrainBot, &orig_hideBrainBot);
+    NullHookMessageEx(objc_getClass("IGUnifiedVideoCollectionView"), @selector(setScrollEnabled:), (void *)hook_setScrollEnabled, &orig_setScrollEnabled);
 }
