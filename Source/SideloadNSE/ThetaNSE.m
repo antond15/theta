@@ -447,13 +447,15 @@ static BOOL ThetaNSEIsMutedReelShare(id request, id content) {
 }
 
 /* Dropping a push outright needs the filtering entitlement, which a sideload can't have. Deliver
-   it without sound at the passive level instead (no banner, screen stays off), then remove it. */
+   it without sound at the passive level instead (no banner, screen stays off), then remove it.
+   A nil badge leaves the icon badge alone, so the muted push doesn't bump the count. */
 static id ThetaNSESilencedContent(id content) {
     id quiet = nil;
     @try { quiet = [content mutableCopy]; } @catch (__unused NSException *e) {}
     if (!quiet) return content;
     @try {
         [quiet setValue:nil forKey:@"sound"];
+        [quiet setValue:nil forKey:@"badge"];
         if ([quiet respondsToSelector:NSSelectorFromString(@"setInterruptionLevel:")])
             [quiet setValue:@0 forKey:@"interruptionLevel"]; // UNNotificationInterruptionLevelPassive
     } @catch (__unused NSException *e) {}

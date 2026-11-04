@@ -38,7 +38,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 
 ## New settings
 
-- **Mute Shared Reel Notifications** (Messages). A DM that shares a reel is delivered without sound at the passive level, then removed from Notification Center. The notification extension does this, keyed on Instagram's `direct_v2_clips_share` category, and reads the toggle from the shared app group. A sideload can't drop a push outright: that needs Apple's notification-filtering entitlement.
+- **Mute Shared Reel Notifications** (Messages). A DM that shares a reel is delivered without sound at the passive level, then removed from Notification Center, and it doesn't add to the app icon badge. The notification extension does this, keyed on Instagram's `direct_v2_clips_share` category, and reads the toggle from the shared app group. A sideload can't drop a push outright: that needs Apple's notification-filtering entitlement.
 
 ## Removed
 
