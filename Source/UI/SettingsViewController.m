@@ -186,6 +186,7 @@ static UIColor *THColorFromHexString(NSString *hexString) {
             @{@"title": @"Bypass Character Limit", @"detail": @"Bypass the character limit in messages."},
             @{@"title": @"Hide Typing Indicator", @"detail": @"Recipients won't know you're typing."},
             @{@"title": @"Hide Shared Reel Thumbnails", @"detail": @"Hide reel preview images in DMs.", @"info": @"Shared reels keep their play button, account details and icons while the thumbnail image is replaced. Tap the message to open the reel."},
+            @{@"title": @"Hide Shared Post Thumbnails", @"detail": @"Hide shared post images and caption previews in DMs.", @"info": @"Shared posts keep their account details and icons while the thumbnail image and caption preview are hidden. Tap the message to open the post."},
             @{@"title": @"Mute Shared Reel Notifications", @"detail": @"No notification when someone sends you a reel.", @"info": @"Messages with a reel shared from the Reels tab no longer alert you. They still arrive in your inbox. Other messages, including posts and stories, notify as usual."},
             @{@"title": @"Mark As Seen", @"detail": @"Mark messages as seen with a button."},
             @{@"title": @"Mark As Seen Auto-Mark List", @"detail": @"Users in this list: their DMs are marked seen automatically.", @"type": @"view", @"viewController": @"ThetaUserListEditorViewController", @"listKey": @"Theta_MarkAsSeen_AutoMarkUserIds", @"listTitle": @"Mark as seen auto-mark list"},

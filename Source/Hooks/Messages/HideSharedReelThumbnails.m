@@ -1,6 +1,7 @@
 /* Replace only the image; Instagram owns the surrounding controls and decoration. */
 static char THSharedThumbnailHiddenKey;
 static char THSharedThumbnailOriginalKey;
+static char THSharedCaptionHiddenKey;
 
 static UIImage *THSharedThumbnailPlaceholder(void) {
     static UIImage *image;
@@ -33,37 +34,42 @@ static void hook_THSharedShowImage(UIImageView *self, SEL _cmd, UIImage *image, 
     orig_THSharedShowImage(self, _cmd, THSharedThumbnailImage(self, image), state);
 }
 
-static BOOL THSharedPreviewURL(id value) {
+static BOOL THSharedPreviewURL(id value, BOOL reels) {
     NSString *string = [value isKindOfClass:NSURL.class] ? [value absoluteString] : value;
     if (![string isKindOfClass:NSString.class]) return NO;
     NSURLComponents *url = [NSURLComponents componentsWithString:string];
     if ([url.scheme.lowercaseString isEqualToString:@"instagram"])
-        return [@[@"clips", @"reel", @"reels"] containsObject:url.host.lowercaseString];
+        return [(reels ? @[@"clips", @"reel", @"reels"] : @[@"media"]) containsObject:url.host.lowercaseString];
     NSString *host = url.host.lowercaseString;
     return ([host isEqualToString:@"instagram.com"] || [host hasSuffix:@".instagram.com"])
-        && ([url.path hasPrefix:@"/reel/"] || [url.path hasPrefix:@"/reels/"]);
+        && (reels ? ([url.path hasPrefix:@"/reel/"] || [url.path hasPrefix:@"/reels/"]) : [url.path hasPrefix:@"/p/"]);
 }
 
 /* XMA payloads vary by server experiment. Inspect only known media/navigation fields,
    never captions (which can mention reels on an ordinary post). */
-static BOOL THSharedPreviewModel(id model, NSUInteger depth) {
+static BOOL THSharedPreviewModel(id model, NSUInteger depth, BOOL reels) {
     if (!model || depth > 3) return NO;
     id productType = ThetaValueForKey(model, @"productType");
-    if ([productType isKindOfClass:NSString.class] && [productType isEqualToString:@"clips"]) return YES;
+    if ([productType isKindOfClass:NSString.class] && [(reels ? @[@"clips"] : @[@"feed", @"carousel_container"]) containsObject:productType]) return YES;
     for (NSString *key in @[@"actionURL", @"url", @"tapURL"])
-        if (THSharedPreviewURL(ThetaValueForKey(model, key))) return YES;
+        if (THSharedPreviewURL(ThetaValueForKey(model, key), reels)) return YES;
     for (NSString *key in @[@"media", @"imageTapInfo", @"navigationInfo", @"mediaResolverContext", @"message", @"messageCellViewModel"])
-        if (THSharedPreviewModel(ThetaValueForKey(model, key), depth + 1)) return YES;
+        if (THSharedPreviewModel(ThetaValueForKey(model, key), depth + 1, reels)) return YES;
     return NO;
 }
 
 static void THUpdateSharedThumbnail(UIView *cell, NSString *modelKey, NSString *previewKey) {
     BOOL hideReels = ENABLED(@"Hide Shared Reel Thumbnails");
-    id model = hideReels ? ThetaValueForKey(cell, modelKey) : nil;
+    BOOL hidePosts = ENABLED(@"Hide Shared Post Thumbnails");
+    id model = (hideReels || hidePosts) ? ThetaValueForKey(cell, modelKey) : nil;
     id cellModel = ThetaValueForKey(model, @"messageCellViewModel");
     id outgoing = ThetaValueForKey(cellModel, @"isOutgoing");
     if (!outgoing) outgoing = ThetaValueForKey(ThetaValueForKey(cellModel, @"sortingInfo"), @"isOutgoing");
-    BOOL hide = ![outgoing boolValue] && hideReels && THSharedPreviewModel(model, 0);
+    // A reel can also use the generic instagram://media navigation URL.
+    BOOL reel = model && THSharedPreviewModel(model, 0, YES);
+    BOOL post = model && !reel && THSharedPreviewModel(model, 0, NO);
+    BOOL hidePost = ![outgoing boolValue] && hidePosts && post;
+    BOOL hide = hidePost || (![outgoing boolValue] && hideReels && reel);
     id preview = ThetaValueForKey(cell, previewKey);
     id imageView = [preview isKindOfClass:[UIImageView class]] ? preview : ThetaValueForKey(preview, @"photoImageView");
     if ([imageView isKindOfClass:[UIImageView class]]) {
@@ -79,7 +85,25 @@ static void THUpdateSharedThumbnail(UIView *cell, NSString *modelKey, NSString *
             objc_setAssociatedObject(imageView, &THSharedThumbnailOriginalKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
     }
-
+    // Keep author/name/icon views visible; these fields contain only caption text.
+    for (NSString *key in @[@"_footerCaptionTextLabel", @"commentLabelView", @"_bodyTextLabel", @"_xmaFooterView._bodyLabel"]) {
+        id captionValue = cell;
+        for (NSString *component in [key componentsSeparatedByString:@"."])
+            captionValue = ThetaValueForKey(captionValue, component);
+        UIView *caption = captionValue;
+        if (![caption isKindOfClass:[UIView class]]) continue;
+        if (hidePost) {
+            if (!objc_getAssociatedObject(caption, &THSharedCaptionHiddenKey))
+                objc_setAssociatedObject(caption, &THSharedCaptionHiddenKey, @(caption.hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            caption.hidden = YES;
+        } else {
+            NSNumber *hidden = objc_getAssociatedObject(caption, &THSharedCaptionHiddenKey);
+            if (hidden) {
+                caption.hidden = hidden.boolValue;
+                objc_setAssociatedObject(caption, &THSharedCaptionHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+        }
+    }
 }
 
 static void (*orig_THReelPortraitLayout)(UIView *, SEL);
