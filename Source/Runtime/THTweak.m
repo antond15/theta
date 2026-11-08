@@ -20,6 +20,7 @@ static void InitializeHooks(void) {
     THRegisterSavePostHook();
     THRegisterHideTypingIndicatorHooks();
     THRegisterMuteSharedReelNotificationsHooks();
+    THRegisterHideSharedReelThumbnailsHooks();
     THRegisterKeepDeletedMessagesHooks();
     THRegisterSaveProfilePicturesHooks();
     THRegisterScreenshotProtectionProviderHooks();
