@@ -73,7 +73,7 @@ static void ThetaSetValueForKey(id obj, id value, NSString *key) {
 
 static void ThetaSetCaptureHiding(UIView *view) {
     if (!view) return;
-    if (ENABLED(@"Hide Theta From Screenshots")) {
+    if (ENABLED(THPrivacyHideThetaInScreenshots)) {
         ThetaSetValueForKey(view.layer, @((1 << 1) | (1 << 4)), @"disableUpdateMask");
     }
 }

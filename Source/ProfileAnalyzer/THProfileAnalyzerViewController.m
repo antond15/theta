@@ -1981,7 +1981,7 @@ static void THProfileAnalyzerParseCountsFromUser(NSDictionary *user, NSInteger *
             [wself.activityView stopAnimating];
             if (error) {
                 wself.statusLabel.text = [NSString stringWithFormat:@"Error: %@", error.localizedDescription];
-                if (ENABLED(@"Show Banners")) {
+                if (ENABLED(THAppShowBanners)) {
                     [ThetaHelper showToastWithTitle:@"Profile Analyzer" subtitle:error.localizedDescription icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:4 openURL:nil];
                 }
                 return;
@@ -2020,7 +2020,7 @@ static void THProfileAnalyzerParseCountsFromUser(NSDictionary *user, NSInteger *
             wself.scanCount = newCount;
             [wself refreshDashboard];
             wself.statusLabel.hidden = YES;
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Scan complete" subtitle:[NSString stringWithFormat:@"%td followers, %td following", result.followersCount, result.followingCount] icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
             }
         });

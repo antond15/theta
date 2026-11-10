@@ -108,7 +108,7 @@ static volatile BOOL sGlobalDownloadInProgress = NO;
 #pragma mark - Toast Management
 
 + (void)showToastWithTitle:(NSString *)title subtitle:(NSString *)subtitle icon:(UIImage *)icon autoHide:(int)seconds openURL:(NSURL *)openURL {
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         dispatch_async(dispatch_get_main_queue(), ^{
             CustomToastView *toast = [[CustomToastView alloc] initWithTitle:title subtitle:subtitle icon:icon autoHide:seconds openURL:openURL];
             [toast presentToast];
@@ -128,7 +128,7 @@ static volatile BOOL sGlobalDownloadInProgress = NO;
 #pragma mark - Haptic Feedback
 
 + (void)performHapticFeedbackIfEnabled {
-    if (ENABLED(@"Haptic Feedback")) {
+    if (ENABLED(THAppHaptics)) {
         AudioServicesPlaySystemSound(1519);
     }
 }
@@ -239,7 +239,7 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
     }
     removed += ThetaRemoveTemporaryItems(&bytes);
 
-    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"Show Banners_Enabled"]) return;
+    if (!ENABLED(THAppShowBanners)) return;
     NSString *subtitle = @"Cache cleared.";
     if (removed > 0) {
         NSString *size = [NSByteCountFormatter stringFromByteCount:(long long)bytes countStyle:NSByteCountFormatterCountStyleFile];
@@ -318,13 +318,6 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
     UIViewController *vc = window.rootViewController;
     while (vc.presentedViewController) vc = vc.presentedViewController;
     return vc;
-}
-
-+ (void)storeSegmentIndex:(NSInteger)index forSettingTitle:(NSString *)title {
-    if (title.length == 0) return;
-    NSString *key = [NSString stringWithFormat:@"%@_SegmentIndex", title];
-    [[NSUserDefaults standardUserDefaults] setInteger:index forKey:key];
-    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 @end 

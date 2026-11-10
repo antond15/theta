@@ -8,6 +8,21 @@
 #import "Include/ThetaHelper.h"
 
 #import "Include/ThetaSettings.h"
+#import "Include/ThetaSettingsRegistry.h"
+#import "Include/ThetaUserListEditorViewController.h"
+
+/* Cell layout used for a setting: "switch", "segment", "color", "action" or "view". */
+static NSString *THCellKind(THSettingDefinition *setting) {
+    switch (setting.type) {
+        case THSettingTypeToggle: return @"switch";
+        case THSettingTypeChoice: return @"segment";
+        case THSettingTypeColor: return @"color";
+        case THSettingTypeAction: return @"action";
+        case THSettingTypeList:
+        case THSettingTypePage: return @"view";
+    }
+    return @"switch";
+}
 
 @interface SubMenuViewController ()
 
@@ -26,6 +41,30 @@ static inline BOOL isBiometricOrPasscodeSet() {
     return isBiometricSet;
 }
 
+
+UIViewController *THViewControllerForSetting(THSettingDefinition *setting) {
+    if (setting.type == THSettingTypeList) {
+        ThetaUserListEditorViewController *editor = [[ThetaUserListEditorViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+        editor.settingKey = setting.key;
+        return editor;
+    }
+    if (setting.type != THSettingTypePage) return nil;
+    Class vcClass = NSClassFromString(setting.viewControllerClassName ?: @"");
+    return vcClass ? [[vcClass alloc] init] : nil;
+}
+
+void THShowRestartToastIfNeeded(THSettingDefinition *setting) {
+    if (!setting.restartRequired) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [ThetaHelper showLoadToast:@"App Restart Required" subtitle:@"Restart the app for changes to apply." icon:[ThetaHelper imageFromEmojiString:@"⚠️" width:300] autoHide:4 openURL:nil];
+    });
+}
+
+void THResetColorSettings(void) {
+    for (THSettingDefinition *setting in [THSettingDefinition allDefinitions]) {
+        if (setting.type == THSettingTypeColor) ThetaSettingReset(setting.key);
+    }
+}
 
 @implementation SubMenuViewController
 - (void)viewDidLoad {
@@ -47,18 +86,13 @@ static inline BOOL isBiometricOrPasscodeSet() {
                                                  name:UIApplicationWillEnterForegroundNotification
                                                object:nil];
 
-    if (!self.settings) {
-        self.settings = @[
-            @{@"title": @"Issue Loading Settings", @"detail": @"Please contact Kanji (@objc_msgSend) on Discord if you are seeing this message."},
-        ];
-    }
+    if (!self.settings) self.settings = @[];
 }
 
 - (void)refreshSettingsOnForeground {
-    if (!isBiometricOrPasscodeSet() && [[[NSUserDefaults standardUserDefaults] objectForKey:@"Lock Instagram_Enabled"] boolValue]) {
+    if (!isBiometricOrPasscodeSet() && ENABLED(THAppLock)) {
         THDebugLog(@"biometrics/passcode not set but Lock Instagram is enabled, disabling it");
-        [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"Lock Instagram_Enabled"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
+        ThetaSettingSetEnabled(THAppLock, NO);
     }
 
     [self.tableView reloadData];
@@ -79,10 +113,10 @@ static inline BOOL isBiometricOrPasscodeSet() {
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-	NSDictionary *settingDict = self.settings[indexPath.row];
-	NSString *settingTitle = settingDict[@"title"] ?: settingDict;
-	NSString *settingDetail = settingDict[@"detail"];
-	NSString *settingType = settingDict[@"type"] ?: @"switch";
+	THSettingDefinition *setting = self.settings[indexPath.row];
+	NSString *settingTitle = setting.title;
+	NSString *settingDetail = setting.detail;
+	NSString *settingType = THCellKind(setting);
 
 	// Use section rect width to account for InsetGrouped container width
 	CGFloat tableWidth = [tableView rectForSection:indexPath.section].size.width;
@@ -103,7 +137,7 @@ static inline BOOL isBiometricOrPasscodeSet() {
 	CGFloat reservedRight = 0.0;
 	if ([settingType isEqualToString:@"switch"]) {
 		BOOL hasInfo = NO;
-		NSString *infoText = settingDict[@"info"];
+		NSString *infoText = setting.info;
 		if ([infoText isKindOfClass:[NSString class]] && infoText.length > 0) {
 			hasInfo = YES;
 		}
@@ -136,7 +170,7 @@ static inline BOOL isBiometricOrPasscodeSet() {
 		total += bottomPadding + 2.0;
 		return MAX(minHeight, total);
 	} else if ([settingType isEqualToString:@"segment"]) {
-		NSArray<NSString *> *options = settingDict[@"options"];
+		NSArray<NSString *> *options = setting.optionTitles;
 		NSInteger optCount = [options isKindOfClass:[NSArray class]] ? (NSInteger)options.count : 0;
 		if (optCount >= 4) {
 			// Stacked layout: segment sits below labels, Auto Layout drives the height
@@ -182,10 +216,11 @@ static inline BOOL isBiometricOrPasscodeSet() {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    NSDictionary *settingDict = self.settings[indexPath.row];
-    NSString *settingTitle = settingDict[@"title"] ?: settingDict;
-    NSString *settingDetail = settingDict[@"detail"];
-    NSString *settingType = settingDict[@"type"] ?: @"switch";
+    THSettingDefinition *setting = self.settings[indexPath.row];
+    NSString *settingKey = setting.key;
+    NSString *settingTitle = setting.title;
+    NSString *settingDetail = setting.detail;
+    NSString *settingType = THCellKind(setting);
 
     if ([settingType isEqualToString:@"color"]) {
         static NSString *colorCellIdentifier = @"ColorCell";
@@ -215,20 +250,9 @@ static inline BOOL isBiometricOrPasscodeSet() {
         if (@available(iOS 14.0, *)) {
             UIColorWell *colorWell = [[UIColorWell alloc] init];
             colorWell.supportsAlpha = NO;
-            NSString *colorKey = [NSString stringWithFormat:@"%@_Color", settingTitle];
-            NSData *storedData = [[NSUserDefaults standardUserDefaults] objectForKey:colorKey];
-            UIColor *storedColor = nil;
-            if (storedData) {
-                @try {
-                    storedColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:storedData error:nil];
-                } @catch (__unused NSException *e) {}
-                if (!storedColor) {
-                    @try { storedColor = [NSKeyedUnarchiver unarchiveObjectWithData:storedData]; } @catch (__unused NSException *e) {}
-                }
-            }
-            colorWell.selectedColor = storedColor ?: [UIColor labelColor];
+            colorWell.selectedColor = ThetaSettingColor(settingKey);
             colorWell.tag = indexPath.row;
-            colorWell.accessibilityIdentifier = colorKey;
+            colorWell.accessibilityIdentifier = settingKey;
             [colorWell addTarget:self action:@selector(colorWellChanged:) forControlEvents:UIControlEventValueChanged];
             // Ensure proper sizing when used as accessoryView
             CGFloat side = 30.0;
@@ -261,7 +285,7 @@ static inline BOOL isBiometricOrPasscodeSet() {
         SEL actionSelector = @selector(resetButtonColors);
         NSString *accessibilityLabel = @"Reset Colors";
         
-        if ([settingTitle isEqualToString:@"Clear App Cache"]) {
+        if ([settingKey isEqualToString:THAppClearCache]) {
             iconName = @"trash";
             actionSelector = @selector(clearAppCache);
             accessibilityLabel = @"Clear App Cache";
@@ -279,8 +303,8 @@ static inline BOOL isBiometricOrPasscodeSet() {
     }
 
     if ([settingType isEqualToString:@"segment"]) {
-        NSArray<NSString *> *options = settingDict[@"options"];
-        if (![options isKindOfClass:[NSArray class]]) options = @[];
+        NSArray<NSString *> *options = setting.optionTitles;
+        NSInteger selectedOption = MAX(0, [setting indexOfOption:ThetaSettingChoice(settingKey)]);
 
         if (options.count >= 4) {
             // Stacked layout: title + detail on top, full-width segment below
@@ -339,11 +363,8 @@ static inline BOOL isBiometricOrPasscodeSet() {
             [options enumerateObjectsUsingBlock:^(NSString * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
                 [stackedSeg insertSegmentWithTitle:obj atIndex:idx animated:NO];
             }];
-            NSString *segKey = [NSString stringWithFormat:@"%@_SegmentIndex", settingTitle];
-            NSInteger segSelected = [[NSUserDefaults standardUserDefaults] integerForKey:segKey];
-            if (segSelected < 0 || segSelected >= (NSInteger)options.count) segSelected = 0;
-            stackedSeg.selectedSegmentIndex = segSelected;
-            stackedSeg.accessibilityIdentifier = settingTitle;
+            stackedSeg.selectedSegmentIndex = selectedOption;
+            stackedSeg.accessibilityIdentifier = settingKey;
 
             return cell;
         }
@@ -374,12 +395,9 @@ static inline BOOL isBiometricOrPasscodeSet() {
         [options enumerateObjectsUsingBlock:^(NSString * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
             [seg insertSegmentWithTitle:obj atIndex:idx animated:NO];
         }];
-        NSString *key = [NSString stringWithFormat:@"%@_SegmentIndex", settingTitle];
-        NSInteger selected = [[NSUserDefaults standardUserDefaults] integerForKey:key];
-        if (selected < 0 || selected >= (NSInteger)options.count) selected = 0;
-        seg.selectedSegmentIndex = selected;
+        seg.selectedSegmentIndex = selectedOption;
         seg.tag = indexPath.row;
-        seg.accessibilityIdentifier = settingTitle;
+        seg.accessibilityIdentifier = settingKey;
         [seg addTarget:self action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
         [seg sizeToFit];
         seg.transform = CGAffineTransformMakeScale(0.8, 0.8);
@@ -414,8 +432,7 @@ static inline BOOL isBiometricOrPasscodeSet() {
     cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
     cell.detailTextLabel.font = [UIFont systemFontOfSize:13];
 
-    NSString *key = [NSString stringWithFormat:@"%@_Enabled", settingTitle];
-    BOOL isEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:key];
+    BOOL isEnabled = ENABLED(settingKey);
     if ([cell.settingSwitch respondsToSelector:@selector(setOn:animated:)]) {
         ((void(*)(id,SEL,BOOL,BOOL))[cell.settingSwitch methodForSelector:@selector(setOn:animated:)])(cell.settingSwitch, @selector(setOn:animated:), isEnabled, NO);
     }
@@ -424,7 +441,7 @@ static inline BOOL isBiometricOrPasscodeSet() {
     cell.settingSwitch.tag = indexPath.row;
 
     // Optional info button
-    NSString *infoText = settingDict[@"info"];
+    NSString *infoText = setting.info;
     if ([infoText isKindOfClass:[NSString class]] && infoText.length > 0) {
         cell.infoButton.hidden = NO;
         cell.infoButton.tag = indexPath.row;
@@ -440,31 +457,13 @@ static inline BOOL isBiometricOrPasscodeSet() {
         [cell.contentView removeGestureRecognizer:gr];
     }
 
-    BOOL requiresBiometrics = [settingDict[@"requiresBiometrics"] boolValue];
+    BOOL requiresBiometrics = setting.requiresBiometrics;
     BOOL isBiometricSet = NO;
     if (requiresBiometrics) {
         isBiometricSet = isBiometricOrPasscodeSet();
     }
 
-    // --- Version check for "Keep Deleted Messages" ---
-    static NSString *cachedAppVersion = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        cachedAppVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-    });
-    BOOL isKeepDeletedMessages = [settingTitle isEqualToString:@"Keep Deleted Messages"];
-    BOOL disableForVersion = NO;
-    if (isKeepDeletedMessages) {
-        NSArray *parts = [cachedAppVersion componentsSeparatedByString:@"."];
-        NSInteger major = parts.count > 0 ? [parts[0] integerValue] : 0;
-        NSInteger minor = parts.count > 1 ? [parts[1] integerValue] : 0;
-        NSInteger patch = parts.count > 2 ? [parts[2] integerValue] : 0;
-        if (major < 313) disableForVersion = YES;
-        else if (major == 313) {
-            if (minor < 0) disableForVersion = YES;
-            else if (minor == 0 && patch <= 2) disableForVersion = YES;
-        }
-    }
+    BOOL disableForVersion = !setting.availableOnThisVersion;
 
     if ((requiresBiometrics && !isBiometricSet) || disableForVersion) {
         cell.settingSwitch.enabled = NO;
@@ -475,9 +474,8 @@ static inline BOOL isBiometricOrPasscodeSet() {
 
         if (disableForVersion) {
             cell.textLabel.textColor = [UIColor systemGrayColor];
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%@\n(Requires app version > 313.0.2)", settingDetail ?: @""];
-            [[NSUserDefaults standardUserDefaults] removeObjectForKey:key];
-            [[NSUserDefaults standardUserDefaults] synchronize];
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%@\n(Requires Instagram %@ or later)", settingDetail ?: @"", setting.minimumInstagramVersion];
+            if (isEnabled) ThetaSettingReset(settingKey);
         }
 
         if (requiresBiometrics && !isBiometricSet) {
@@ -498,9 +496,9 @@ static inline BOOL isBiometricOrPasscodeSet() {
 - (void)didTapInfo:(UIButton *)sender {
     NSInteger row = sender.tag;
     if (row < 0 || row >= (NSInteger)self.settings.count) return;
-    NSDictionary *settingDict = self.settings[row];
-    NSString *title = settingDict[@"title"] ?: @"Info";
-    NSString *message = settingDict[@"info"] ?: settingDict[@"detail"] ?: @"";
+    THSettingDefinition *setting = self.settings[row];
+    NSString *title = setting.title ?: @"Info";
+    NSString *message = setting.info ?: setting.detail ?: @"";
     [ThetaHelper showCustomAlertWithActions:title description:message actions:@[@{ @"title": @"OK", @"handler": ^(id s) {} }]];
 }
 
@@ -519,116 +517,48 @@ static inline BOOL isBiometricOrPasscodeSet() {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (indexPath.row >= (NSInteger)self.settings.count) return;
-    NSDictionary *settingDict = self.settings[indexPath.row];
-    NSString *settingType = settingDict[@"type"] ?: @"switch";
-    if (![settingType isEqualToString:@"view"]) return;
-    NSString *vcClassName = settingDict[@"viewController"];
-    if (![vcClassName isKindOfClass:[NSString class]] || vcClassName.length == 0) return;
-    Class vcClass = NSClassFromString(vcClassName);
-    if (!vcClass) return;
-    UIViewController *vc = [[vcClass alloc] init];
+    UIViewController *vc = THViewControllerForSetting(self.settings[indexPath.row]);
     if (!vc) return;
-    if ([vc respondsToSelector:@selector(setListKey:)] && [settingDict[@"listKey"] isKindOfClass:[NSString class]]) {
-        [vc setValue:settingDict[@"listKey"] forKey:@"listKey"];
-    }
-    if ([vc respondsToSelector:@selector(setListTitle:)] && [settingDict[@"listTitle"] isKindOfClass:[NSString class]]) {
-        [vc setValue:settingDict[@"listTitle"] forKey:@"listTitle"];
-    }
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 #pragma mark - Switch Action
 
 - (void)switchChanged:(UISwitch *)sender {
-    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:sender.tag inSection:0];
-    NSDictionary *settingDict = self.settings[indexPath.row];
-    NSString *settingTitle = settingDict[@"title"] ?: settingDict;
-
-    NSString *key = [NSString stringWithFormat:@"%@_Enabled", settingTitle];
-    [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:key];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-
-    static NSSet *sRestartRequired;
-    static dispatch_once_t sRestartRequiredOnce;
-    dispatch_once(&sRestartRequiredOnce, ^{
-        sRestartRequired = [NSSet setWithArray:@[
-            @"Messenger Mode",
-            @"Hide Explore Grid",
-            @"Hide Reels Tab",
-            @"Hide Explore Tab",
-            @"Hide Feed Tab",
-            @"Hide Messages Tab",
-            @"Hide Create Tab/Button",
-            @"Enable Liquid Glass Buttons",
-            @"Enable Liquid Glass Surfaces",
-        ]];
-    });
-    if ([sRestartRequired containsObject:settingTitle]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [ThetaHelper showLoadToast:@"App Restart Required" subtitle:@"Restart the app for changes to apply." icon:[ThetaHelper imageFromEmojiString:@"⚠️" width:300] autoHide:4 openURL:nil];
-        });
-    }
+    if (sender.tag < 0 || sender.tag >= (NSInteger)self.settings.count) return;
+    THSettingDefinition *setting = self.settings[sender.tag];
+    ThetaSettingSetEnabled(setting.key, sender.isOn);
+    THShowRestartToastIfNeeded(setting);
 }
 
 - (void)segmentChanged:(UISegmentedControl *)sender {
-    NSString *title = sender.accessibilityIdentifier;
-    if (title.length == 0) {
-        NSIndexPath *indexPath = [NSIndexPath indexPathForRow:sender.tag inSection:0];
-        if (indexPath && indexPath.row < (NSInteger)self.settings.count) {
-            NSDictionary *settingDict = self.settings[indexPath.row];
-            title = settingDict[@"title"] ?: settingDict;
-        }
-    }
-    if (title.length > 0) {
-        [ThetaHelper storeSegmentIndex:sender.selectedSegmentIndex forSettingTitle:title];
+    THSettingDefinition *setting = [THSettingDefinition definitionForKey:sender.accessibilityIdentifier];
+    NSInteger index = sender.selectedSegmentIndex;
+    if (setting && index >= 0 && index < (NSInteger)setting.options.count) {
+        ThetaSettingSetChoice(setting.key, setting.options[index].identifier);
     }
 }
 
 - (void)colorWellChanged:(id)sender {
     if (@available(iOS 14.0, *)) {
         UIColorWell *colorWell = (UIColorWell *)sender;
-        NSString *colorKey = colorWell.accessibilityIdentifier;
-        if (colorKey.length > 0) {
-            UIColor *color = colorWell.selectedColor ?: [UIColor labelColor];
-            NSError *error = nil;
-            NSData *data = [NSKeyedArchiver archivedDataWithRootObject:color requiringSecureCoding:YES error:&error];
-            if (data) {
-                [[NSUserDefaults standardUserDefaults] setObject:data forKey:colorKey];
-                [[NSUserDefaults standardUserDefaults] synchronize];
-            }
+        if (colorWell.accessibilityIdentifier.length && colorWell.selectedColor) {
+            ThetaSettingSetColor(colorWell.accessibilityIdentifier, colorWell.selectedColor);
         }
     }
 }
 
 - (void)resetButtonColors {
-    NSArray<NSString *> *keys = @[ @"Save Button Color_Color", @"Seen Button Color_Color", @"Deleted Message Color_Color", @"Mentions Button Color_Color" ];
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    for (NSString *key in keys) {
-        [defaults removeObjectForKey:key];
-    }
-    [defaults synchronize];
+    THResetColorSettings();
+    [self.tableView reloadData];
 
-    if (@available(iOS 14.0, *)) {
-        for (UITableViewCell *cell in self.tableView.visibleCells) {
-            if ([cell.accessoryView isKindOfClass:[UIColorWell class]]) {
-                UIColorWell *well = (UIColorWell *)cell.accessoryView;
-                well.selectedColor = [UIColor labelColor];
-            }
-        }
-    }
-
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         [ThetaHelper showToastWithTitle:@"Colors Reset" subtitle:@"Button colors restored to default." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
     }
 }
 
 - (void)clearAppCache {
     [ThetaHelper clearAppCache];
-}
-
-- (BOOL)isSettingEnabled:(NSString *)setting {
-    NSString *key = [NSString stringWithFormat:@"%@_Enabled", setting];
-    return [[NSUserDefaults standardUserDefaults] boolForKey:key];
 }
 
 @end

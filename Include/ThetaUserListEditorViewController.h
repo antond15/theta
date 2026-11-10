@@ -1,8 +1,7 @@
 #import <UIKit/UIKit.h>
 
-/// Edits a list of usernames stored in NSUserDefaults (e.g. auto-mark lists for Story Ghost / Mark As Seen).
-/// Set listKey and listTitle before presenting. listKey is the NSUserDefaults key for the array of NSString usernames.
+/// Edits a list setting (THSettingTypeList) of lowercase usernames, e.g. the Story Ghost auto-mark list.
+/// Set settingKey before presenting; the title and footer come from the setting's definition.
 @interface ThetaUserListEditorViewController : UITableViewController
-@property (nonatomic, copy) NSString *listKey;
-@property (nonatomic, copy) NSString *listTitle;
+@property (nonatomic, copy) NSString *settingKey;
 @end

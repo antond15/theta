@@ -40,7 +40,6 @@ void ThetaShowNativeToastWithEmoji(NSString *title, NSString * _Nullable subtitl
 
 #pragma mark - Settings Helpers
 // Stores selected index for a segment setting with given title
-+ (void)storeSegmentIndex:(NSInteger)index forSettingTitle:(NSString *)title;
 
 #pragma mark - Constants
 + (UIColor *)iotaPinkColor;

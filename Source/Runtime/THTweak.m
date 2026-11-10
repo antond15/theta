@@ -66,7 +66,7 @@ static void InitializeHooks(void) {
         THRegisterDeferredDBBHooks();
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            if (ENABLED(@"Load Banner")) {
+            if (ENABLED(THAppLoadBanner)) {
                 NSString *title = [NSString stringWithFormat:@"Theta %s | Instagram %s", THETA_VERSION, appVersion.UTF8String];
                 dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                     UIImage *icon = [ThetaHelper imageFromEmojiString:@"🚀" width:300];

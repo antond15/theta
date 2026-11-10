@@ -1,5 +1,6 @@
 #import "Include/ThetaUserListEditorViewController.h"
 #import "Include/ThetaHelper.h"
+#import "Include/ThetaSettingsRegistry.h"
 
 static NSString *const kCellId = @"UserCell";
 
@@ -7,15 +8,13 @@ static NSString *const kCellId = @"UserCell";
 
 - (instancetype)initWithStyle:(UITableViewStyle)style {
     if (self = [super initWithStyle:UITableViewStyleInsetGrouped]) {
-        _listKey = nil;
-        _listTitle = @"List";
     }
     return self;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = self.listTitle.length > 0 ? self.listTitle : @"List";
+    self.title = [THSettingDefinition definitionForKey:self.settingKey].title ?: @"List";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
 
     UIBarButtonItem *addItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd
@@ -28,22 +27,11 @@ static NSString *const kCellId = @"UserCell";
 }
 
 - (NSMutableArray<NSString *> *)currentList {
-    if (!self.listKey.length) return [NSMutableArray array];
-    NSArray *stored = [[NSUserDefaults standardUserDefaults] objectForKey:self.listKey];
-    if (![stored isKindOfClass:[NSArray class]]) return [NSMutableArray array];
-    NSMutableArray *arr = [NSMutableArray array];
-    for (id obj in stored) {
-        if ([obj isKindOfClass:[NSString class]] && [(NSString *)obj length] > 0) {
-            [arr addObject:[(NSString *)obj lowercaseString]];
-        }
-    }
-    return arr;
+    return self.settingKey.length ? [ThetaSettingList(self.settingKey) mutableCopy] : [NSMutableArray array];
 }
 
 - (void)saveList:(NSArray<NSString *> *)list {
-    if (!self.listKey.length) return;
-    [[NSUserDefaults standardUserDefaults] setObject:list forKey:self.listKey];
-    [[NSUserDefaults standardUserDefaults] synchronize];
+    if (self.settingKey.length) ThetaSettingSetList(self.settingKey, list);
 }
 
 - (void)addUsername {
@@ -99,13 +87,7 @@ static NSString *const kCellId = @"UserCell";
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    if ([self.listKey isEqualToString:@"Theta_MarkAsSeen_AutoMarkUserIds"]) {
-        return @"Users in this list will be auto-marked as seen in DMs.\n\nTo add someone, tap + and enter their username, or use the list toggle button next to the eye icon in a DM thread (Mark As Seen setting must be enabled).\n\nIf the button above doesn't work, you may need a kickstart to this by manually adding the user to this list. Then when you send/receive a message from them, the button should work.";
-    }
-    if ([self.listKey isEqualToString:@"Theta_StoryGhost_AutoMarkUserIds"]) {
-        return @"Users in this list will be auto-marked as seen in Story Ghost when you view their stories (unless you enable Skip On Seen).\n\nTo add someone, tap + and enter their username, or long-press the Story Ghost seen button on their story (Story Ghost setting must be enabled).";
-    }
-    return nil;
+    return [THSettingDefinition definitionForKey:self.settingKey].info;
 }
 
 @end

@@ -12,51 +12,11 @@
 #import <AVFoundation/AVFoundation.h>
 
 #import "Include/ThetaSettings.h"
-
-// MARK: - Color serialization helpers
-static NSString *THHexStringFromColor(UIColor *color) {
-    if (!color) return nil;
-    CGFloat r = 0, g = 0, b = 0, a = 1;
-    if (![color getRed:&r green:&g blue:&b alpha:&a]) {
-        CGColorRef cg = color.CGColor;
-        size_t num = CGColorGetNumberOfComponents(cg);
-        const CGFloat *components = CGColorGetComponents(cg);
-        if (components) {
-            if (num >= 3) { r = components[0]; g = components[1]; b = components[2]; }
-            else if (num >= 1) { r = g = b = components[0]; }
-        }
-    }
-    int R = (int)lrintf(r * 255.0f);
-    int G = (int)lrintf(g * 255.0f);
-    int B = (int)lrintf(b * 255.0f);
-    return [NSString stringWithFormat:@"%02X%02X%02X", R, G, B];
-}
-
-static UIColor *THColorFromHexString(NSString *hexString) {
-    if (![hexString isKindOfClass:[NSString class]]) return nil;
-    NSString *hex = [[hexString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] uppercaseString];
-    if ([hex hasPrefix:@"#"]) hex = [hex substringFromIndex:1];
-    if (hex.length != 6) return nil;
-    unsigned int r = 0, g = 0, b = 0;
-    NSScanner *scanner = [NSScanner scannerWithString:hex];
-    unsigned int rgb = 0;
-    if (![scanner scanHexInt:&rgb]) return nil;
-    r = (rgb >> 16) & 0xFF;
-    g = (rgb >> 8) & 0xFF;
-    b = rgb & 0xFF;
-    return [UIColor colorWithRed:(r/255.0f) green:(g/255.0f) blue:(b/255.0f) alpha:1.0f];
-}
-
-@interface SubMenuItem : NSObject
-@property (nonatomic, copy) NSString *title;
-@property (nonatomic, copy) NSString *detail;
-@property (nonatomic, copy, nullable) NSString *iconName;
-@end
-
-@implementation SubMenuItem
-@end
+#import "Include/ThetaSettingsRegistry.h"
 
 @interface SettingSearchResult : NSObject
+@property (nonatomic, strong) THSettingDefinition *setting;
+@property (nonatomic, copy) NSString *settingKey;
 @property (nonatomic, copy) NSString *settingTitle;
 @property (nonatomic, copy) NSString *settingDetail;
 @property (nonatomic, copy) NSString *parentSubMenuTitle;
@@ -77,12 +37,11 @@ static UIColor *THColorFromHexString(NSString *hexString) {
 @end
 
 @interface SettingsViewController () <UITableViewDelegate, UITableViewDataSource, UISearchResultsUpdating, UISearchBarDelegate, UIScrollViewDelegate, AVCaptureMetadataOutputObjectsDelegate>
-@property (nonatomic, strong) NSArray<SubMenuItem *> *filteredSubMenus;
+@property (nonatomic, strong) NSArray<THSettingsPage *> *filteredSubMenus;
 @property (nonatomic, strong) NSArray<SettingSearchResult *> *filteredSettings;
 @property (nonatomic, strong) UISearchController *searchController;
-@property (nonatomic, strong) NSArray<SubMenuItem *> *subMenus;
+@property (nonatomic, strong) NSArray<THSettingsPage *> *subMenus;
 @property (nonatomic, strong) NSArray<LinkItem *> *linkItems;
-@property (nonatomic, strong) NSDictionary<NSString *, NSArray<NSDictionary *> *> *settingsBySubMenu;
 @property (nonatomic, strong) UIImageView *bannerImageView;
 @property (nonatomic, assign) BOOL isSearchingSettings;
 @property (nonatomic, strong) UIImageView *chevronImageView;
@@ -102,6 +61,19 @@ static UIColor *THColorFromHexString(NSString *hexString) {
 
 // Toast functionality moved to ThetaHelper
 
+/* Cell layout used for a setting in search results. */
+static NSString *THSearchCellKind(THSettingDefinition *setting) {
+    switch (setting.type) {
+        case THSettingTypeToggle: return @"switch";
+        case THSettingTypeChoice: return @"segment";
+        case THSettingTypeColor: return @"color";
+        case THSettingTypeAction: return @"action";
+        case THSettingTypeList:
+        case THSettingTypePage: return @"view";
+    }
+    return @"switch";
+}
+
 @implementation SettingsViewController
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -110,155 +82,9 @@ static UIColor *THColorFromHexString(NSString *hexString) {
 
     self.tableView.delegate = self;
 
-    SubMenuItem *general = [SubMenuItem new];
-    general.title = @"General";
-    general.detail = @"General Theta behavior on Instagram.";
-    general.iconName = @"gearshape";
-
-    SubMenuItem *feed = [SubMenuItem new];
-    feed.title = @"Feed";
-    feed.detail = @"Hide suggested rails and promo rows.";
-    feed.iconName = @"rectangle.stack";
-
-    SubMenuItem *messages = [SubMenuItem new];
-    messages.title = @"Messages";
-    messages.detail = @"Settings related to Instagram messages.";
-    messages.iconName = @"message";
-
-    SubMenuItem *media = [SubMenuItem new];
-    media.title = @"Media";
-    media.detail = @"Various media options for Theta.";
-    media.iconName = @"photo";
-    
-    SubMenuItem *reels = [SubMenuItem new];
-    reels.title = @"Reels";
-    reels.detail = @"Tap controls, scrubber, and reel behavior.";
-    reels.iconName = @"play.rectangle";
-
-    SubMenuItem *navigation = [SubMenuItem new];
-    navigation.title = @"Navigation";
-    navigation.detail = @"Tab bar order, visibility, and launch behavior.";
-    navigation.iconName = @"square.grid.2x2";
-
-    SubMenuItem *interface = [SubMenuItem new];
-    interface.title = @"Interface";
-    interface.detail = @"Customize the interface of Instagram.";
-    interface.iconName = @"paintbrush";
-
-    SubMenuItem *misc = [SubMenuItem new];
-    misc.title = @"Miscellaneous";
-    misc.detail = @"Other settings and options.";
-    misc.iconName = @"ellipsis";
-
-    self.subMenus = @[general, feed, messages, media, reels, navigation, interface, misc];
+    // Pages and their settings are defined in ThetaSettingsRegistry.m.
+    self.subMenus = [THSettingsPage allPages];
     self.filteredSubMenus = self.subMenus;
-
-    self.settingsBySubMenu = @{
-        @"General": @[
-            @{@"title": @"Profile Analyzer", @"detail": @"Track who follows and unfollows you.", @"type": @"view", @"viewController": @"THProfileAnalyzerViewController", @"info": @"Scans your current followers and following lists and compares them to the last scan. Results show new followers, unfollowers, who you followed/unfollowed, mutual followers, and who doesn't follow you back. Data is stored locally. Scan history (from the analyzer screen) supports clearing all, swipe-to-delete for a single snapshot, or Compare mode to delete several at once. Requests are paced to reduce Instagram throttling; very large lists (13,000+ total) may still be limited by Instagram."},
-            @{@"title": @"Screenshot Suppression", @"detail": @"Prevents screenshot and screen recording notifications."},
-            @{@"title": @"Like Confirmation", @"detail": @"Display an alert when you like a post."},
-            @{@"title": @"Follow Confirmation", @"detail": @"Display an alert when you follow someone."},
-            @{@"title": @"Call Confirmation", @"detail": @"Display an alert when you call someone."},
-            @{@"title": @"Disable Ads", @"detail": @"Removes all ads from the app."},
-            @{@"title": @"Explore Refresh Confirmation", @"detail": @"Confirm before refreshing the explore page."},
-            @{@"title": @"Comment Options", @"detail": @"Have some options when viewing a comment.", @"info": @"When enabled, you will see a button on comments.\n\nIf there is media attached to the comment, you will see an options button. If there is no media attached to the comment, you will see a copy button."},
-            @{@"title": @"Date Format", @"detail": @"Custom timestamp format for feed, notes, comments, stories, and DMs.", @"type": @"segment", @"options": @[@"Default", @"Short", @"Medium", @"12h", @"24h", @"ISO", @"ISO+T"]},
-            @{@"title": @"Open Links in External Browser", @"detail": @"Opens links from Instagram in your default browser instead of the in-app browser."},
-            @{@"title": @"Strip Tracking from Links", @"detail": @"Removes tracking parameters (UTM, fbclid, igshid, etc.) from links before opening them."},
-            @{@"title": @"Enable Liquid Glass Buttons", @"detail": @"Enables experimental liquid glass-style action buttons throughout the app.", @"info": @"Requires an app restart to take effect. This feature relies on hidden Instagram experiments and may not work on all accounts or app versions."},
-            @{@"title": @"Enable Liquid Glass Surfaces", @"detail": @"Enables the floating liquid glass tab bar and other glassmorphic UI surfaces.", @"info": @"Requires an app restart to take effect. This enables the floating tab bar and other surfaces powered by Instagram's Homecoming/Lucent navigation experiment."},
-        ],
-        @"Feed": @[
-            @{@"title": @"Hide Suggested Posts", @"detail": @"Inline suggested rails and previews."},
-            @{@"title": @"Hide Suggested Reels", @"detail": @"Reels preview row."},
-            @{@"title": @"Hide People You May Know", @"detail": @"Suggested people carousels."},
-            @{@"title": @"Hide Threads Carousel", @"detail": @"Threads promos in feed."},
-            @{@"title": @"Hide Home Stories", @"detail": @"Top story tray on home."},
-            @{@"title": @"Mute Entire Home Feed", @"detail": @"Blank feed list; keeps chrome."},
-            @{@"title": @"Hide End-of-Feed Footer", @"detail": @"Clears end-of-feed suggestion text."},
-        ],
-        @"Messages": @[
-            @{@"title": @"Keep Deleted Messages", @"detail": @"Keep messages even after deletion.", @"info": @"Whenever messages are deleted (either from yourself or the other person), they will be kept locally as long as you don't refresh your chat feed.\n\nDeleted messages will be colored with the color you choose below."},
-            @{@"title": @"Deleted Message Color", @"detail": @"Choose the color used for deleted messages.", @"type": @"color"},
-            @{@"title": @"Save Audio Messages", @"detail": @"Save audio messages to device.", @"info": @"When enabled, you will be able to download audio messages after they have finished playing."},
-            @{@"title": @"Upload Audio Messages", @"detail": @"Upload audio messages.", @"info": @"When enabled, whenever you press the voice message button, you will get a dialog asking if you want to upload audio from a video that's in your camera roll or record a new one."},
-            @{@"title": @"Bypass Character Limit", @"detail": @"Bypass the character limit in messages."},
-            @{@"title": @"Hide Typing Indicator", @"detail": @"Recipients won't know you're typing."},
-            @{@"title": @"Hide Shared Reel Thumbnails", @"detail": @"Hide reel preview images in DMs.", @"info": @"Shared reels keep their play button, account details and icons while the thumbnail image is replaced. Tap the message to open the reel."},
-            @{@"title": @"Hide Shared Post Thumbnails", @"detail": @"Hide shared post images and caption previews in DMs.", @"info": @"Shared posts keep their account details and icons while the thumbnail image and caption preview are hidden. Tap the message to open the post."},
-            @{@"title": @"Mute Shared Reel Notifications", @"detail": @"No notification when someone sends you a reel.", @"info": @"Messages with a reel shared from the Reels tab no longer alert you. They still arrive in your inbox. Other messages, including posts and stories, notify as usual."},
-            @{@"title": @"Mark As Seen", @"detail": @"Mark messages as seen with a button."},
-            @{@"title": @"Mark As Seen Auto-Mark List", @"detail": @"Users in this list: their DMs are marked seen automatically.", @"type": @"view", @"viewController": @"ThetaUserListEditorViewController", @"listKey": @"Theta_MarkAsSeen_AutoMarkUserIds", @"listTitle": @"Mark as seen auto-mark list"},
-            @{@"title": @"Seen On Typing", @"detail": @"Mark messages as seen when typing."},
-            @{@"title": @"Seen On React", @"detail": @"Mark messages as seen when reacting."},
-            @{@"title": @"Seen On Send", @"detail": @"Mark messages as seen when sending."},
-            @{@"title": @"Private Media Ghost", @"detail": @"Manually mark photos/videos in DMs as seen."},
-            @{@"title": @"Disappearing DM Confirmation", @"detail": @"Confirm disappearing messages.", @"info": @"When enabled and swiping up in a DM to toggle disappearing messages, a confirmation will be asked before enabling/disabling disappearing messages."},
-            @{@"title": @"Hide \"Create Group\" Button", @"detail": @"Hides the Create Group button.", @"info": @"When selecting multiple recipients to send a post/reel to, the Create Group button will be hidden."},
-            @{@"title": @"Create Group Confirmation", @"detail": @"Asks before creating a group.", @"info": @"When selecting multiple recipients to send a post/reel to, a confirmation will be asked before creating a group."},
-            @{@"title": @"Hide Blend Button", @"detail": @"Hide the 'Blend' button in DMs."},
-            @{@"title": @"Hide Call Buttons", @"detail": @"Hide the audio and video call buttons in DMs."},
-            @{@"title": @"Full Last Active Date", @"detail": @"Replaces 'Active Xm ago' with the exact date and time in DM conversations.", @"info": @"Shows the full timestamp (e.g. 'May 13 at 2:45 PM') instead of the relative 'Active X minutes ago' text in DM conversation headers."},
-            @{@"title": @"Send Files", @"detail": @"Adds a 'Send File' option to the DM plus menu to send any file from your device.", @"info": @"When enabled, a 'Send File' button appears in the DM composer plus menu. Tapping it opens a document picker so you can send any file type directly in a DM thread."},
-        ],
-        @"Media": @[
-            @{@"title": @"Live Without Viewer List", @"detail": @"Stop IG from polling viewer counts during live broadcasts (you remain anonymous in the attendee list mechanics)."},
-            @{@"title": @"Live Comments Sheet Toggle", @"detail": @"While watching a live story, long-press the heart to hide or reveal the floating comment strip for this session only.", @"info": @"This only affects layout on your device until you leave the live. Useful if you want a cleaner stage without losing quick access."},
-            @{@"title": @"Story Ghost", @"detail": @"Manually mark stories as seen."},
-            @{@"title": @"Story Ghost Auto-Mark List", @"detail": @"Users in this list: their stories are marked seen when you view.", @"type": @"view", @"viewController": @"ThetaUserListEditorViewController", @"listKey": @"Theta_StoryGhost_AutoMarkUserIds", @"listTitle": @"Story Ghost auto-mark list"},
-            @{@"title": @"Story Seen On Reply", @"detail": @"Mark stories as seen when replying to a story."},
-            @{@"title": @"Seen Receipts Stay Local", @"detail": @"Keep story rings cleared on this phone but pause server-side seen receipts.", @"info": @"Shows a phone icon on the story overlay (with Save / Ghost / mentions). Tap marks the current slide seen only on this device; long-press marks every slide in this reel the same way. Works alongside Story Ghost—the eye is for normal mark-as-seen; the phone icon is always local-only."},
-            @{@"title": @"Skip On Seen", @"detail": @"Skip to the next story when marked as seen."},
-            @{@"title": @"See Story Mentions", @"detail": @"Use a button to see who is mentioned in a story."},
-            @{@"title": @"Save Media", @"detail": @"Save media to your camera roll."},
-            @{@"title": @"Save Instants", @"detail": @"Save Instants while viewing them.", @"info": @"When enabled, a save button appears while viewing an Instant (Quick Snap). Tap it to download the current photo or video using your Save Method (camera roll or local folder)."},
-            @{@"title": @"Instant Ghost", @"detail": @"View Instants without marking them seen.", @"info": @"When enabled, opening Instants will not mark them seen. An eye button appears next to Save on the Instant viewer; tap it to mark only the Instant you are currently viewing."},
-            @{@"title": @"Save Profile Pictures", @"detail": @"Save profile pictures to your camera roll.", @"info": @"When enabled, you will be able to long press on a profile picture to get an alert asking if you want to save the profile picture."},
-            @{@"title": @"Save Profile Posts", @"detail": @"Bulk save profile posts.", @"info": @"When enabled, you will see a pink save button on a user's profile page. Tap it and it will gather all loaded posts and will either save them to your camera roll or save them to a local folder.\n\nThe save button will only be able to gather posts that are actively loaded. If you want to save everything, make sure to scroll all the way to the bottom of the user's profile and tap the save button."},
-            @{@"title": @"Save Method", @"detail": @"Save media to camera roll or local folder.", @"type": @"segment", @"options": @[ @"Camera Roll", @"Folder"]},
-            @{@"title": @"Save Audio Notes", @"detail": @"Save audio notes to your device."},
-            @{@"title": @"Fullscreen Posts", @"detail": @"View posts in fullscreen mode."},
-            @{@"title": @"Fullscreen Profile Pictures", @"detail": @"View profile pictures in fullscreen mode.", @"info": @"When enabled, you will be able to long press on a profile picture to get an alert asking if you want to view the profile picture in fullscreen mode."},
-            @{@"title": @"Disable Auto Advance", @"detail": @"Turn off the annoying auto advance."},
-            @{@"title": @"Bypass Reel Password", @"detail": @"Bypass reels that require a password.", @"info": @"When enabled and you view a reel that requires a password, you will see a button to bypass the password requirement."},
-            @{@"title": @"Disable Scrolling Reels", @"detail": @"GET RID OF THE BRAINROT 2."},
-        ],
-        @"Reels": @[
-            @{@"title": @"Tap Controls", @"detail": @"Choose what a single tap does while watching a reel.", @"type": @"segment", @"options": @[@"Default", @"Pause/Play", @"Mute"]},
-            @{@"title": @"Always Show Scrubber", @"detail": @"Always show the progress scrubber on reels, regardless of video length.", @"info": @"By default Instagram only shows the progress scrubber on longer videos. This forces it to always appear so you can seek in any reel."},
-        ],
-        @"Navigation": @[
-            @{@"title": @"Tab Icon Order", @"detail": @"Reorder the tab bar icons.", @"type": @"segment", @"options": @[@"Default", @"Classic", @"Standard", @"Alternate"], @"info": @"Requires an app restart to take effect.\n\nClassic: Feed · Explore · Create · Reels · Profile\nStandard: Feed · Explore · Reels · Messages · Profile\nAlternate: Feed · Reels · Create · Messages · Profile"},
-            @{@"title": @"Swipe Between Tabs", @"detail": @"Control whether you can swipe horizontally to switch between tabs.", @"type": @"segment", @"options": @[@"Default", @"Enabled", @"Disabled"]},
-            @{@"title": @"Launch Tab", @"detail": @"Choose which tab the app opens to on launch.", @"type": @"segment", @"options": @[@"Default", @"Home", @"Explore", @"Reels", @"Messages", @"Profile"]},
-            @{@"title": @"Hide Feed Tab", @"detail": @"Removes the Home/Feed tab from the tab bar.", @"info": @"Requires an app restart to take effect."},
-            @{@"title": @"Hide Explore Tab", @"detail": @"Removes the Explore tab from the tab bar.", @"info": @"Requires an app restart to take effect."},
-            @{@"title": @"Hide Reels Tab", @"detail": @"GET RID OF THE BRAINROT.", @"info": @"Requires an app restart to take effect."},
-            @{@"title": @"Hide Messages Tab", @"detail": @"Removes the Direct Messages tab from the tab bar.", @"info": @"Requires an app restart to take effect."},
-            @{@"title": @"Messenger Mode", @"detail": @"Only Profile and Direct tabs; long-press the messages tab for Theta settings.", @"info": @"Hides all other tab bar items and swipe surfaces except Profile and Direct messages. When enabled, open Theta settings with a long press on the Direct messages tab (home tab long press is restored to Instagram\'s default). Requires an app restart."},
-        ],
-        @"Interface": @[
-            @{@"title": @"Hide Create Tab/Button", @"detail": @"Hides the create tab and button."},
-            @{@"title": @"Hide Explore Grid", @"detail": @"Hides the explore grid view."},
-            @{@"title": @"Hide Recent Searches", @"detail": @"Hide the recent searches in the search tab."},
-            @{@"title": @"Follow Status Indicator", @"detail": @"Indicates if a user follows you.", @"info": @"When enabled, you will see a \"✅\" or \"❌\" next to a user's name on their profile page based on whether they follow you or not."},
-            @{@"title": @"Hide Repost Button", @"detail": @"Hides the repost button in the feed/reels."},
-            @{@"title": @"Hide Theta From Screenshots", @"detail": @"Hides Theta buttons from screenshots and screen recordings.", @"info": @"When enabled, Theta UI elements (such as Mark as Seen, Save, Story Ghost buttons, etc.) will be invisible in screenshots and screen recordings, but still visible on screen."},
-            @{@"title": @"Mentions Button Color", @"detail": @"Choose the color used for mentions buttons.", @"type": @"color"},
-            @{@"title": @"Save Button Color", @"detail": @"Choose the color used for save buttons.", @"type": @"color"},
-            @{@"title": @"Seen Button Color", @"detail": @"Choose the color used for seen buttons.", @"type": @"color"},
-            @{@"title": @"Reset Colors", @"detail": @"Reset all colors back to default.", @"type": @"action"}
-        ],
-        @"Miscellaneous": @[
-            @{@"title": @"Load Banner", @"detail": @"When Theta loads, see a banner."},
-            @{@"title": @"Show Banners", @"detail": @"Upon certain actions, show a banner."},
-            @{@"title": @"Haptic Feedback", @"detail": @"Enables haptic feedback for certain actions."},
-            @{@"title": @"Lock Instagram", @"detail": @"Protect Instagram with Face ID/passcode.", @"requiresBiometrics": @YES},
-            @{@"title": @"Shake To Open", @"detail": @"Open Theta's settings with a shake."},
-            @{@"title": @"Clear App Cache", @"detail": @"Clear all cached files and data.", @"type": @"action"},
-        ]
-    };
 
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
     self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -504,20 +330,16 @@ static UIColor *THColorFromHexString(NSString *hexString) {
     }
 
     NSMutableArray<SettingSearchResult *> *allSettings = [NSMutableArray array];
-    for (SubMenuItem *subMenu in self.subMenus) {
-        NSArray *subMenuSettings = self.settingsBySubMenu[subMenu.title];
-        for (NSDictionary *setting in subMenuSettings) {
+    for (THSettingsPage *subMenu in self.subMenus) {
+        for (THSettingDefinition *setting in subMenu.settings) {
             SettingSearchResult *result = [SettingSearchResult new];
-            result.settingTitle = setting[@"title"];
-            result.settingDetail = setting[@"detail"];
+            result.setting = setting;
+            result.settingKey = setting.key;
+            result.settingTitle = setting.title;
+            result.settingDetail = setting.detail;
             result.parentSubMenuTitle = subMenu.title;
-            result.settingType = setting[@"type"] ?: @"switch";
-            if ([result.settingType isEqualToString:@"segment"]) {
-                NSArray *options = setting[@"options"];
-                if ([options isKindOfClass:[NSArray class]]) {
-                    result.segmentOptions = options;
-                }
-            }
+            result.settingType = THSearchCellKind(setting);
+            result.segmentOptions = setting.optionTitles;
             [allSettings addObject:result];
         }
     }
@@ -548,15 +370,6 @@ static UIColor *THColorFromHexString(NSString *hexString) {
 
 
 - (void)applySettings {
-    for (SubMenuItem *subMenu in self.subMenus) {
-        NSArray *settings = self.settingsBySubMenu[subMenu.title];
-        for (NSDictionary *setting in settings) {
-            NSString *key = [NSString stringWithFormat:@"%@_Enabled", setting[@"title"]];
-            BOOL isEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:key];
-            [[NSUserDefaults standardUserDefaults] setBool:isEnabled forKey:key];
-        }
-    }
-
     [[NSUserDefaults standardUserDefaults] synchronize];
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -570,26 +383,7 @@ static UIColor *THColorFromHexString(NSString *hexString) {
 }
 
 - (void)resetSettings {
-    for (SubMenuItem *subMenu in self.subMenus) {
-        NSArray *settings = self.settingsBySubMenu[subMenu.title];
-        for (NSDictionary *setting in settings) {
-            NSString *key = [NSString stringWithFormat:@"%@_Enabled", setting[@"title"]];
-            [[NSUserDefaults standardUserDefaults] removeObjectForKey:key];
-        }
-    }
-
-    // Also clear any persisted color preferences
-    for (SubMenuItem *subMenu in self.subMenus) {
-        NSArray *settings = self.settingsBySubMenu[subMenu.title];
-        for (NSDictionary *setting in settings) {
-            NSString *type = setting[@"type"] ?: @"switch";
-            if ([type isEqualToString:@"color"]) {
-                NSString *colorKey = [NSString stringWithFormat:@"%@_Color", setting[@"title"]];
-                [[NSUserDefaults standardUserDefaults] removeObjectForKey:colorKey];
-            }
-        }
-    }
-
+    [THSettingsTransfer resetAll];
     [[NSUserDefaults standardUserDefaults] synchronize];
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -669,39 +463,7 @@ NSData *compressData(NSData *uncompressedData) {
 }
 
 - (void)exportSettingsQR {
-    NSMutableDictionary *exportedSettings = [NSMutableDictionary dictionary];
-    for (SubMenuItem *subMenu in self.subMenus) {
-        NSArray *settings = self.settingsBySubMenu[subMenu.title];
-        NSMutableArray *exportedSubMenuSettings = [NSMutableArray array];
-        for (NSDictionary *setting in settings) {
-            NSString *key = [NSString stringWithFormat:@"%@_Enabled", setting[@"title"]];
-            BOOL isEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:key];
-            NSMutableDictionary *exportedSetting = [@{
-                @"title": setting[@"title"] ?: @"",
-                @"enabled": @(isEnabled)
-            } mutableCopy];
-            // Include extra data for certain types
-            NSString *type = setting[@"type"] ?: @"switch";
-            if ([type isEqualToString:@"color"]) {
-                NSString *colorKey = [NSString stringWithFormat:@"%@_Color", setting[@"title"]];
-                NSData *storedData = [[NSUserDefaults standardUserDefaults] objectForKey:colorKey];
-                if (storedData) {
-                    UIColor *storedColor = nil;
-                    @try {
-                        storedColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:storedData error:nil];
-                    } @catch (__unused NSException *e) {}
-                    NSString *hex = THHexStringFromColor(storedColor);
-                    if (hex) exportedSetting[@"colorHex"] = hex;
-                }
-            } else if ([type isEqualToString:@"segment"]) {
-                NSString *segKey = [NSString stringWithFormat:@"%@_SegmentIndex", setting[@"title"]];
-                NSInteger idx = [[NSUserDefaults standardUserDefaults] integerForKey:segKey];
-                exportedSetting[@"selectedIndex"] = @(idx);
-            }
-            [exportedSubMenuSettings addObject:exportedSetting];
-        }
-        exportedSettings[subMenu.title] = exportedSubMenuSettings;
-    }
+    NSDictionary *exportedSettings = [THSettingsTransfer exportDictionary];
 
     NSError *error;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:exportedSettings options:NSJSONWritingPrettyPrinted error:&error];
@@ -795,44 +557,14 @@ NSData *compressData(NSData *uncompressedData) {
 
 - (void)exportSettings {
     @try {
-        // Build grouped export (matches import structure) and include colorHex where applicable
-        NSMutableDictionary *exportedSettings = [NSMutableDictionary dictionary];
-        for (SubMenuItem *subMenu in self.subMenus) {
-            NSArray *settingsArray = self.settingsBySubMenu[subMenu.title];
-            NSMutableArray *exportedSubMenuSettings = [NSMutableArray array];
-            for (NSDictionary *setting in settingsArray) {
-                NSString *title = setting[@"title"] ?: @"";
-                NSString *enabledKey = [NSString stringWithFormat:@"%@_Enabled", title];
-                BOOL isEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:enabledKey];
-                NSMutableDictionary *exportedSetting = [@{ @"title": title, @"enabled": @(isEnabled) } mutableCopy];
-                NSString *type = setting[@"type"] ?: @"switch";
-                if ([type isEqualToString:@"color"]) {
-                    NSString *colorKey = [NSString stringWithFormat:@"%@_Color", title];
-                    NSData *storedData = [[NSUserDefaults standardUserDefaults] objectForKey:colorKey];
-                    if (storedData) {
-                        UIColor *storedColor = nil;
-                        @try {
-                            storedColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:storedData error:nil];
-                        } @catch (__unused NSException *e) {}
-                        NSString *hex = THHexStringFromColor(storedColor);
-                        if (hex) exportedSetting[@"colorHex"] = hex;
-                    }
-                } else if ([type isEqualToString:@"segment"]) {
-                    NSString *segKey = [NSString stringWithFormat:@"%@_SegmentIndex", title];
-                    NSInteger idx = [[NSUserDefaults standardUserDefaults] integerForKey:segKey];
-                    exportedSetting[@"selectedIndex"] = @(idx);
-                }
-                [exportedSubMenuSettings addObject:exportedSetting];
-            }
-            exportedSettings[subMenu.title] = exportedSubMenuSettings;
-        }
+        NSDictionary *exportedSettings = [THSettingsTransfer exportDictionary];
         
         // Convert to JSON
         NSError *error;
         NSData *jsonData = [NSJSONSerialization dataWithJSONObject:exportedSettings options:NSJSONWritingPrettyPrinted error:&error];
         if (error) {
             NSLog(@"Error exporting settings: %@", error);
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to export settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -841,7 +573,7 @@ NSData *compressData(NSData *uncompressedData) {
         NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         if (!jsonString) {
             NSLog(@"Failed to create JSON string");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to create settings data." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -851,7 +583,7 @@ NSData *compressData(NSData *uncompressedData) {
         NSData *data = [jsonString dataUsingEncoding:NSUTF8StringEncoding];
         if (!data) {
             NSLog(@"Failed to convert JSON string to data");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to process settings data." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -863,7 +595,7 @@ NSData *compressData(NSData *uncompressedData) {
         int result = compress(compressedData.mutableBytes, &compressedLength, data.bytes, (uLong)data.length);
         if (result != Z_OK) {
             NSLog(@"Compression failed with error: %d", result);
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to compress settings data." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -875,7 +607,7 @@ NSData *compressData(NSData *uncompressedData) {
         NSString *base64String = [compressedData base64EncodedStringWithOptions:0];
         if (!base64String) {
             NSLog(@"Failed to base64 encode compressed data");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to encode settings data." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -885,7 +617,7 @@ NSData *compressData(NSData *uncompressedData) {
         CIFilter *qrFilter = [CIFilter filterWithName:@"CIQRCodeGenerator"];
         if (!qrFilter) {
             NSLog(@"QR filter not available");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"QR code generation not available." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -894,7 +626,7 @@ NSData *compressData(NSData *uncompressedData) {
         NSData *qrData = [base64String dataUsingEncoding:NSUTF8StringEncoding];
         if (!qrData) {
             NSLog(@"Error: qrData is nil");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to process QR data." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -905,7 +637,7 @@ NSData *compressData(NSData *uncompressedData) {
         CIImage *qrImage = qrFilter.outputImage;
         if (!qrImage) {
             NSLog(@"Error: qrImage is nil");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to generate QR image." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -916,7 +648,7 @@ NSData *compressData(NSData *uncompressedData) {
         CIImage *scaledQRImage = [qrImage imageByApplyingTransform:transform];
         if (!scaledQRImage) {
             NSLog(@"Error: scaledQRImage is nil");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to scale QR image." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -926,7 +658,7 @@ NSData *compressData(NSData *uncompressedData) {
         CGImageRef cgImage = [context createCGImage:scaledQRImage fromRect:scaledQRImage.extent];
         if (!cgImage) {
             NSLog(@"Error: cgImage is nil");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to create CG image." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -937,7 +669,7 @@ NSData *compressData(NSData *uncompressedData) {
         
         if (!qrUIImage) {
             NSLog(@"Error: qrUIImage is nil");
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to create UIImage." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -963,13 +695,13 @@ NSData *compressData(NSData *uncompressedData) {
         navController.modalPresentationStyle = UIModalPresentationPageSheet;
         [self presentViewController:navController animated:YES completion:nil];
         
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Settings Exported!" subtitle:@"Scan the QR code to import settings." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:nil];
         }
         
     } @catch (NSException *exception) {
         NSLog(@"Error generating QR code: %@", exception);
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"An error occurred while exporting settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
         }
     }
@@ -977,56 +709,29 @@ NSData *compressData(NSData *uncompressedData) {
 
 - (void)exportSettingsToClipboard {
     @try {
-        // Build grouped export, including colorHex
-        NSMutableDictionary *exportedSettings = [NSMutableDictionary dictionary];
-        for (SubMenuItem *subMenu in self.subMenus) {
-            NSArray *settingsArray = self.settingsBySubMenu[subMenu.title];
-            NSMutableArray *exportedSubMenuSettings = [NSMutableArray array];
-            for (NSDictionary *setting in settingsArray) {
-                NSString *title = setting[@"title"] ?: @"";
-                NSString *enabledKey = [NSString stringWithFormat:@"%@_Enabled", title];
-                BOOL isEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:enabledKey];
-                NSMutableDictionary *exportedSetting = [@{ @"title": title, @"enabled": @(isEnabled) } mutableCopy];
-                NSString *type = setting[@"type"] ?: @"switch";
-                if ([type isEqualToString:@"color"]) {
-                    NSString *colorKey = [NSString stringWithFormat:@"%@_Color", title];
-                    NSData *storedData = [[NSUserDefaults standardUserDefaults] objectForKey:colorKey];
-                    if (storedData) {
-                        UIColor *storedColor = nil;
-                        @try { storedColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:storedData error:nil]; } @catch (__unused NSException *e) {}
-                        if (!storedColor) {
-                            @try { storedColor = [NSKeyedUnarchiver unarchiveObjectWithData:storedData]; } @catch (__unused NSException *e) {}
-                        }
-                        NSString *hex = THHexStringFromColor(storedColor);
-                        if (hex) exportedSetting[@"colorHex"] = hex;
-                    }
-                }
-                [exportedSubMenuSettings addObject:exportedSetting];
-            }
-            exportedSettings[subMenu.title] = exportedSubMenuSettings;
-        }
+        NSDictionary *exportedSettings = [THSettingsTransfer exportDictionary];
 
         NSError *error = nil;
         NSData *jsonData = [NSJSONSerialization dataWithJSONObject:exportedSettings options:NSJSONWritingPrettyPrinted error:&error];
         if (!jsonData) {
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to build settings JSON." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
         }
         NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         if (!jsonString) {
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Failed to encode JSON string." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
         }
         [UIPasteboard generalPasteboard].string = jsonString;
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Exported" subtitle:@"Settings JSON copied to clipboard." icon:[UIImage systemImageNamed:@"doc.on.doc.fill"] autoHide:3 openURL:nil];
         }
     } @catch (__unused NSException *e) {
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Export Failed" subtitle:@"Unexpected error." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
         }
     }
@@ -1049,13 +754,19 @@ NSData *compressData(NSData *uncompressedData) {
         return;
     }
 
-    NSData *data = [[NSData alloc] initWithBase64EncodedString:encryptedString options:0];
-    if (!data) {
-        [ThetaHelper showToastWithTitle:@"Import Error" subtitle:@"Invalid base64 string." icon:[ThetaHelper imageFromEmojiString:@"❌" width:200] autoHide:2 openURL:nil];
-        return;
+    // "Export to Clipboard" copies plain JSON; QR codes hold base64 of zlib-compressed JSON.
+    NSString *trimmed = [encryptedString stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSData *decompressedData = nil;
+    if ([trimmed hasPrefix:@"{"]) {
+        decompressedData = [trimmed dataUsingEncoding:NSUTF8StringEncoding];
+    } else {
+        NSData *data = [[NSData alloc] initWithBase64EncodedString:trimmed options:0];
+        if (!data) {
+            [ThetaHelper showToastWithTitle:@"Import Error" subtitle:@"Invalid base64 string." icon:[ThetaHelper imageFromEmojiString:@"❌" width:200] autoHide:2 openURL:nil];
+            return;
+        }
+        decompressedData = [self decompressData:data];
     }
-
-    NSData *decompressedData = [self decompressData:data];
     THDebugLog(@"Decompressed data: %@", decompressedData);
     if (!decompressedData) {
         [ThetaHelper showToastWithTitle:@"Import Error" subtitle:@"Decompression failed." icon:[ThetaHelper imageFromEmojiString:@"❌" width:200] autoHide:2 openURL:nil];
@@ -1069,37 +780,7 @@ NSData *compressData(NSData *uncompressedData) {
         return;
     }
 
-    // Import title/enabled and optional colorHex for each setting
-    for (SubMenuItem *subMenu in self.subMenus) {
-        NSArray *importedArray = importedSettings[subMenu.title];
-        if (importedArray) {
-            for (NSDictionary *setting in importedArray) {
-                NSString *title = setting[@"title"];
-                NSNumber *enabled = setting[@"enabled"];
-                if (title && enabled) {
-                    NSString *key = [NSString stringWithFormat:@"%@_Enabled", title];
-                    [[NSUserDefaults standardUserDefaults] setBool:enabled.boolValue forKey:key];
-                }
-                NSString *hex = setting[@"colorHex"];
-                if (title && [hex isKindOfClass:[NSString class]] && hex.length > 0) {
-                    UIColor *color = THColorFromHexString(hex);
-                    if (color) {
-                        NSString *colorKey = [NSString stringWithFormat:@"%@_Color", title];
-                        NSError *err = nil;
-                        NSData *data = [NSKeyedArchiver archivedDataWithRootObject:color requiringSecureCoding:YES error:&err];
-                        if (data) {
-                            [[NSUserDefaults standardUserDefaults] setObject:data forKey:colorKey];
-                        }
-                    }
-                }
-                NSNumber *selectedIndex = setting[@"selectedIndex"];
-                if (title && [selectedIndex isKindOfClass:[NSNumber class]]) {
-                    NSString *segKey = [NSString stringWithFormat:@"%@_SegmentIndex", title];
-                    [[NSUserDefaults standardUserDefaults] setInteger:selectedIndex.integerValue forKey:segKey];
-                }
-            }
-        }
-    }
+    [THSettingsTransfer importDictionary:importedSettings];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
@@ -1146,31 +827,7 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
             [ThetaHelper showToastWithTitle:@"Import Error" subtitle:@"Invalid JSON." icon:[ThetaHelper imageFromEmojiString:@"❌" width:200] autoHide:2 openURL:nil];
             return;
         }
-        for (SubMenuItem *subMenu in self.subMenus) {
-            NSArray *importedArray = importedSettings[subMenu.title];
-            if (importedArray) {
-                for (NSDictionary *setting in importedArray) {
-                    NSString *title = setting[@"title"];
-                    NSNumber *enabled = setting[@"enabled"];
-                    if (title && enabled) {
-                        NSString *key = [NSString stringWithFormat:@"%@_Enabled", title];
-                        [[NSUserDefaults standardUserDefaults] setBool:enabled.boolValue forKey:key];
-                    }
-                    NSString *hex = setting[@"colorHex"];
-                    if (title && [hex isKindOfClass:[NSString class]] && hex.length > 0) {
-                        UIColor *color = THColorFromHexString(hex);
-                        if (color) {
-                            NSString *colorKey = [NSString stringWithFormat:@"%@_Color", title];
-                            NSError *err = nil;
-                            NSData *data = [NSKeyedArchiver archivedDataWithRootObject:color requiringSecureCoding:YES error:&err];
-                            if (data) {
-                                [[NSUserDefaults standardUserDefaults] setObject:data forKey:colorKey];
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        [THSettingsTransfer importDictionary:importedSettings];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [ThetaHelper showToastWithTitle:@"Settings Imported!" subtitle:@"App will need to be restarted." icon:[ThetaHelper imageFromEmojiString:@"✅" width:300] autoHide:2 openURL:nil];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
@@ -1221,35 +878,7 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
             [ThetaHelper showToastWithTitle:@"Import Error" subtitle:@"JSON decode failed." icon:[ThetaHelper imageFromEmojiString:@"❌" width:200] autoHide:2 openURL:nil];
             return;
         }
-        // Import settings (including colorHex when present)
-        for (NSString *subMenuTitle in importedSettings) {
-            NSArray *settingsArray = importedSettings[subMenuTitle];
-            for (NSDictionary *setting in settingsArray) {
-                NSString *title = setting[@"title"];
-                NSNumber *enabled = setting[@"enabled"];
-                if (title && enabled) {
-                    NSString *key = [NSString stringWithFormat:@"%@_Enabled", title];
-                    [[NSUserDefaults standardUserDefaults] setBool:enabled.boolValue forKey:key];
-                }
-                NSString *hex = setting[@"colorHex"];
-                if (title && [hex isKindOfClass:[NSString class]] && hex.length > 0) {
-                    UIColor *color = THColorFromHexString(hex);
-                    if (color) {
-                        NSString *colorKey = [NSString stringWithFormat:@"%@_Color", title];
-                        NSError *err = nil;
-                        NSData *data = [NSKeyedArchiver archivedDataWithRootObject:color requiringSecureCoding:YES error:&err];
-                        if (data) {
-                            [[NSUserDefaults standardUserDefaults] setObject:data forKey:colorKey];
-                        }
-                    }
-                }
-                NSNumber *selectedIndex = setting[@"selectedIndex"];
-                if (title && [selectedIndex isKindOfClass:[NSNumber class]]) {
-                    NSString *segKey = [NSString stringWithFormat:@"%@_SegmentIndex", title];
-                    [[NSUserDefaults standardUserDefaults] setInteger:selectedIndex.integerValue forKey:segKey];
-                }
-            }
-        }
+        [THSettingsTransfer importDictionary:importedSettings];
         [[NSUserDefaults standardUserDefaults] synchronize];
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
@@ -1323,8 +952,7 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
 		} else {
 			// switch (default)
 			BOOL hasInfo = NO;
-			NSArray *source = self.settingsBySubMenu[result.parentSubMenuTitle] ?: @[];
-			for (NSDictionary *d in source) { if ([d[@"title"] isEqualToString:result.settingTitle]) { hasInfo = [d[@"info"] isKindOfClass:[NSString class]] && [d[@"info"] length] > 0; break; } }
+			hasInfo = result.setting.info.length > 0;
 			CGFloat switchWidth = 52.0;
 			CGFloat infoSize = 28.0;
 			CGFloat interControlSpacing = 8.0;
@@ -1367,28 +995,6 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
 
     cell.accessoryView = nil;
 
-    // --- Get app version once ---
-    static NSString *cachedAppVersion = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        cachedAppVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-    });
-
-    // Helper to compare version strings
-    BOOL (^isAppVersionAtMost313_0_2)(void) = ^BOOL{
-        if (!cachedAppVersion) return NO;
-        NSArray *parts = [cachedAppVersion componentsSeparatedByString:@"."];
-        NSInteger major = parts.count > 0 ? [parts[0] integerValue] : 0;
-        NSInteger minor = parts.count > 1 ? [parts[1] integerValue] : 0;
-        NSInteger patch = parts.count > 2 ? [parts[2] integerValue] : 0;
-        if (major < 313) return YES;
-        if (major > 313) return NO;
-        if (minor < 0) return YES;
-        if (minor > 0) return NO;
-        if (patch <= 2) return YES;
-        return NO;
-    };
-
     if (self.isSearchingSettings) {
         SettingSearchResult *result = self.filteredSettings[indexPath.row];
         NSString *settingType = result.settingType ?: @"switch";
@@ -1422,19 +1028,8 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
             if (@available(iOS 14.0, *)) {
                 UIColorWell *colorWell = [[UIColorWell alloc] init];
                 colorWell.supportsAlpha = NO;
-                NSString *colorKey = [NSString stringWithFormat:@"%@_Color", result.settingTitle];
-                NSData *storedData = [[NSUserDefaults standardUserDefaults] objectForKey:colorKey];
-                UIColor *storedColor = nil;
-                if (storedData) {
-                    @try {
-                        storedColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:storedData error:nil];
-                    } @catch (__unused NSException *e) {}
-                    if (!storedColor) {
-                        @try { storedColor = [NSKeyedUnarchiver unarchiveObjectWithData:storedData]; } @catch (__unused NSException *e) {}
-                    }
-                }
-                colorWell.selectedColor = storedColor ?: [UIColor labelColor];
-                colorWell.accessibilityIdentifier = colorKey;
+                colorWell.selectedColor = ThetaSettingColor(result.settingKey);
+                colorWell.accessibilityIdentifier = result.settingKey;
                 [colorWell addTarget:self action:@selector(searchColorWellChanged:) forControlEvents:UIControlEventValueChanged];
                 // Ensure proper sizing when used as accessoryView
                 CGFloat side = 30.0;
@@ -1474,12 +1069,9 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
                 [options enumerateObjectsUsingBlock:^(NSString * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
                     [seg insertSegmentWithTitle:obj atIndex:idx animated:NO];
                 }];
-                NSString *key = [NSString stringWithFormat:@"%@_SegmentIndex", result.settingTitle];
-                NSInteger selected = [[NSUserDefaults standardUserDefaults] integerForKey:key];
-                if (selected < 0 || selected >= (NSInteger)options.count) selected = 0;
-                seg.selectedSegmentIndex = selected;
+                seg.selectedSegmentIndex = MAX(0, [result.setting indexOfOption:ThetaSettingChoice(result.settingKey)]);
                 seg.tag = indexPath.row;
-                seg.accessibilityIdentifier = result.settingTitle;
+                seg.accessibilityIdentifier = result.settingKey;
                 [seg removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
                 [seg addTarget:self action:@selector(handleSegmentChange:) forControlEvents:UIControlEventValueChanged];
                 [seg sizeToFit];
@@ -1510,7 +1102,7 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
                 SEL actionSelector = @selector(resetButtonColorsFromSearch);
                 NSString *accessibilityLabel = @"Reset Colors";
                 
-                if ([result.settingTitle isEqualToString:@"Clear App Cache"]) {
+                if ([result.settingKey isEqualToString:THAppClearCache]) {
                     iconName = @"trash";
                     actionSelector = @selector(clearAppCacheFromSearch);
                     accessibilityLabel = @"Clear App Cache";
@@ -1539,9 +1131,8 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
             cell.detailTextLabel.font = [UIFont systemFontOfSize:swSubtitleSize];
             cell.imageView.image = nil;
 
-            NSString *key = [NSString stringWithFormat:@"%@_Enabled", result.settingTitle];
+            BOOL isOn = ENABLED(result.settingKey);
             if ([cell.settingSwitch respondsToSelector:@selector(setOn:animated:)]) {
-                BOOL isOn = [[NSUserDefaults standardUserDefaults] boolForKey:key];
                 ((void(*)(id,SEL,BOOL,BOOL))[cell.settingSwitch methodForSelector:@selector(setOn:animated:)])(cell.settingSwitch, @selector(setOn:animated:), isOn, NO);
             }
             cell.settingSwitch.tag = indexPath.row;
@@ -1554,26 +1145,20 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
             cell.textLabel.numberOfLines = 0;
             cell.detailTextLabel.numberOfLines = 0;
 
-            // Optional info button in search results (look up original dict)
-            NSString *infoText = nil;
-            NSArray *source = self.settingsBySubMenu[result.parentSubMenuTitle] ?: @[];
-            for (NSDictionary *d in source) { if ([d[@"title"] isEqualToString:result.settingTitle]) { infoText = d[@"info"]; break; } }
-            if ([infoText isKindOfClass:[NSString class]] && infoText.length > 0) {
+            if (result.setting.info.length > 0) {
                 cell.infoButton.hidden = NO;
-                cell.infoButton.accessibilityIdentifier = result.settingTitle;
+                cell.infoButton.accessibilityIdentifier = result.settingKey;
                 [cell.infoButton removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
                 [cell.infoButton addTarget:self action:@selector(didTapInfoFromSearch:) forControlEvents:UIControlEventTouchUpInside];
             } else {
                 cell.infoButton.hidden = YES;
             }
 
-            // Disable "Keep Deleted Messages" if app version <= 313.0.2
-            if ([result.settingTitle isEqualToString:@"Keep Deleted Messages"] && isAppVersionAtMost313_0_2()) {
+            if (!result.setting.availableOnThisVersion) {
                 cell.settingSwitch.enabled = NO;
                 cell.textLabel.textColor = [UIColor systemGrayColor];
-                cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ — %@ (Requires app version > 313.0.2)", result.parentSubMenuTitle, result.settingDetail ?: @""];
-                [[NSUserDefaults standardUserDefaults] removeObjectForKey:key];
-                [[NSUserDefaults standardUserDefaults] synchronize];
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ — %@ (Requires Instagram %@ or later)", result.parentSubMenuTitle, result.settingDetail ?: @"", result.setting.minimumInstagramVersion];
+                if (isOn) ThetaSettingReset(result.settingKey);
             } else {
                 cell.settingSwitch.enabled = YES;
             }
@@ -1582,14 +1167,14 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
         }
     } else {
         if (indexPath.section == 0) {
-            // SubMenuItem cell
+            // THSettingsPage cell
             static NSString *cellIdentifier = @"Cell";
             UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellIdentifier];
             if (!cell) {
                 cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:cellIdentifier];
             }
             cell.accessoryView = nil;
-            SubMenuItem *subMenu = self.filteredSubMenus[indexPath.row];
+            THSettingsPage *subMenu = self.filteredSubMenus[indexPath.row];
             cell.textLabel.text = subMenu.title;
             cell.detailTextLabel.text = subMenu.detail;
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -1642,82 +1227,41 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
 }
 
 - (void)didTapInfoFromSearch:(UIButton *)sender {
-    NSString *title = sender.accessibilityIdentifier ?: @"Info";
-    NSString *message = @"";
-    for (NSString *section in self.settingsBySubMenu.allKeys) {
-        for (NSDictionary *d in self.settingsBySubMenu[section]) {
-            if ([d[@"title"] isEqualToString:title]) { message = d[@"info"] ?: d[@"detail"] ?: @""; break; }
-        }
-    }
-    [ThetaHelper showCustomAlertWithActions:title description:message actions:@[@{ @"title": @"OK", @"handler": ^(id s) {} }]];
+    THSettingDefinition *setting = [THSettingDefinition definitionForKey:sender.accessibilityIdentifier];
+    if (!setting) return;
+    [ThetaHelper showCustomAlertWithActions:setting.title description:setting.info ?: setting.detail ?: @"" actions:@[@{ @"title": @"OK", @"handler": ^(id s) {} }]];
 }
 
 - (void)searchSwitchChanged:(UISwitch *)sender {
     NSInteger row = sender.tag;
-    if (row < 0 || row >= self.filteredSettings.count) return;
-    SettingSearchResult *result = self.filteredSettings[row];
-    NSString *key = [NSString stringWithFormat:@"%@_Enabled", result.settingTitle];
-    [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:key];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-
-    static NSSet *sSearchRestartRequired;
-    static dispatch_once_t sSearchRestartOnce;
-    dispatch_once(&sSearchRestartOnce, ^{
-        sSearchRestartRequired = [NSSet setWithArray:@[
-            @"Messenger Mode", @"Hide Explore Grid", @"Hide Reels Tab",
-            @"Hide Explore Tab", @"Hide Feed Tab", @"Hide Messages Tab",
-            @"Hide Create Tab/Button", @"Enable Liquid Glass Buttons",
-            @"Enable Liquid Glass Surfaces",
-        ]];
-    });
-    if ([sSearchRestartRequired containsObject:result.settingTitle]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [ThetaHelper showToastWithTitle:@"App Restart Required" subtitle:@"Restart the app for changes to apply." icon:[ThetaHelper imageFromEmojiString:@"⚠️" width:300] autoHide:4 openURL:nil];
-        });
-    }
+    if (row < 0 || row >= (NSInteger)self.filteredSettings.count) return;
+    THSettingDefinition *setting = self.filteredSettings[row].setting;
+    ThetaSettingSetEnabled(setting.key, sender.isOn);
+    THShowRestartToastIfNeeded(setting);
 }
 
 - (void)handleSegmentChange:(UISegmentedControl *)sender {
-    NSString *title = sender.accessibilityIdentifier;
-    if (title.length > 0) {
-        [ThetaHelper storeSegmentIndex:sender.selectedSegmentIndex forSettingTitle:title];
+    THSettingDefinition *setting = [THSettingDefinition definitionForKey:sender.accessibilityIdentifier];
+    NSInteger index = sender.selectedSegmentIndex;
+    if (setting && index >= 0 && index < (NSInteger)setting.options.count) {
+        ThetaSettingSetChoice(setting.key, setting.options[index].identifier);
     }
 }
 
 - (void)searchColorWellChanged:(id)sender {
     if (@available(iOS 14.0, *)) {
         UIColorWell *colorWell = (UIColorWell *)sender;
-        NSString *colorKey = colorWell.accessibilityIdentifier;
-        if (colorKey.length > 0) {
-            UIColor *color = colorWell.selectedColor ?: [UIColor labelColor];
-            NSError *error = nil;
-            NSData *data = [NSKeyedArchiver archivedDataWithRootObject:color requiringSecureCoding:YES error:&error];
-            if (data) {
-                [[NSUserDefaults standardUserDefaults] setObject:data forKey:colorKey];
-                [[NSUserDefaults standardUserDefaults] synchronize];
-            }
+        if (colorWell.accessibilityIdentifier.length && colorWell.selectedColor) {
+            ThetaSettingSetColor(colorWell.accessibilityIdentifier, colorWell.selectedColor);
         }
     }
 }
 
 - (void)resetButtonColorsFromSearch {
-    NSArray<NSString *> *keys = @[ @"Save Button Color_Color", @"Seen Button Color_Color", @"Deleted Message Color_Color", @"Mentions Button Color_Color" ];
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    for (NSString *key in keys) {
-        [defaults removeObjectForKey:key];
-    }
-    [defaults synchronize];
+    THResetColorSettings();
+    [self.tableView reloadData];
 
-    if (@available(iOS 14.0, *)) {
-        for (UITableViewCell *cell in self.tableView.visibleCells) {
-            if ([cell.accessoryView isKindOfClass:[UIColorWell class]]) {
-                UIColorWell *well = (UIColorWell *)cell.accessoryView;
-                well.selectedColor = [UIColor labelColor];
-            }
-        }
-    }
-
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         [ThetaHelper showToastWithTitle:@"Colors Reset" subtitle:@"Button colors restored to default." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
     }
 }
@@ -1783,30 +1327,17 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
     if (self.isSearchingSettings) {
         if (indexPath.row >= (NSInteger)self.filteredSettings.count) return;
         SettingSearchResult *result = self.filteredSettings[indexPath.row];
-        if ([result.settingType isEqualToString:@"view"]) {
-            NSDictionary *settingDict = nil;
-            for (NSDictionary *d in self.settingsBySubMenu[result.parentSubMenuTitle] ?: @[]) {
-                if ([d[@"title"] isEqualToString:result.settingTitle]) { settingDict = d; break; }
-            }
-            NSString *vcClassName = settingDict[@"viewController"];
-            if ([vcClassName isKindOfClass:[NSString class]] && vcClassName.length) {
-                Class vcClass = NSClassFromString(vcClassName);
-                if (vcClass) {
-                    UIViewController *vc = [[vcClass alloc] init];
-                    if (vc) [self.navigationController pushViewController:vc animated:YES];
-                }
-            }
-        }
+        UIViewController *vc = THViewControllerForSetting(result.setting);
+        if (vc) [self.navigationController pushViewController:vc animated:YES];
         return;
     }
 
     if (indexPath.section == 0) {
-        // SubMenuItem tap
-        SubMenuItem *subMenu = self.filteredSubMenus[indexPath.row];
+        // THSettingsPage tap
+        THSettingsPage *subMenu = self.filteredSubMenus[indexPath.row];
         SubMenuViewController *subMenuViewController = [[SubMenuViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
         subMenuViewController.title = subMenu.title;
-        NSArray *subMenuSettings = self.settingsBySubMenu[subMenu.title] ?: @[];
-        subMenuViewController.settings = subMenuSettings;
+        subMenuViewController.settings = subMenu.settings;
         [self.navigationController pushViewController:subMenuViewController animated:YES];
     } else if (indexPath.section == 1) {
         // Link tap
@@ -1935,7 +1466,7 @@ didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
     
     // Conditionally add audioNotesButton only if "Save Audio Notes" is enabled
     NSMutableArray *rightBarButtonItems = [NSMutableArray arrayWithObject:applyButton];
-    if (ENABLED(@"Save Audio Notes")) {
+    if (ENABLED(THSaveAudioNotes)) {
         [rightBarButtonItems addObject:audioNotesButton];
     }
     self.navigationItem.rightBarButtonItems = rightBarButtonItems;

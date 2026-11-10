@@ -53,7 +53,7 @@ NSString *const plistFileName = @"deleted_messages.plist";
     plistData[messageID] = currentDate;
     [self savePlistData:plistData];
 
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         [ThetaHelper showToastWithTitle:@"Someone deleted a message." subtitle:nil icon:[ThetaHelper imageFromEmojiString:@"🗑️" width:60] autoHide:4 openURL:nil];
     }
 }
