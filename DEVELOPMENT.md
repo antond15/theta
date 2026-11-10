@@ -68,6 +68,17 @@ It does two things:
 
 The check compiles the working tree, including uncommitted changes, so commit or stash before pushing if they differ. `git push --no-verify` skips it.
 
+## Settings
+
+Every setting is declared once and read through a constant, never a string:
+
+1. Add the key to `THETA_SETTING_KEYS` in `Include/ThetaSettings.h`, e.g. `X(THDMSeenButton, "dm.seen_button")`. The key is `<area>.<name>` in snake_case; the area is the part of Instagram the setting affects (`dm`, `story`, `nav`, …), not the settings page it is on.
+2. Define it in `+allDefinitions` in `Source/UI/ThetaSettingsRegistry.m`: type, title, detail, info and flags such as restart required or a minimum Instagram version.
+3. Place it on a page in `+allPages` in the same file.
+4. Read it with `ENABLED(THDMSeenButton)`, `ThetaSettingChoice(…)`, `ThetaSettingColor(…)` or `ThetaSettingList(…)`.
+
+Titles, details and pages can change freely. Keys and choice option ids are stored on devices and in exported settings, so never rename one; add a migration in `Source/UI/ThetaSettings.m` and bump `kSettingsVersion` instead. Values are stored in the standard user defaults under `theta.<key>`.
+
 ## Layout
 
 ```
