@@ -1280,7 +1280,8 @@ static void seenButtonPressedAll(IGStoryFullscreenCell *self) {
     thetaStorySkipIfEnabled(firstDelegate);
 }
 
-static void seenButtonPressedCurrent(IGStoryFullscreenCell *self) {
+/* Marks the current story as seen. `skip`: then move on if Skip After Marking Seen is on. */
+static void markCurrentStorySeen(IGStoryFullscreenCell *self, BOOL skip) {
     id viewer = thetaStoryViewerFromCell(self);
     id section = thetaStoryPreferredSection(self, viewer);
     id currentItem = thetaStoryCurrentItem(section, viewer);
@@ -1305,7 +1306,11 @@ static void seenButtonPressedCurrent(IGStoryFullscreenCell *self) {
         }
 	}
 
-	if (ok) thetaStorySkipIfEnabled(section ?: thetaStorySectionControllerFromCell(self));
+	if (ok && skip) thetaStorySkipIfEnabled(section ?: thetaStorySectionControllerFromCell(self));
+}
+
+static void seenButtonPressedCurrent(IGStoryFullscreenCell *self) {
+    markCurrentStorySeen(self, YES);
 }
 
 static NSMutableDictionary *lastSetupOwnerForCell;
@@ -1956,17 +1961,8 @@ static void setupButtons(IGStoryFullscreenCell *self) {
         dispatch_async(dispatch_get_main_queue(), ^{
             IGStoryFullscreenCell *cell = weakSelf;
             if (!cell) return;
-            seenButtonPressedCurrent(cell);
-            id firstDel = nil;
-            @try {
-                if ([cell respondsToSelector:@selector(delegate)]) {
-                    firstDel = [cell performSelector:@selector(delegate)];
-                } else {
-                    id container = ThetaValueForKey(cell, @"containerView");
-                    if (container) firstDel = ThetaValueForKey(container, @"delegate");
-                }
-            } @catch (__unused NSException *e) {}
-            thetaStorySkipIfEnabled(firstDel);
+            // Always Mark Seen: mark it, but don't skip; skipping follows a tap on the eye or phone button.
+            markCurrentStorySeen(cell, NO);
         });
     }
     } @finally {
