@@ -240,10 +240,10 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
     removed += ThetaRemoveTemporaryItems(&bytes);
 
     if (!ENABLED(THAppShowBanners)) return;
-    NSString *subtitle = @"Cache cleared.";
+    NSString *subtitle = @"There was nothing to clear.";
     if (removed > 0) {
         NSString *size = [NSByteCountFormatter stringFromByteCount:(long long)bytes countStyle:NSByteCountFormatterCountStyleFile];
-        subtitle = [NSString stringWithFormat:@"Cleared %lu item%@ (%@)", (unsigned long)removed, removed == 1 ? @"" : @"s", size];
+        subtitle = [NSString stringWithFormat:@"Freed %@.", size];
     }
     [self showToastWithTitle:@"Cache Cleared" subtitle:subtitle icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
 }

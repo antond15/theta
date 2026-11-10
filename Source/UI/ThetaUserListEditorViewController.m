@@ -35,8 +35,8 @@ static NSString *const kCellId = @"UserCell";
 }
 
 - (void)addUsername {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Add username"
-                                                                   message:@"Enter Instagram username (without @)."
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Add Account"
+                                                                   message:@"Enter an Instagram username."
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
         textField.placeholder = @"username";
