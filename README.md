@@ -76,4 +76,8 @@ It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the
 
 ## Development
 
-Toolchain details, debug builds, checking hooks against a new Instagram version, and the source layout are in [DEVELOPMENT.md](docs/DEVELOPMENT.md). Coding agents follow [AGENTS.md](AGENTS.md).
+Toolchain details, debug builds, checking hooks against a new Instagram version, and the source layout are in [DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+### AI use
+
+The maintainer decides what gets built and how it should work, guides the work step by step, and reviews and approves every change before it is committed. Claude Code writes most of the code and helps with code research, such as tracing how Instagram reaches a feature. Every change is tested on a real device before it ships. The rules the agents follow are in [AGENTS.md](AGENTS.md).
