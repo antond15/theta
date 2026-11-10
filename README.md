@@ -8,7 +8,7 @@ Tested as a **sideload** build against Instagram **451.0.0** on iOS 26. Sideload
 
 ## What this fork changes
 
-The full list is in [CHANGES.md](CHANGES.md). In short:
+The full list is in [CHANGES.md](docs/CHANGES.md). In short:
 
 - **Instagram 451 support:** hooks for classes Instagram moved into Swift, plus working navigation, story seen-receipt blocking, Hide Create Button and Liquid Glass on 451 and iOS 26.
 - **Sideload stability:** no inline code patches that crash a re-signed app, safer reel saving, and an FFmpeg build that can't collide with Instagram's own libraries.
@@ -39,7 +39,7 @@ Run once after cloning (safe to re-run):
 ./scripts/setup-toolchain.sh
 ```
 
-It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the patched SDK. See [DEVELOPMENT.md](DEVELOPMENT.md#toolchain) for what it changes and why. If you put Theos somewhere other than `~/theos`, export `THEOS` in your shell profile before running the script and building.
+It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the patched SDK. See [DEVELOPMENT.md](docs/DEVELOPMENT.md#toolchain) for what it changes and why. If you put Theos somewhere other than `~/theos`, export `THEOS` in your shell profile before running the script and building.
 
 ## Build
 
@@ -63,7 +63,7 @@ It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the
    otool -l input/Payload/Instagram.app/Instagram | grep -A4 LC_ENCRYPTION_INFO
    ```
 
-2. Run `./build.sh`. It compiles `Theta.dylib` and `ThetaNSE`, injects them into Instagram and its notification service extension, embeds FFmpeg, and writes `output/Instagram_patched.ipa`. `./build.sh debug` does the same with diagnostic logging (see [DEVELOPMENT.md](DEVELOPMENT.md#debug-build)).
+2. Run `./build.sh`. It compiles `Theta.dylib` and `ThetaNSE`, injects them into Instagram and its notification service extension, embeds FFmpeg, and writes `output/Instagram_patched.ipa`. `./build.sh debug` does the same with diagnostic logging (see [DEVELOPMENT.md](docs/DEVELOPMENT.md#debug-build)).
 
 ## Install
 
@@ -76,4 +76,4 @@ It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the
 
 ## Development
 
-Toolchain details, debug builds, checking hooks against a new Instagram version, and the source layout are in [DEVELOPMENT.md](DEVELOPMENT.md).
+Toolchain details, debug builds, checking hooks against a new Instagram version, and the source layout are in [DEVELOPMENT.md](docs/DEVELOPMENT.md). Coding agents follow [AGENTS.md](AGENTS.md).

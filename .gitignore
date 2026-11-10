@@ -9,4 +9,8 @@ default.profraw
 tools/insert_dylib
 input/Payload/
 __pycache__/
-BACKLOG.md
+docs/backlog.md
+
+# Claude Code
+.claude/worktrees/
+.claude/settings.local.json

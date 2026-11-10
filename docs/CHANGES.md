@@ -1,6 +1,6 @@
 # Changes in this fork
 
-Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/theta) 1.0.1. Ported work is credited in the [README](README.md#credits) and in the commit messages.
+Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/theta) 1.0.1. Ported work is credited in the [README](../README.md#credits) and in the commit messages.
 
 ## Instagram 451 fixes
 

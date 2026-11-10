@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(./scripts/compat.py:*)",
+      "Bash(python3 scripts/compat.py:*)",
+      "Bash(./scripts/objcdump.py:*)",
+      "Bash(python3 scripts/objcdump.py:*)"
+    ]
+  }
+}

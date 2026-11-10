@@ -1,6 +1,6 @@
 # Development
 
-Notes for working on Theta. Building and installing are covered in the [README](README.md).
+Notes for working on Theta. Building and installing are covered in the [README](../README.md).
 
 ## Toolchain
 
@@ -99,6 +99,8 @@ Source/
   Media/            Download UI, AV1 transcoder, DASH
   ProfileAnalyzer/  Follower analytics
 Include/            Public headers (ThetaDebug.h: THDebugLog, debug builds only)
+docs/               Development notes, fork changes, local backlog (docs/backlog.md, gitignored)
+.agents/skills/     Agent procedures (decision-round, close-step, ig-version-bump); .claude/skills links here
 vendor/ffmpeg.framework  FFmpeg headers and libraries, embedded into the app by build.sh
 ThetaResources.bundle    Images, copied into the app by build.sh
 tools/insert_dylib.c     Adds the load commands for Theta and ThetaNSE (compiled by build.sh)
