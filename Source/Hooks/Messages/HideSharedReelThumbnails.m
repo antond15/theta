@@ -1,6 +1,8 @@
 /* Replace only the image; Instagram owns the surrounding controls and decoration. */
 static char THSharedThumbnailHiddenKey;
 static char THSharedThumbnailOriginalKey;
+static char THSharedThumbnailModelKey;
+static char THSharedThumbnailFreshKey;
 static char THSharedCaptionHiddenKey;
 
 static UIImage *THSharedThumbnailPlaceholder(void) {
@@ -18,8 +20,10 @@ static UIImage *THSharedThumbnailPlaceholder(void) {
 
 static UIImage *THSharedThumbnailImage(UIImageView *view, UIImage *image) {
     if (![objc_getAssociatedObject(view, &THSharedThumbnailHiddenKey) boolValue]) return image;
-    if (image != THSharedThumbnailPlaceholder())
+    if (image != THSharedThumbnailPlaceholder()) {
         objc_setAssociatedObject(view, &THSharedThumbnailOriginalKey, image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(view, &THSharedThumbnailFreshKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
     return THSharedThumbnailPlaceholder();
 }
 
@@ -74,15 +78,27 @@ static void THUpdateSharedThumbnail(UIView *cell, NSString *modelKey, NSString *
     id imageView = [preview isKindOfClass:[UIImageView class]] ? preview : ThetaValueForKey(preview, @"photoImageView");
     if ([imageView isKindOfClass:[UIImageView class]]) {
         BOOL wasHidden = [objc_getAssociatedObject(imageView, &THSharedThumbnailHiddenKey) boolValue];
-        if (hide && !wasHidden) {
-            objc_setAssociatedObject(imageView, &THSharedThumbnailOriginalKey, [imageView image], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            objc_setAssociatedObject(imageView, &THSharedThumbnailHiddenKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            [imageView setImage:THSharedThumbnailPlaceholder()];
-        } else if (!hide && wasHidden) {
-            UIImage *original = objc_getAssociatedObject(imageView, &THSharedThumbnailOriginalKey);
-            objc_setAssociatedObject(imageView, &THSharedThumbnailHiddenKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (hide) {
+            if (!wasHidden) {
+                objc_setAssociatedObject(imageView, &THSharedThumbnailOriginalKey, [imageView image], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                objc_setAssociatedObject(imageView, &THSharedThumbnailHiddenKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                [imageView setImage:THSharedThumbnailPlaceholder()];
+            } else if ([imageView image] != THSharedThumbnailPlaceholder()) {
+                // The image arrived through a path the hooks don't cover.
+                objc_setAssociatedObject(imageView, &THSharedThumbnailOriginalKey, [imageView image], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                objc_setAssociatedObject(imageView, &THSharedThumbnailFreshKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                [imageView setImage:THSharedThumbnailPlaceholder()];
+            }
+            objc_setAssociatedObject(imageView, &THSharedThumbnailModelKey, model, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(imageView, &THSharedThumbnailFreshKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        } else if (wasHidden) {
+            // After cell reuse the stored original belongs to the previous message; let Instagram reload instead.
+            BOOL keep = objc_getAssociatedObject(imageView, &THSharedThumbnailModelKey) == model
+                || [objc_getAssociatedObject(imageView, &THSharedThumbnailFreshKey) boolValue];
+            UIImage *original = keep ? objc_getAssociatedObject(imageView, &THSharedThumbnailOriginalKey) : nil;
+            for (char *key : (char *[]){&THSharedThumbnailHiddenKey, &THSharedThumbnailOriginalKey, &THSharedThumbnailModelKey, &THSharedThumbnailFreshKey})
+                objc_setAssociatedObject(imageView, key, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             [imageView setImage:original];
-            objc_setAssociatedObject(imageView, &THSharedThumbnailOriginalKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
     }
     // Keep author/name/icon views visible; these fields contain only caption text.
