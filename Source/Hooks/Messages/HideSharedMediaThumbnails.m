@@ -122,26 +122,26 @@ static void THUpdateSharedThumbnail(UIView *cell, NSString *modelKey, NSString *
     }
 }
 
-static void (*orig_THReelPortraitLayout)(UIView *, SEL);
-static void hook_THReelPortraitLayout(UIView *self, SEL _cmd) {
-    orig_THReelPortraitLayout(self, _cmd);
+static void (*orig_THSharedPortraitLayout)(UIView *, SEL);
+static void hook_THSharedPortraitLayout(UIView *self, SEL _cmd) {
+    orig_THSharedPortraitLayout(self, _cmd);
     THUpdateSharedThumbnail(self, @"_viewModel", @"imageView");
 }
-static void (*orig_THReelHscrollLayout)(UIView *, SEL);
-static void hook_THReelHscrollLayout(UIView *self, SEL _cmd) {
-    orig_THReelHscrollLayout(self, _cmd);
+static void (*orig_THSharedHscrollLayout)(UIView *, SEL);
+static void hook_THSharedHscrollLayout(UIView *self, SEL _cmd) {
+    orig_THSharedHscrollLayout(self, _cmd);
     THUpdateSharedThumbnail(self, @"_itemViewModel", @"previewImageView");
 }
-static void (*orig_THReelLayeredLayout)(UIView *, SEL);
-static void hook_THReelLayeredLayout(UIView *self, SEL _cmd) {
-    orig_THReelLayeredLayout(self, _cmd);
+static void (*orig_THSharedLayeredLayout)(UIView *, SEL);
+static void hook_THSharedLayeredLayout(UIView *self, SEL _cmd) {
+    orig_THSharedLayeredLayout(self, _cmd);
     THUpdateSharedThumbnail(self, @"viewModel", @"imageView");
 }
 
-void THRegisterHideSharedReelThumbnailsHooks(void) {
+void THRegisterHideSharedMediaThumbnailsHooks(void) {
     NullHookMessageEx(objc_getClass("IGImageView"), @selector(setImage:), (void *)hook_THSharedSetImage, &orig_THSharedSetImage);
     NullHookMessageEx(objc_getClass("IGImageView"), NSSelectorFromString(@"_showImage:withDisplayState:"), (void *)hook_THSharedShowImage, &orig_THSharedShowImage);
-    NullHookMessageEx(objc_getClass("IGDirectPortraitXMAMessageBubbleView"), @selector(layoutSubviews), (void *)hook_THReelPortraitLayout, &orig_THReelPortraitLayout);
-    NullHookMessageEx(objc_getClass("IGDirectHscrollXMASingleItemView"), @selector(layoutSubviews), (void *)hook_THReelHscrollLayout, &orig_THReelHscrollLayout);
-    NullHookMessageEx(objc_getClass("_TtC27IGDirectLayeredXMAMessageUI35IGDirectLayeredXMAMessageBubbleView"), @selector(layoutSubviews), (void *)hook_THReelLayeredLayout, &orig_THReelLayeredLayout);
+    NullHookMessageEx(objc_getClass("IGDirectPortraitXMAMessageBubbleView"), @selector(layoutSubviews), (void *)hook_THSharedPortraitLayout, &orig_THSharedPortraitLayout);
+    NullHookMessageEx(objc_getClass("IGDirectHscrollXMASingleItemView"), @selector(layoutSubviews), (void *)hook_THSharedHscrollLayout, &orig_THSharedHscrollLayout);
+    NullHookMessageEx(objc_getClass("_TtC27IGDirectLayeredXMAMessageUI35IGDirectLayeredXMAMessageBubbleView"), @selector(layoutSubviews), (void *)hook_THSharedLayeredLayout, &orig_THSharedLayeredLayout);
 }
