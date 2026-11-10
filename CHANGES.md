@@ -44,6 +44,15 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - **Reset Settings** also resets choices. User lists are kept.
 - Opening an auto-mark list from search results shows the list. It used to open an empty, unnamed editor.
 
+## Settings screen
+
+- **New layout.** Pages follow the part of Instagram a setting affects: Feed & Explore, Stories, Reels, Messages and Profiles, then Downloads, Privacy, Confirmations, Navigation, Appearance and Theta. Pages are split into sections with headers and footers, and sub-options are indented under their parent.
+- **Rewritten text.** Every title, description, banner and alert was reworded, and descriptions that no longer matched what a setting does were corrected.
+- **Restart-required settings** say so on their row. Choices use a pop-up menu, so all seven date formats fit and show an example.
+- **Clear Cache and Reset Colors** ask before running.
+- **Always Mark Seen (stories)** no longer skips past those accounts' stories when Skip After Marking Seen is on.
+- The links section points to this fork's repository.
+
 ## New settings
 
 - **Hide Shared Reel Thumbnails** (Messages). Replaces the preview image while preserving Instagram’s rounded corners, play button, reel icon and account details. The message remains tappable.
