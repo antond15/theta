@@ -3,26 +3,6 @@
 #import "Include/ThetaTweakCommon.h"
 #import <objc/runtime.h>
 
-/* Older builds used "Strip …" titles as NSUserDefaults keys; copy to new keys once. */
-__attribute__((constructor))
-static void THMigrateFeedSettingTitles(void) {
-    static NSArray *pairs = @[
-        @[@"Strip Inline Suggested Posts", @"Hide Suggested Posts"],
-        @[@"Strip Suggested Reels Strip", @"Hide Suggested Reels"],
-        @[@"Strip People You Might Like", @"Hide People You May Know"],
-        @[@"Strip Threads Carousel In Feed", @"Hide Threads Carousel"],
-        @[@"Strip Home Stories Row", @"Hide Home Stories"],
-        @[@"Strip End of Feed Suggestion Footer", @"Hide End-of-Feed Footer"],
-    ];
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    for (NSArray *p in pairs) {
-        NSString *oldKey = [NSString stringWithFormat:@"%@_Enabled", p[0]];
-        NSString *newKey = [NSString stringWithFormat:@"%@_Enabled", p[1]];
-        if ([d objectForKey:newKey] == nil && [d objectForKey:oldKey] != nil)
-            [d setBool:[d boolForKey:oldKey] forKey:newKey];
-    }
-}
-
 @interface IGDiscoveryGridItem : NSObject
 @property (nonatomic, readonly) id model;
 @end
@@ -32,22 +12,22 @@ static void THMigrateFeedSettingTitles(void) {
 static NSArray *theta_removeAdsFromList(NSArray *list);
 
 static BOOL theta_shouldRemoveSuggestedPosts(void) {
-    return ENABLED(@"Hide Suggested Posts");
+    return ENABLED(THFeedHideSuggestedPosts);
 }
 static BOOL theta_shouldRemoveSuggestedReelsCarousel(void) {
-    return ENABLED(@"Hide Suggested Reels");
+    return ENABLED(THFeedHideSuggestedReels);
 }
 static BOOL theta_shouldRemoveSuggestedAccounts(void) {
-    return ENABLED(@"Hide People You May Know");
+    return ENABLED(THFeedHideSuggestedPeople);
 }
 static BOOL theta_shouldRemoveThreadsCarousel(void) {
-    return ENABLED(@"Hide Threads Carousel");
+    return ENABLED(THFeedHideThreadsCarousel);
 }
 static BOOL theta_shouldHideStoriesTrayRow(void) {
-    return ENABLED(@"Hide Home Stories");
+    return ENABLED(THFeedHideStoriesTray);
 }
 static BOOL theta_shouldBlankHomeFeed(void) {
-    return ENABLED(@"Mute Entire Home Feed");
+    return ENABLED(THFeedHideAllPosts);
 }
 
 NSArray *ThetaApplyHideFeedFiltering(NSArray *list, BOOL isMainFeed) {
@@ -130,7 +110,7 @@ NSArray *ThetaApplyHideFeedFiltering(NSArray *list, BOOL isMainFeed) {
 }
 
 static NSArray *theta_removeAdsFromList(NSArray *list) {
-    if (!ENABLED(@"Disable Ads") || ![list isKindOfClass:[NSArray class]])
+    if (!ENABLED(THFeedHideAds) || ![list isKindOfClass:[NSArray class]])
         return list;
     NSMutableArray *filteredObjs = [NSMutableArray arrayWithCapacity:list.count];
     for (id obj in list) {
@@ -154,7 +134,7 @@ static NSArray *(*orig_sundialObjs)(id, SEL, id);
 static NSArray *hook_sundialObjs(id self, SEL _cmd, id arg1) {
     NSArray *r = orig_sundialObjs ? orig_sundialObjs(self, _cmd, arg1) : nil;
     r = ThetaApplyHideFeedFiltering(r ?: @[], NO);
-    if (ENABLED(@"Disable Ads"))
+    if (ENABLED(THFeedHideAds))
         r = theta_removeAdsFromList(r);
     return r;
 }
@@ -162,35 +142,35 @@ static NSArray *hook_sundialObjs(id self, SEL _cmd, id arg1) {
 static NSArray *(*orig_ctxObjs)(id, SEL, id);
 static NSArray *hook_ctxObjs(id self, SEL _cmd, id arg1) {
     NSArray *r = orig_ctxObjs(self, _cmd, arg1);
-    if (!ENABLED(@"Disable Ads")) return r;
+    if (!ENABLED(THFeedHideAds)) return r;
     return theta_removeAdsFromList(r);
 }
 
 static NSArray *(*orig_videoObjs)(id, SEL, id);
 static NSArray *hook_videoObjs(id self, SEL _cmd, id arg1) {
     NSArray *r = orig_videoObjs(self, _cmd, arg1);
-    if (!ENABLED(@"Disable Ads")) return r;
+    if (!ENABLED(THFeedHideAds)) return r;
     return theta_removeAdsFromList(r);
 }
 
 static NSArray *(*orig_chainObjs)(id, SEL, id);
 static NSArray *hook_chainObjs(id self, SEL _cmd, id arg1) {
     NSArray *r = orig_chainObjs(self, _cmd, arg1);
-    if (!ENABLED(@"Disable Ads")) return r;
+    if (!ENABLED(THFeedHideAds)) return r;
     return theta_removeAdsFromList(r);
 }
 
 static NSArray *(*orig_exploreObjs)(id, SEL, id);
 static NSArray *hook_exploreObjs(id self, SEL _cmd, id arg1) {
     NSArray *r = orig_exploreObjs(self, _cmd, arg1);
-    if (!ENABLED(@"Disable Ads")) return r;
+    if (!ENABLED(THFeedHideAds)) return r;
     return theta_removeAdsFromList(r);
 }
 
 static void (*orig_endFeedCell)(id self, SEL _cmd, id arg1);
 static void hook_endFeedCell(id self, SEL _cmd, id arg1) {
     orig_endFeedCell(self, _cmd, arg1);
-    if (!ENABLED(@"Hide End-of-Feed Footer")) return;
+    if (!ENABLED(THFeedHideEndFooter)) return;
     @try {
         id titleLabel = [self valueForKey:@"_titleLabel"];
         if (titleLabel && [titleLabel respondsToSelector:@selector(setText:)])

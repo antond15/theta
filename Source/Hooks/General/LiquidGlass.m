@@ -11,7 +11,7 @@ static inline BOOL theta_osSupportsLiquidGlass(void) {
 /** Liquid Glass local experiments: either LG toggle. */
 static inline BOOL theta_liquidGlassFloatingBarWanted(void) {
     return theta_osSupportsLiquidGlass() &&
-        (ENABLED(@"Enable Liquid Glass Surfaces") || ENABLED(@"Enable Liquid Glass Buttons"));
+        (ENABLED(THUILiquidGlassSurfaces) || ENABLED(THUILiquidGlassButtons));
 }
 
 // ── Liquid Glass Buttons (ObjC hooks) ────────────────────────────────────────
@@ -20,7 +20,7 @@ static BOOL (*orig_swizzleToggle_isEnabled)(id, SEL) = NULL;
 static BOOL hook_swizzleToggle_isEnabled(id self, SEL _cmd) {
     if (!theta_osSupportsLiquidGlass())
         return orig_swizzleToggle_isEnabled ? orig_swizzleToggle_isEnabled(self, _cmd) : NO;
-    if (ENABLED(@"Enable Liquid Glass Buttons")) return YES;
+    if (ENABLED(THUILiquidGlassButtons)) return YES;
     return orig_swizzleToggle_isEnabled ? orig_swizzleToggle_isEnabled(self, _cmd) : NO;
 }
 
@@ -28,7 +28,7 @@ static BOOL (*orig_expHelper_isEnabled)(id, SEL) = NULL;
 static BOOL hook_expHelper_isEnabled(id self, SEL _cmd) {
     if (!theta_osSupportsLiquidGlass())
         return orig_expHelper_isEnabled ? orig_expHelper_isEnabled(self, _cmd) : NO;
-    if (ENABLED(@"Enable Liquid Glass Buttons")) return YES;
+    if (ENABLED(THUILiquidGlassButtons)) return YES;
     return orig_expHelper_isEnabled ? orig_expHelper_isEnabled(self, _cmd) : NO;
 }
 
@@ -36,7 +36,7 @@ static BOOL (*orig_expHelper_isHomeFeed)(id, SEL) = NULL;
 static BOOL hook_expHelper_isHomeFeed(id self, SEL _cmd) {
     if (!theta_osSupportsLiquidGlass())
         return orig_expHelper_isHomeFeed ? orig_expHelper_isHomeFeed(self, _cmd) : NO;
-    if (ENABLED(@"Enable Liquid Glass Buttons")) return YES;
+    if (ENABLED(THUILiquidGlassButtons)) return YES;
     return orig_expHelper_isHomeFeed ? orig_expHelper_isHomeFeed(self, _cmd) : NO;
 }
 
@@ -45,14 +45,14 @@ static BOOL hook_expHelper_isHomeFeed(id self, SEL _cmd) {
 static BOOL (*orig_lgInAppNotif)(id, SEL) = NULL;
 static BOOL hook_lgInAppNotif(id self, SEL _cmd) {
     if (!theta_osSupportsLiquidGlass()) return NO;
-    if (ENABLED(@"Enable Liquid Glass Surfaces")) return YES;
+    if (ENABLED(THUILiquidGlassSurfaces)) return YES;
     return orig_lgInAppNotif ? orig_lgInAppNotif(self, _cmd) : NO;
 }
 
 static BOOL (*orig_lgIconBar)(id, SEL) = NULL;
 static BOOL hook_lgIconBar(id self, SEL _cmd) {
     if (!theta_osSupportsLiquidGlass()) return NO;
-    if (ENABLED(@"Enable Liquid Glass Surfaces")) return YES;
+    if (ENABLED(THUILiquidGlassSurfaces)) return YES;
     return orig_lgIconBar ? orig_lgIconBar(self, _cmd) : NO;
 }
 
@@ -110,7 +110,7 @@ static id hook_meta_peekGroupName(id self, SEL _cmd) {
    IGLiquidGlassNavigationExperimentHelper.isEnabled() in the main binary), so the getter swizzles above
    rarely run. Set the stored values through IG's own override setters instead. */
 static void theta_applyLiquidGlassOverrides(void) {
-    if (!theta_osSupportsLiquidGlass() || !ENABLED(@"Enable Liquid Glass Buttons")) return;
+    if (!theta_osSupportsLiquidGlass() || !ENABLED(THUILiquidGlassButtons)) return;
     Class helperCls = ThetaFirstClass(@[
         @"_TtC29IGLiquidGlassExperimentHelper39IGLiquidGlassNavigationExperimentHelper",
         @"IGLiquidGlassExperimentHelper.IGLiquidGlassNavigationExperimentHelper"
@@ -181,7 +181,7 @@ void THRegisterLiquidGlassHooks(void) {
     theta_tryInstallLiquidGlassExperimentHooksOnce();
 
     // lucent.navigation override follows the buttons toggle
-    BOOL lgButtons = ENABLED(@"Enable Liquid Glass Buttons");
+    BOOL lgButtons = ENABLED(THUILiquidGlassButtons);
     [[NSUserDefaults standardUserDefaults] setValue:@(lgButtons ? YES : NO)
                                              forKey:@"instagram.override.project.lucent.navigation"];
 

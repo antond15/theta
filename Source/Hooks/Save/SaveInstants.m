@@ -495,7 +495,7 @@ static BOOL thetaInstantLooksVideoURL(NSURL *url) {
 }
 
 static void thetaInstantToastFailure(NSString *subtitle) {
-    if (!ENABLED(@"Show Banners")) return;
+    if (!ENABLED(THAppShowBanners)) return;
     [ThetaHelper showToastWithTitle:@"Save failed"
                            subtitle:subtitle ?: @"Couldn't find Instant media."
                                icon:[UIImage systemImageNamed:@"exclamationmark.triangle"]
@@ -504,9 +504,9 @@ static void thetaInstantToastFailure(NSString *subtitle) {
 }
 
 static void thetaInstantToastSuccess(void) {
-    if (!ENABLED(@"Show Banners")) return;
-    NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-    if (saveMethod == 0) {
+    if (!ENABLED(THAppShowBanners)) return;
+    BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+    if (saveToCameraRoll) {
         [ThetaHelper showToastWithTitle:@"Saved Instant!"
                                subtitle:@"Tap here to go to camera roll."
                                    icon:[UIImage systemImageNamed:@"checkmark.circle.fill"]
@@ -528,8 +528,8 @@ static void thetaInstantSaveImage(UIImage *image) {
         return;
     }
     if (![ThetaHelper tryBeginGlobalDownloadOrNotify]) return;
-    NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-    if (saveMethod == 0) {
+    BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+    if (saveToCameraRoll) {
         [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
             [PHAssetChangeRequest creationRequestForAssetFromImage:image];
         } completionHandler:^(BOOL success, NSError * _Nullable error) {
@@ -539,7 +539,7 @@ static void thetaInstantSaveImage(UIImage *image) {
                 else thetaInstantToastFailure(error.localizedDescription);
             });
         }];
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Saving…" subtitle:@"Saving Instant photo" icon:[UIImage systemImageNamed:@"arrow.down.circle"] autoHide:2 openURL:nil];
         }
         return;
@@ -573,7 +573,7 @@ static void thetaInstantSaveURL(NSURL *url, BOOL isVideoHint) {
         (void)fileExtension;
     }];
     (void)isVideoHint;
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         [ThetaHelper showToastWithTitle:@"Saving…" subtitle:@"Downloading Instant" icon:[UIImage systemImageNamed:@"arrow.down.circle"] autoHide:2 openURL:nil];
     }
 }
@@ -988,16 +988,10 @@ static UIButton *thetaInstantFindButton(UIView *root, NSInteger tag) {
     return nil;
 }
 
-static UIButton *thetaInstantMakeChromeButton(NSInteger tag, NSString *symbol, NSString *colorKey) {
+static UIButton *thetaInstantMakeChromeButton(NSInteger tag, NSString *symbol, NSString *colorSetting) {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
     button.tag = tag;
-    @try {
-        NSData *data = [[NSUserDefaults standardUserDefaults] objectForKey:colorKey];
-        UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:data error:nil];
-        [button setTintColor:color ?: [UIColor labelColor]];
-    } @catch (__unused NSException *e) {
-        [button setTintColor:[UIColor labelColor]];
-    }
+    [button setTintColor:ThetaSettingColor(colorSetting)];
     [button setImage:[UIImage systemImageNamed:symbol] forState:UIControlStateNormal];
     button.layer.shadowColor = [UIColor blackColor].CGColor;
     button.layer.shadowOpacity = 0.4;
@@ -1010,7 +1004,7 @@ static UIButton *thetaInstantMakeChromeButton(NSInteger tag, NSString *symbol, N
 }
 
 static BOOL thetaInstantGhostEnabled(void) {
-    return ENABLED(@"Instant Ghost");
+    return ENABLED(THInstantsGhost);
 }
 
 static BOOL thetaInstantGhostShouldBlockNetwork(void) {
@@ -1373,7 +1367,7 @@ static void thetaInstantMarkCurrentSeen(UIView *host, id viewController) {
     @try {
         NSString *mediaId = thetaInstantVisibleMediaId(host, viewController);
         if (!mediaId.length) {
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Couldn't mark seen"
                                        subtitle:@"Couldn't find this Instant."
                                            icon:[UIImage systemImageNamed:@"exclamationmark.triangle"]
@@ -1412,7 +1406,7 @@ static void thetaInstantMarkCurrentSeen(UIView *host, id viewController) {
         });
         if (!started) {
             thetaInstantClearGhostAllow();
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Couldn't mark seen"
                                        subtitle:@"Couldn't find this Instant."
                                            icon:[UIImage systemImageNamed:@"exclamationmark.triangle"]
@@ -1421,7 +1415,7 @@ static void thetaInstantMarkCurrentSeen(UIView *host, id viewController) {
             }
             return;
         }
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Marked as seen!"
                                    subtitle:@"Only this Instant was marked seen."
                                        icon:[ThetaHelper imageFromEmojiString:@"👀" width:60]
@@ -1430,7 +1424,7 @@ static void thetaInstantMarkCurrentSeen(UIView *host, id viewController) {
         }
     } @catch (__unused NSException *e) {
         thetaInstantClearGhostAllow();
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Couldn't mark seen"
                                    subtitle:@"Something went wrong."
                                        icon:[UIImage systemImageNamed:@"exclamationmark.triangle"]
@@ -1460,7 +1454,7 @@ static void thetaInstantInstallButtons(id viewController) {
     @try { host = [viewController view]; } @catch (__unused NSException *e) {}
     if (![host isKindOfClass:[UIView class]]) return;
 
-    BOOL saveOn = ENABLED(@"Save Instants");
+    BOOL saveOn = ENABLED(THInstantsSaveButton);
     BOOL ghostOn = thetaInstantGhostEnabled();
     UIButton *saveButton = thetaInstantFindButton(host, kThetaInstantSaveButtonTag);
     UIButton *seenButton = thetaInstantFindButton(host, kThetaInstantSeenButtonTag);
@@ -1477,7 +1471,7 @@ static void thetaInstantInstallButtons(id viewController) {
     if (thetaInstantShouldSkipDuplicateHost(viewController)) return;
 
     if (saveOn && !saveButton) {
-        saveButton = thetaInstantMakeChromeButton(kThetaInstantSaveButtonTag, @"arrow.down", @"Save Button Color_Color");
+        saveButton = thetaInstantMakeChromeButton(kThetaInstantSaveButtonTag, @"arrow.down", THUISaveButtonColor);
         [host addSubview:saveButton];
         objc_setAssociatedObject(saveButton, &kThetaInstantHostVCKey, viewController, OBJC_ASSOCIATION_ASSIGN);
         __weak UIView *weakHost = host;
@@ -1502,7 +1496,7 @@ static void thetaInstantInstallButtons(id viewController) {
     }
 
     if (ghostOn && !seenButton) {
-        seenButton = thetaInstantMakeChromeButton(kThetaInstantSeenButtonTag, @"eye", @"Seen Button Color_Color");
+        seenButton = thetaInstantMakeChromeButton(kThetaInstantSeenButtonTag, @"eye", THUISeenButtonColor);
         [host addSubview:seenButton];
         objc_setAssociatedObject(seenButton, &kThetaInstantHostVCKey, viewController, OBJC_ASSOCIATION_ASSIGN);
         __weak UIView *weakHost = host;

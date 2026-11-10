@@ -14,14 +14,7 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
     }
     
     UIButton *downloadButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    @try {
-        NSData *data = [[NSUserDefaults standardUserDefaults] objectForKey:@"Save Button Color_Color"];
-        UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:data error:nil];
-        [downloadButton setTintColor:color ?: [UIColor labelColor]];
-    } @catch (NSException *exception) {
-        NSLog(@"Error setting download button color: %@", exception);
-        [downloadButton setTintColor:[UIColor labelColor]];
-    }
+    [downloadButton setTintColor:ThetaSettingColor(THUISaveButtonColor)];
     [downloadButton setImage:[UIImage systemImageNamed:@"arrow.down"] forState:UIControlStateNormal];
     downloadButton.layer.shadowColor = [UIColor blackColor].CGColor;
     downloadButton.layer.shadowOpacity = 0.4;
@@ -31,14 +24,7 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
     [downloadButton setTranslatesAutoresizingMaskIntoConstraints:false];
 
     UIButton *seenButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    @try {
-        NSData *data = [[NSUserDefaults standardUserDefaults] objectForKey:@"Seen Button Color_Color"];
-        UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:data error:nil];
-        [seenButton setTintColor:color ?: [UIColor labelColor]];
-    } @catch (NSException *exception) {
-        NSLog(@"Error setting seen button color: %@", exception);
-        [seenButton setTintColor:[UIColor labelColor]];
-    }
+    [seenButton setTintColor:ThetaSettingColor(THUISeenButtonColor)];
     [seenButton setImage:[UIImage systemImageNamed:@"eye"] forState:UIControlStateNormal];
     seenButton.layer.shadowColor = [UIColor blackColor].CGColor;
     seenButton.layer.shadowOpacity = 0.4;
@@ -47,8 +33,8 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
     seenButton.layer.masksToBounds = NO;
     [seenButton setTranslatesAutoresizingMaskIntoConstraints:false];
 
-    BOOL downloadVideos = ENABLED(@"Save Media");
-    BOOL hideSeenState = ENABLED(@"Private Media Ghost");
+    BOOL downloadVideos = ENABLED(THSaveMediaButton);
+    BOOL hideSeenState = ENABLED(THDMPrivateMediaGhost);
 
     ThetaSetCaptureHiding(downloadButton);
     ThetaSetCaptureHiding(seenButton);
@@ -106,7 +92,7 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
                     videoPlayed = YES;
                 }
 
-                if (ENABLED(@"Show Banners")) {
+                if (ENABLED(THAppShowBanners)) {
                     [ThetaHelper showToastWithTitle:@"Marked as seen!" subtitle:@"They know we are here." icon:[ThetaHelper imageFromEmojiString:@"👀" width:60] autoHide:4 openURL:nil];
                 }
             }] forControlEvents:UIControlEventTouchUpInside];
@@ -131,9 +117,9 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
                         NSURL *url = [photoURL valueForKey:@"url"];
                         MediaSelectionViewController *mediaSelectionViewController = [[MediaSelectionViewController alloc] init];
                         [mediaSelectionViewController downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension){
-                            if (ENABLED(@"Show Banners")) {
-                                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                                if (saveMethod == 0) {
+                            if (ENABLED(THAppShowBanners)) {
+                                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                                if (saveToCameraRoll) {
                                     [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                                 } else {
                                     [ThetaHelper showToastWithTitle:@"Saved!" subtitle:@"Saved to local folder." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:nil];
@@ -151,7 +137,7 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
 
 static void (*orig_visualmsgghostvideo)(id self, SEL _cmd, id arg1);
 static void hook_visualmsgghostvideo(id self, SEL _cmd, id arg1) {
-    if (!ENABLED(@"Private Media Ghost")) {
+    if (!ENABLED(THDMPrivateMediaGhost)) {
         return orig_visualmsgghostvideo(self, _cmd, arg1);
     }
 
@@ -163,7 +149,7 @@ static void hook_visualmsgghostvideo(id self, SEL _cmd, id arg1) {
 
 static void (*orig_visualmsgghostphoto)(id self, SEL _cmd, id arg1, id arg2, id arg3, id arg4);
 static void hook_visualmsgghostphoto(id self, SEL _cmd, id arg1, id arg2, id arg3, id arg4) {
-    if (!ENABLED(@"Private Media Ghost")) {
+    if (!ENABLED(THDMPrivateMediaGhost)) {
         return orig_visualmsgghostphoto(self, _cmd, arg1, arg2, arg3, arg4);
     }
 

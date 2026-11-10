@@ -51,7 +51,7 @@ static void hook_settingButtonInFeedView(id self, SEL _cmd) {
 										 buttonSize.height);
 
 		ThetaSetCaptureHiding(settingsButton);
-		if (!ENABLED(@"Shake To Open")) {
+		if (!ENABLED(THAppShakeToOpen)) {
 			[headerView addSubview:settingsButton];
 		}
 

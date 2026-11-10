@@ -2,7 +2,7 @@ static void (*orig_hideCreateButton)(id self, SEL _cmd);
 static void hook_hideCreateButton(id self, SEL _cmd) {
     if (orig_hideCreateButton) orig_hideCreateButton(self, _cmd);
 
-    if (ENABLED(@"Hide Create Tab/Button")) {
+    if (ENABLED(THNavHideCreateTab)) {
         // Swift home header may not expose _createButton to KVC — never let that abort layout.
         id createButton = ThetaValueForKey(self, @"_createButton");
         if (!createButton) createButton = ThetaValueForKey(self, @"createButton");
@@ -16,7 +16,7 @@ static void (*orig_hideCreateButton2)(id self, SEL _cmd);
 static void hook_hideCreateButton2(id self, SEL _cmd) {
     if (orig_hideCreateButton2) orig_hideCreateButton2(self, _cmd);
 
-    if (ENABLED(@"Hide Create Tab/Button")) {
+    if (ENABLED(THNavHideCreateTab)) {
         for (UIView *view in [self subviews]) {
             if ([view isKindOfClass:NSClassFromString(@"IGUnifiedVideoCameraEntryPointButton")]) {
                 [view removeFromSuperview];
@@ -30,7 +30,7 @@ static void (*orig_hideCreateButton3)(id self, SEL _cmd);
 static void hook_hideCreateButton3(id self, SEL _cmd) {
     if (orig_hideCreateButton3) orig_hideCreateButton3(self, _cmd);
 
-    if (ENABLED(@"Hide Create Tab/Button")) {
+    if (ENABLED(THNavHideCreateTab)) {
         NSMutableArray *buttonsToRemove = [NSMutableArray array];
         NSArray *leftButtons = ThetaValueForKey(self, @"_leftButtons");
         if (![leftButtons isKindOfClass:[NSArray class]]) {
@@ -69,7 +69,7 @@ static void hook_hideCreateButton3(id self, SEL _cmd) {
 static id (*orig_hideCreateButton4)(id self, SEL _cmd);
 static id hook_hideCreateButton4(id self, SEL _cmd) {
     id titleView = orig_hideCreateButton4(self, _cmd);
-    if (ENABLED(@"Hide Create Tab/Button")) {
+    if (ENABLED(THNavHideCreateTab)) {
         // get subviews in self (there will only be 1 UIView subview)
         for (UIView *subview in [self subviews]) {
             if ([subview isKindOfClass:NSClassFromString(@"UIView")]) {

@@ -2,7 +2,7 @@
 
 static void (*orig_exploreRefresh)(id self, SEL _cmd, id arg1);
 static void hook_exploreRefresh(id self, SEL _cmd, id arg1) {
-    if (!ENABLED(@"Explore Refresh Confirmation")) {
+    if (!ENABLED(THConfirmExploreRefresh)) {
         orig_exploreRefresh(self, _cmd, arg1);
         return;
     }
@@ -12,7 +12,7 @@ static void hook_exploreRefresh(id self, SEL _cmd, id arg1) {
             @"title": @"Yes, refresh it!",
             @"handler": ^(id sender) {
                 orig_exploreRefresh(self, _cmd, arg1);
-                if (ENABLED(@"Show Banners")) {
+                if (ENABLED(THAppShowBanners)) {
                     [ThetaHelper showToastWithTitle:@"Refreshing now!" subtitle:@"This will only take a second." icon:[ThetaHelper imageFromEmojiString:@"🔄" width:60] autoHide:4 openURL:nil];
                 }
             }

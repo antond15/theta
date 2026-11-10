@@ -363,7 +363,7 @@ static void (*orig_bypassReelPassword)(id self, SEL _cmd);
 static void hook_bypassReelPassword(id self, SEL _cmd) {
     orig_bypassReelPassword(self, _cmd);
 
-    if (ENABLED(@"Bypass Reel Password")) {
+    if (ENABLED(THReelsBypassPassword)) {
         @try {
             UIView *container = [self valueForKey:@"_containerView"];
             if (container) {

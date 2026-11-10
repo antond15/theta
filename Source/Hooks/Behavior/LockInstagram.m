@@ -3,7 +3,7 @@ static void (*orig_applicationDidBecomeActive)(id self, SEL _cmd, id arg1);
 static void hook_applicationDidBecomeActive(id self, SEL _cmd, id arg1) {
     orig_applicationDidBecomeActive(self, _cmd, arg1);
 
-    if (ENABLED(@"Lock Instagram") && !isAuthenticationShowed) {
+    if (ENABLED(THAppLock) && !isAuthenticationShowed) {
         UIViewController *rootController = [[self window] rootViewController];
 		SecurityViewController *securityViewController = [SecurityViewController new];
 		securityViewController.modalPresentationStyle = UIModalPresentationOverFullScreen;

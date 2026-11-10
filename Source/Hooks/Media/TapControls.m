@@ -28,14 +28,14 @@ static id hook_playbackConfig(id self, SEL _cmd,
                                double tapSec,
                                long long duration,
                                BOOL shortScrubberEnabled) {
-    NSInteger tapIdx = [[NSUserDefaults standardUserDefaults] integerForKey:@"Tap Controls_SegmentIndex"];
-    if (tapIdx == 1) {
+    NSString *tapAction = ThetaSettingChoice(THReelsTapAction);
+    if ([tapAction isEqualToString:@"pause_play"]) {
         tapPauseEnabled = YES;
-    } else if (tapIdx == 2) {
+    } else if ([tapAction isEqualToString:@"mute"]) {
         tapPauseEnabled = NO;
     }
 
-    if (ENABLED(@"Always Show Scrubber")) {
+    if (ENABLED(THReelsAlwaysShowScrubber)) {
         minSec = 0;
         duration = 0;
         shortScrubberEnabled = YES;

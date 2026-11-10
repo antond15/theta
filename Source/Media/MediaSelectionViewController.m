@@ -99,7 +99,7 @@ static void showCompletionToast(CustomToastView *progressToast, BOOL success, NS
         [self dismissViewControllerAnimated:YES completion:nil];
         return;
     } else {
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             UIImage *fetchedImage = [UIImage systemImageNamed:@"checkmark.circle.fill"];
             [self showToastWithTitle:@"Fetched!" subtitle:@"Thanks for waiting." icon:fetchedImage seconds:2 openURL:nil];
         }
@@ -218,7 +218,7 @@ static void showCompletionToast(CustomToastView *progressToast, BOOL success, NS
 }
 
 - (void)hapticIfNeeded {
-    if (ENABLED(@"Haptic Feedback")) {
+    if (ENABLED(THAppHaptics)) {
         AudioServicesPlaySystemSound(1519);
     }
 }
@@ -553,8 +553,8 @@ static void * const playerKey = &playerKey;
     if (progressToast) {
         NSString *title = @"Download Complete!";
         NSString *subtitle = @"";
-        NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-        if (saveMethod == 0) {
+        BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+        if (saveToCameraRoll) {
             subtitle = [NSString stringWithFormat:@"%ld items saved to camera roll", (long)completed];
         } else {
             subtitle = [NSString stringWithFormat:@"%ld items saved to local folder", (long)completed];
@@ -1017,8 +1017,8 @@ static void * const playerKey = &playerKey;
 
 - (void)downloadMediaToTemp:(NSURL *)url completion:(void(^)(NSString *filePath, NSString *fileExtension))completion {
     // Respect save method: 0 = camera roll, 1 = local folder
-    NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-    if (saveMethod == 0) {
+    BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+    if (saveToCameraRoll) {
         // Check photo library permission first
         PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
         if (status == PHAuthorizationStatusNotDetermined) {
@@ -1027,7 +1027,7 @@ static void * const playerKey = &playerKey;
                     [self performDownloadWithURL:url completion:completion];
                 } else {
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        if (ENABLED(@"Show Banners")) {
+                        if (ENABLED(THAppShowBanners)) {
                             [self showToastWithTitle:@"Permission Denied" subtitle:@"Please enable photo library access in Settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] seconds:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
                         }
                     });
@@ -1040,7 +1040,7 @@ static void * const playerKey = &playerKey;
             [self performDownloadWithURL:url completion:completion];
         } else {
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (ENABLED(@"Show Banners")) {
+                if (ENABLED(THAppShowBanners)) {
                     [self showToastWithTitle:@"Permission Denied" subtitle:@"Please enable photo library access in Settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] seconds:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
                 }
             });
@@ -1165,8 +1165,8 @@ static void * const playerKey = &playerKey;
             }
 
             dispatch_async(dispatch_get_main_queue(), ^{
-                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                if (saveMethod == 0) {
+                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                if (saveToCameraRoll) {
                     PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
                     if (status == PHAuthorizationStatusNotDetermined) {
                         [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus newStatus) {
@@ -1323,8 +1323,8 @@ static void * const playerKey = &playerKey;
     static NSTimeInterval debounceInterval = 1.0; // seconds
 
     if (filePaths.count == 0) return;
-    NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-    if (saveMethod == 0) {
+    BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+    if (saveToCameraRoll) {
         PHPhotoLibrary *photoLibrary = [PHPhotoLibrary sharedPhotoLibrary];
         [photoLibrary performChanges:^{
             for (NSInteger i = 0; i < filePaths.count; i++) {
@@ -1390,7 +1390,7 @@ static void * const playerKey = &playerKey;
                 [[NSFileManager defaultManager] moveItemAtPath:filePath toPath:destPath error:nil];
             }
         }
-        if (!suppressToast && ENABLED(@"Show Banners")) {
+        if (!suppressToast && ENABLED(THAppShowBanners)) {
             [self showToastWithTitle:@"Saved!" subtitle:@"Saved to local folder." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] seconds:3 openURL:nil];
         }
     }
@@ -1481,10 +1481,10 @@ static void * const playerKey = &playerKey;
                     }
                 }
                 
-                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
+                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
                 //NSString *summary = [NSString stringWithFormat:@"Completed: %ld/%ld%@", (long)completedVideos, (long)totalVideos, timeStr];
                 NSString *summary;
-                if (saveMethod == 0) {
+                if (saveToCameraRoll) {
                     summary = [NSString stringWithFormat:@"Saved %ld/%ld to camera roll%@", (long)completedVideos, (long)totalVideos, timeStr];
                 } else {
                     summary = [NSString stringWithFormat:@"Saved %ld/%ld to local folder%@", (long)completedVideos, (long)totalVideos, timeStr];
@@ -1868,9 +1868,9 @@ static void * const playerKey = &playerKey;
                 }
                 
                 // Save to camera roll or local folder
-                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
+                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
                 
-                if (saveMethod == 0) {
+                if (saveToCameraRoll) {
                     // Save to camera roll
                     // For sideload builds, copy to Caches and use ALAssetsLibrary
                     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);

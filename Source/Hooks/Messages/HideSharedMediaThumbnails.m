@@ -63,8 +63,8 @@ static BOOL THSharedPreviewModel(id model, NSUInteger depth, BOOL reels) {
 }
 
 static void THUpdateSharedThumbnail(UIView *cell, NSString *modelKey, NSString *previewKey) {
-    BOOL hideReels = ENABLED(@"Hide Shared Reel Thumbnails");
-    BOOL hidePosts = ENABLED(@"Hide Shared Post Thumbnails");
+    BOOL hideReels = ENABLED(THDMHideSharedReelThumbnails);
+    BOOL hidePosts = ENABLED(THDMHideSharedPostThumbnails);
     id model = (hideReels || hidePosts) ? ThetaValueForKey(cell, modelKey) : nil;
     id cellModel = ThetaValueForKey(model, @"messageCellViewModel");
     id outgoing = ThetaValueForKey(cellModel, @"isOutgoing");

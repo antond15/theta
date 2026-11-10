@@ -160,7 +160,7 @@ static void (*orig_voiceMessageButton)(id self, SEL _cmd, NSInteger entryPoint);
 @end
 
 static void hook_voiceMessageButton(id self, SEL _cmd, NSInteger entryPoint) {
-	if (!ENABLED(@"Upload Audio Messages")) {
+	if (!ENABLED(THDMUploadAudioMessages)) {
 		orig_voiceMessageButton(self, _cmd, entryPoint);
 		return;
 	}
@@ -274,7 +274,7 @@ static void ThetaDirectSendOnController(id target, NSInteger entryPoint, NSURL *
 }
 
 static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id audioClipURL, id waveform, CGFloat duration, NSInteger entryPoint, id aiVoiceEffectApplied, id aiVoiceEffectType, NSInteger sendButtonTypeTapped) {
-	if (!ENABLED(@"Upload Audio Messages")) {
+	if (!ENABLED(THDMUploadAudioMessages)) {
 		if (orig_uploadAudioMessage3)
 			orig_uploadAudioMessage3(self, _cmd, viewController, audioClipURL, waveform, duration, entryPoint, aiVoiceEffectApplied, aiVoiceEffectType, sendButtonTypeTapped);
 		return;

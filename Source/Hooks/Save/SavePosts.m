@@ -294,9 +294,9 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
             });
             
             // Check save method preference
-            NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
+            BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
             
-            if (saveMethod == 0) {
+            if (saveToCameraRoll) {
                 // Save to camera roll
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Adding to camera roll..."];
@@ -312,10 +312,10 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                     ThetaPhotoLibraryImportVideoFromURL([NSURL fileURLWithPath:fileToSave], ^(BOOL ok, NSError *error) {
                         if (ok) {
                             dispatch_async(dispatch_get_main_queue(), ^{
-                                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                                NSString *finalTitle = (saveMethod == 0) ? @"Saved to camera roll!" : @"Saved to local folder!";
-                                NSString *finalSubtitle = (saveMethod == 0) ? @"Tap here to go to camera roll." : @"";
-                                NSURL *finalURL = (saveMethod == 0) ? [NSURL URLWithString:@"photos-redirect://"] : nil;
+                                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                                NSString *finalTitle = saveToCameraRoll ? @"Saved to camera roll!" : @"Saved to local folder!";
+                                NSString *finalSubtitle = saveToCameraRoll ? @"Tap here to go to camera roll." : @"";
+                                NSURL *finalURL = saveToCameraRoll ? [NSURL URLWithString:@"photos-redirect://"] : nil;
                                 showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
                             });
                         } else {
@@ -346,10 +346,10 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 NSError *moveError = nil;
                 if ([fm moveItemAtPath:fileToSave toPath:destPath error:&moveError]) {
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                        NSString *finalTitle = (saveMethod == 0) ? @"Saved to camera roll!" : @"Saved to local folder!";
-                        NSString *finalSubtitle = (saveMethod == 0) ? @"Tap here to go to camera roll." : @"Saved to AudioNotes folder.";
-                        NSURL *finalURL = (saveMethod == 0) ? [NSURL URLWithString:@"photos-redirect://"] : nil;
+                        BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                        NSString *finalTitle = saveToCameraRoll ? @"Saved to camera roll!" : @"Saved to local folder!";
+                        NSString *finalSubtitle = saveToCameraRoll ? @"Tap here to go to camera roll." : @"Saved to AudioNotes folder.";
+                        NSURL *finalURL = saveToCameraRoll ? [NSURL URLWithString:@"photos-redirect://"] : nil;
                         showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
                     });
                 } else {
@@ -554,9 +554,9 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                 }
                                 
                                 // Check save method preference
-                                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
+                                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
                                 
-                                if (saveMethod == 0) {
+                                if (saveToCameraRoll) {
                                     // Save to camera roll
                                     dispatch_async(dispatch_get_main_queue(), ^{
                                         [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Adding to camera roll..."];
@@ -590,10 +590,10 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                                     if (assetURL && !error) {
                                                         
                                                         dispatch_async(dispatch_get_main_queue(), ^{
-                                                            NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                                                            NSString *finalTitle = (saveMethod == 0) ? @"Saved to camera roll!" : @"Saved to local folder!";
-                                                            NSString *finalSubtitle = (saveMethod == 0) ? @"Tap here to go to camera roll." : @"";
-                                                            NSURL *finalURL = (saveMethod == 0) ? [NSURL URLWithString:@"photos-redirect://"] : nil;
+                                                            BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                                                            NSString *finalTitle = saveToCameraRoll ? @"Saved to camera roll!" : @"Saved to local folder!";
+                                                            NSString *finalSubtitle = saveToCameraRoll ? @"Tap here to go to camera roll." : @"";
+                                                            NSURL *finalURL = saveToCameraRoll ? [NSURL URLWithString:@"photos-redirect://"] : nil;
                                                             showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
                                                         });
                                                         
@@ -647,10 +647,10 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                     if ([fm moveItemAtPath:h264OutputPath toPath:destPath error:&moveError]) {
                                         
                                         dispatch_async(dispatch_get_main_queue(), ^{
-                                            NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                                            NSString *finalTitle = (saveMethod == 0) ? @"Saved to camera roll!" : @"Saved to local folder!";
-                                            NSString *finalSubtitle = (saveMethod == 0) ? @"Tap here to go to camera roll." : @"Saved to local folder.";
-                                            NSURL *finalURL = (saveMethod == 0) ? [NSURL URLWithString:@"photos-redirect://"] : nil;
+                                            BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                                            NSString *finalTitle = saveToCameraRoll ? @"Saved to camera roll!" : @"Saved to local folder!";
+                                            NSString *finalSubtitle = saveToCameraRoll ? @"Tap here to go to camera roll." : @"Saved to local folder.";
+                                            NSURL *finalURL = saveToCameraRoll ? [NSURL URLWithString:@"photos-redirect://"] : nil;
                                             showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
                                         });
                                         
@@ -842,7 +842,7 @@ static void downloadMedia(id self) {
             return;
         }
         
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             UIImage *fetchingImage = [UIImage systemImageNamed:@"arrow.clockwise"];
             [ThetaHelper showToastWithTitle:toastTitle subtitle:@"This will only take a second." icon:fetchingImage autoHide:4 openURL:nil];
         }
@@ -934,9 +934,9 @@ static void downloadMedia(id self) {
                                 }
                                 [mediaSelectionVC downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension){
                                     [ThetaHelper endGlobalDownload];
-                                    if (ENABLED(@"Show Banners")) {
-                                        NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                                        if (saveMethod == 0) {
+                                    if (ENABLED(THAppShowBanners)) {
+                                        BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                                        if (saveToCameraRoll) {
                                             [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                                         } else {
                                             [ThetaHelper showToastWithTitle:@"Saved!" subtitle:@"Saved to Documents." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:nil];
@@ -1032,7 +1032,7 @@ static void (*orig_savePost)(id self, SEL _cmd);
 static void hook_savePost(id self, SEL _cmd) {
     if (orig_savePost) orig_savePost(self, _cmd);
 
-    if (ENABLED(@"Hide Repost Button")) {
+    if (ENABLED(THFeedHideRepostButton)) {
         id repostView = ThetaValueForKey(self, @"_repostView");
         if ([repostView respondsToSelector:@selector(setHidden:)]) {
             [repostView setHidden:YES];
@@ -1040,7 +1040,7 @@ static void hook_savePost(id self, SEL _cmd) {
     }
 
     // Don't touch KVC unless a save/fullscreen feature is on — _sendView throws on many UFI layouts.
-    if (!(ENABLED(@"Save Media") || ENABLED(@"Fullscreen Posts"))) {
+    if (!(ENABLED(THSaveMediaButton) || ENABLED(THMediaFullscreenPosts))) {
         return;
     }
 
@@ -1073,7 +1073,7 @@ static void hook_savePost(id self, SEL _cmd) {
     [downloadButton setTranslatesAutoresizingMaskIntoConstraints:NO];
 
     ThetaSetCaptureHiding(downloadButton);
-    if (ENABLED(@"Save Media") || ENABLED(@"Fullscreen Posts")) {
+    if (ENABLED(THSaveMediaButton) || ENABLED(THMediaFullscreenPosts)) {
 		[self addSubview:downloadButton];
         [NSLayoutConstraint activateConstraints:@[
             [downloadButton.topAnchor constraintEqualToAnchor:sendView.topAnchor constant:3],
@@ -1086,7 +1086,7 @@ static void hook_savePost(id self, SEL _cmd) {
         if (downloadButton.superview) {
             NSMutableArray *actions = [NSMutableArray array];
 
-            if (ENABLED(@"Save Media")) {
+            if (ENABLED(THSaveMediaButton)) {
                 __weak typeof(self) weakSelf = self;
                 
                 // Use iOS 16+ SF Symbol with fallback for older versions
@@ -1107,7 +1107,7 @@ static void hook_savePost(id self, SEL _cmd) {
                 [actions addObject:downloadBtn];
             }
 
-            if (ENABLED(@"Fullscreen Posts")) {
+            if (ENABLED(THMediaFullscreenPosts)) {
                 __weak typeof(self) weakSelf = self;
                 
                 // Use iOS 16+ SF Symbol with fallback for older versions
@@ -1310,9 +1310,9 @@ static void downloadSundialMedia(id self) {
                     MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] init];
                     if (mediaSelectionVC) {
                         [mediaSelectionVC downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension){
-                            if (ENABLED(@"Show Banners")) {
-                                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                                if (saveMethod == 0) {
+                            if (ENABLED(THAppShowBanners)) {
+                                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                                if (saveToCameraRoll) {
                                     [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                                 } else {
                                     [ThetaHelper showToastWithTitle:@"Saved!" subtitle:@"Saved to Documents." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:nil];
@@ -1478,7 +1478,7 @@ static void theta_sundialHideRepostControls(UIView *ufi) {
 static void (*orig_sundialUFILayoutSubviews)(id self, SEL _cmd);
 static void hook_sundialUFILayoutSubviews(id self, SEL _cmd) {
     orig_sundialUFILayoutSubviews(self, _cmd);
-    if (!ENABLED(@"Hide Repost Button")) {
+    if (!ENABLED(THFeedHideRepostButton)) {
         return;
     }
     @try {
@@ -1663,7 +1663,7 @@ static void (*orig_sundialViewerVerticalUFI)(IGSundialViewerVerticalUFI *self, S
 static void hook_sundialViewerVerticalUFI(IGSundialViewerVerticalUFI *self, SEL _cmd, IGSundialViewerUFIViewModel *viewModel) {
     orig_sundialViewerVerticalUFI(self, _cmd, viewModel);
 
-    if (ENABLED(@"Hide Repost Button")) {
+    if (ENABLED(THFeedHideRepostButton)) {
         __weak typeof(self) weakSelf = self;
         dispatch_async(dispatch_get_main_queue(), ^{
             IGSundialViewerVerticalUFI *ufi = weakSelf;
@@ -1687,7 +1687,7 @@ static void hook_sundialViewerVerticalUFI(IGSundialViewerVerticalUFI *self, SEL 
     }
 
     @try {
-        if (ENABLED(@"Save Media")) {
+        if (ENABLED(THSaveMediaButton)) {
             if ([self viewWithTag:999] != nil) {
 				return;
 			}

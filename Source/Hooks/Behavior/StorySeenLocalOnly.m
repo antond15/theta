@@ -161,7 +161,7 @@ static void theta_seenHarvestUploadersWalkingIvars(id root, NSUInteger maxDepth,
 }
 
 void THStorySeenReceiptNetworkGuardHarvestFromContext(id fullscreenSectionController, id storyViewer) {
-    if (!ENABLED(@"Seen Receipts Stay Local")) return;
+    if (!ENABLED(THStorySeenLocalOnly)) return;
     NSMutableSet *seen = [NSMutableSet setWithCapacity:8];
     theta_seenHarvestUploadersWalkingIvars(fullscreenSectionController, 2u, seen);
     [seen removeAllObjects];
@@ -260,7 +260,7 @@ static void theta_applySeenNetworkerSwapPass(void) {
 }
 
 void THStorySeenReceiptNetworkGuardEnterWithContext(id fullscreenSectionController, id storyViewer) {
-    if (!ENABLED(@"Seen Receipts Stay Local")) return;
+    if (!ENABLED(THStorySeenLocalOnly)) return;
     thetaHarvestSection = fullscreenSectionController;
     thetaHarvestViewer = storyViewer;
     THStorySeenReceiptNetworkGuardHarvestFromContext(fullscreenSectionController, storyViewer);
@@ -268,7 +268,7 @@ void THStorySeenReceiptNetworkGuardEnterWithContext(id fullscreenSectionControll
 }
 
 void THStorySeenReceiptNetworkGuardResealAfterMark(id fullscreenSectionController, id storyViewer) {
-    if (!ENABLED(@"Seen Receipts Stay Local")) return;
+    if (!ENABLED(THStorySeenLocalOnly)) return;
     id sec = fullscreenSectionController ?: thetaHarvestSection;
     id vc = storyViewer ?: thetaHarvestViewer;
     THStorySeenReceiptNetworkGuardHarvestFromContext(sec, vc);
@@ -312,7 +312,7 @@ static id hook_sundialMgrInit(id self, SEL _cmd, id networker, id diskMgr, id la
 static BOOL theta_blockSeenReceipts(void) {
     if (s_thetaAllowStorySeenReceipts) return NO;
     if (s_thetaLocalSeenMarkActive) return YES;
-    return ENABLED(@"Seen Receipts Stay Local");
+    return ENABLED(THStorySeenLocalOnly);
 }
 
 static BOOL theta_stringLooksLikeStorySeen(NSString *s) {

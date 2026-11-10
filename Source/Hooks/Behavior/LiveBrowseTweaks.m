@@ -33,7 +33,7 @@ static void theta_disableLiveViewerCountPuller(id feedbackController) {
 static void (*orig_liveFeedbackStart)(id, SEL);
 static void hook_liveFeedbackStart(id self, SEL _cmd) {
     orig_liveFeedbackStart(self, _cmd);
-    if (ENABLED(@"Live Without Viewer List"))
+    if (ENABLED(THLiveNoViewerPolling))
         theta_disableLiveViewerCountPuller(self);
 }
 
@@ -72,10 +72,10 @@ static void theta_applyLiveCommentsVisibility(void) {
 }
 - (void)heartLongPress:(UILongPressGestureRecognizer *)g {
     if (g.state != UIGestureRecognizerStateBegan) return;
-    if (!ENABLED(@"Live Comments Sheet Toggle")) return;
+    if (!ENABLED(THLiveCommentsToggle)) return;
     theta_liveCommentsHidden = !theta_liveCommentsHidden;
     theta_applyLiveCommentsVisibility();
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         NSString *t = theta_liveCommentsHidden ? @"Comment list hidden" : @"Comment list visible";
         [ThetaHelper showToastWithTitle:@"Live" subtitle:t icon:[UIImage systemImageNamed:@"bubble.left.and.bubble.right"] autoHide:2 openURL:nil];
     }
@@ -94,7 +94,7 @@ static void theta_attachHeartLongPress(UIView *v) {
 static void (*orig_liveFooterLayout)(id, SEL);
 static void hook_liveFooterLayout(id self, SEL _cmd) {
     orig_liveFooterLayout(self, _cmd);
-    if (!ENABLED(@"Live Comments Sheet Toggle")) return;
+    if (!ENABLED(THLiveCommentsToggle)) return;
     Ivar iv = class_getInstanceVariable([self class], "_likeButton");
     if (!iv) return;
     UIView *btn = object_getIvar(self, iv);

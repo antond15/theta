@@ -5,7 +5,7 @@ static NSArray *removeAdsItemsInList(NSArray *list) {
         return @[];
     }
     
-    BOOL disableAds = ENABLED(@"Disable Ads");
+    BOOL disableAds = ENABLED(THFeedHideAds);
 
     NSMutableArray *filteredList = [list mutableCopy];
     [filteredList enumerateObjectsWithOptions:NSEnumerationReverse usingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
@@ -51,7 +51,7 @@ static NSArray *(*orig_hideAds)(id self, SEL _cmd, id arg1);
 static NSArray *hook_hideAds(id self, SEL _cmd, id arg1) {
     @try {
         NSArray *result = orig_hideAds(self, _cmd, arg1);
-        BOOL disableAds = ENABLED(@"Disable Ads");
+        BOOL disableAds = ENABLED(THFeedHideAds);
         if (disableAds) {
             result = removeAdsItemsInList(result);
         }
@@ -64,7 +64,7 @@ static NSArray *hook_hideAds(id self, SEL _cmd, id arg1) {
 
 static id (*orig_hideAds2)(id self, SEL _cmd, id arg1);
 static id hook_hideAds2(id self, SEL _cmd, id arg1) {
-    BOOL disableAds = ENABLED(@"Disable Ads");
+    BOOL disableAds = ENABLED(THFeedHideAds);
 
     if (!(disableAds)) {
         return orig_hideAds2(self, _cmd, arg1);
@@ -87,7 +87,7 @@ static id hook_hideAds2(id self, SEL _cmd, id arg1) {
 static id (*orig_hideAds3)(id self, SEL _cmd);
 static id hook_hideAds3(id self, SEL _cmd) {
     @try {
-        BOOL disableAds = ENABLED(@"Disable Ads");
+        BOOL disableAds = ENABLED(THFeedHideAds);
 
         if (!(disableAds)) {
             return orig_hideAds3(self, _cmd);
@@ -133,7 +133,7 @@ static id hook_hideAds3(id self, SEL _cmd) {
 
 static id (*orig_hideAds4)(id self, SEL _cmd, id arg1);
 static id hook_hideAds4(id self, SEL _cmd, id arg1) {
-    BOOL disableAds = ENABLED(@"Disable Ads");
+    BOOL disableAds = ENABLED(THFeedHideAds);
 
     if (!(disableAds)) {
         return orig_hideAds4(self, _cmd, arg1);
@@ -155,7 +155,7 @@ static id hook_hideAds4(id self, SEL _cmd, id arg1) {
 
 static void (*orig_hideAds5)(id self, SEL _cmd, id adItem, NSInteger overlayStyle, BOOL ctaEnabled, id delegate, NSUInteger surfaceType, id analyticsModule, NSUInteger labelAlignment);
 static void hook_hideAds5(id self, SEL _cmd, id adItem, NSInteger overlayStyle, BOOL ctaEnabled, id delegate, NSUInteger surfaceType, id analyticsModule, NSUInteger labelAlignment) {
-    if (!ENABLED(@"Disable Ads")) {
+    if (!ENABLED(THFeedHideAds)) {
         orig_hideAds5(self, _cmd, adItem, overlayStyle, ctaEnabled, delegate, surfaceType, analyticsModule, labelAlignment);
         return;
     }

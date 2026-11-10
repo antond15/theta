@@ -58,7 +58,7 @@ static void theta_detachMessengerSettingsLongPressFromDirectInbox(id tabBarContr
 }
 
 static void theta_attachMessengerSettingsLongPressToDirectInboxIfNeeded(id tabBarController) {
-    if (!ENABLED(@"Messenger Mode")) {
+    if (!ENABLED(THNavMessengerMode)) {
         theta_detachMessengerSettingsLongPressFromDirectInbox(tabBarController);
         return;
     }
@@ -86,7 +86,7 @@ static void hook_layoutTabBar(id self, SEL _cmd) {
 }
 
 static void hook_tabbar(id self, SEL _cmd) {
-    if (ENABLED(@"Messenger Mode")) {
+    if (ENABLED(THNavMessengerMode)) {
         if (orig_tabbar) {
             orig_tabbar(self, _cmd);
         }

@@ -1,7 +1,7 @@
 #import "Include/ThetaHelper.h"
 
 static void theta_runVanishModeConfirmation(void (^invokeOrig)(void)) {
-    if (!ENABLED(@"Disappearing DM Confirmation")) {
+    if (!ENABLED(THConfirmVanishMode)) {
         invokeOrig();
         return;
     }

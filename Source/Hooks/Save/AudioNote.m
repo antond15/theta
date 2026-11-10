@@ -47,7 +47,7 @@ static void (*orig_saveNoteAudio)(id self, SEL _cmd);
 static void hook_saveNoteAudio(id self, SEL _cmd) {
     if (orig_saveNoteAudio) orig_saveNoteAudio(self, _cmd);
 
-    if (ENABLED(@"Save Audio Notes")) {
+    if (ENABLED(THSaveAudioNotes)) {
         // Check if gesture recognizer already exists to avoid adding multiple
         BOOL hasLongPressGesture = NO;
         for (UIGestureRecognizer *recognizer in [self gestureRecognizers]) {

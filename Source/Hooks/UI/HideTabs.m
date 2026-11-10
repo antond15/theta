@@ -423,23 +423,23 @@ static void theta_trimTabBarSurfacesToMessengerOnly(id tabBarController, BOOL *o
 
 // Returns YES if the tab with the given surface intent should be removed
 static BOOL theta_shouldRemoveSurfaceIntent(NSString *intent) {
-    if ([intent isEqualToString:@"FEED"]   && ENABLED(@"Hide Feed Tab"))     return YES;
-    if ([intent isEqualToString:@"CLIPS"]  && ENABLED(@"Hide Reels Tab"))    return YES;
-    if ([intent isEqualToString:@"SEARCH"] && ENABLED(@"Hide Explore Tab"))  return YES;
-    if ([intent isEqualToString:@"DIRECT"] && ENABLED(@"Hide Messages Tab")) return YES;
+    if ([intent isEqualToString:@"FEED"]   && ENABLED(THNavHideFeedTab))     return YES;
+    if ([intent isEqualToString:@"CLIPS"]  && ENABLED(THNavHideReelsTab))    return YES;
+    if ([intent isEqualToString:@"SEARCH"] && ENABLED(THNavHideExploreTab))  return YES;
+    if ([intent isEqualToString:@"DIRECT"] && ENABLED(THNavHideMessagesTab)) return YES;
     return NO;
 }
 
 // Returns YES if any individual tab-hide toggle is active
 static BOOL theta_anyTabHideEnabled(void) {
-    return ENABLED(@"Hide Feed Tab") || ENABLED(@"Hide Reels Tab")
-        || ENABLED(@"Hide Explore Tab") || ENABLED(@"Hide Messages Tab");
+    return ENABLED(THNavHideFeedTab) || ENABLED(THNavHideReelsTab)
+        || ENABLED(THNavHideExploreTab) || ENABLED(THNavHideMessagesTab);
 }
 
 static BOOL theta_shouldHideSurface(id surface) {
     NSString *intent = nil;
     @try { intent = [surface performSelector:@selector(tabStringFromSurfaceIntent)]; } @catch (__unused NSException *e) {}
-    if (ENABLED(@"Messenger Mode")) {
+    if (ENABLED(THNavMessengerMode)) {
         return ![intent isEqualToString:@"PROFILE"] && ![intent isEqualToString:@"DIRECT"];
     }
     return theta_shouldRemoveSurfaceIntent(intent);
@@ -449,7 +449,7 @@ static BOOL theta_shouldHideSurface(id surface) {
 /// or if filtering would leave no tabs.
 static NSArray *theta_filterTabBarSurfaces(NSArray *surfaces) {
     if (![surfaces isKindOfClass:[NSArray class]] || !surfaces.count) return surfaces;
-    if (!ENABLED(@"Messenger Mode") && !theta_anyTabHideEnabled()) return surfaces;
+    if (!ENABLED(THNavMessengerMode) && !theta_anyTabHideEnabled()) return surfaces;
     NSMutableArray *kept = [NSMutableArray arrayWithCapacity:surfaces.count];
     for (id surface in surfaces) {
         if (!theta_shouldHideSurface(surface)) [kept addObject:surface];
@@ -549,7 +549,7 @@ static void theta_reloadTabBarCollectionViews(id tabBarController) {
 // Core tab-hiding logic — safe to call directly without going through viewWillAppear:.
 static void THApplyTabHidingNow(id tabBarController) {
     if (!tabBarController) return;
-    BOOL messengerMode = ENABLED(@"Messenger Mode");
+    BOOL messengerMode = ENABLED(THNavMessengerMode);
     BOOL anyTabHide = theta_anyTabHideEnabled();
     if (!messengerMode && !anyTabHide) return;
     // Removing buttons by index would then take the wrong view controller with it.
@@ -568,17 +568,17 @@ static void THApplyTabHidingNow(id tabBarController) {
             if (messengerMode) {
                 removedTabButtons |= theta_removeTabsNotMatchingMessengerMode(buttons, tabBar, tabBarController);
             } else {
-                if (ENABLED(@"Hide Reels Tab")) {
+                if (ENABLED(THNavHideReelsTab)) {
                     removedTabButtons |= theta_removeTabWithAccessibilityLabel(@"Reels", buttons, tabBar, tabBarController);
                 }
-                if (ENABLED(@"Hide Explore Tab")) {
+                if (ENABLED(THNavHideExploreTab)) {
                     removedTabButtons |= theta_removeTabWithAccessibilityLabel(@"Explore", buttons, tabBar, tabBarController);
                 }
-                if (ENABLED(@"Hide Feed Tab")) {
+                if (ENABLED(THNavHideFeedTab)) {
                     removedTabButtons |= theta_removeTabWithAccessibilityLabel(@"Home", buttons, tabBar, tabBarController);
                     removedTabButtons |= theta_removeTabWithAccessibilityLabel(@"Feed", buttons, tabBar, tabBarController);
                 }
-                if (ENABLED(@"Hide Messages Tab")) {
+                if (ENABLED(THNavHideMessagesTab)) {
                     removedTabButtons |= theta_removeTabWithAccessibilityLabel(@"Direct messages", buttons, tabBar, tabBarController);
                     removedTabButtons |= theta_removeTabWithAccessibilityLabel(@"Messages", buttons, tabBar, tabBarController);
                 }
@@ -678,7 +678,7 @@ void THRegisterHideTabsHooks(void) {
     // tab bar. Apply immediately so the user sees the correct state on first launch.
     // Use dispatch_after to let IG finish any in-flight layout before we modify it.
     void (^applyNow)(void) = ^{
-        if (!ENABLED(@"Messenger Mode") && !theta_anyTabHideEnabled()) return;
+        if (!ENABLED(THNavMessengerMode) && !theta_anyTabHideEnabled()) return;
         UIViewController *tbc = theta_findIGTabBarController();
         if (tbc) THApplyTabHidingNow(tbc);
     };

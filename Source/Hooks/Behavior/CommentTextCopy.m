@@ -271,7 +271,7 @@ static void copyCommentText(id self) {
                 @"title": @"Copy URL",
                 @"handler": ^(id sender) {
                     [UIPasteboard generalPasteboard].string = capturedURL.absoluteString;
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Copied" subtitle:@"Media URL copied to clipboard." icon:[UIImage systemImageNamed:@"doc.on.doc.fill"] autoHide:2 openURL:nil];
                     }
                 }
@@ -286,11 +286,11 @@ static void copyCommentText(id self) {
                             dispatch_async(dispatch_get_main_queue(), ^{
                                 if (name && name.length > 0) {
                                     [UIPasteboard generalPasteboard].string = name;
-                                    if (ENABLED(@"Show Banners")) {
+                                    if (ENABLED(THAppShowBanners)) {
                                         [ThetaHelper showToastWithTitle:@"GIF name copied" subtitle:name icon:[UIImage systemImageNamed:@"doc.on.doc.fill"] autoHide:2 openURL:nil];
                                     }
                                 } else {
-                                    if (ENABLED(@"Show Banners")) {
+                                    if (ENABLED(THAppShowBanners)) {
                                         [ThetaHelper showToastWithTitle:@"Failed" subtitle:@"Could not fetch GIF name." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
                                     }
                                 }
@@ -308,7 +308,7 @@ static void copyCommentText(id self) {
                         @try {
                             safeDownloadAnimatedImage(urlToDownload);
                         } @catch (NSException *exception) {
-                            if (ENABLED(@"Show Banners")) {
+                            if (ENABLED(THAppShowBanners)) {
                                 [ThetaHelper showToastWithTitle:@"Download Failed" subtitle:[NSString stringWithFormat:@"Error: %@", exception.reason] icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
                             }
                         }
@@ -338,7 +338,7 @@ static void copyCommentText(id self) {
             lastCopiedText = commentText;
             lastCopyTime = currentTime;
             [UIPasteboard generalPasteboard].string = commentText;
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Copied" subtitle:@"Comment text copied to clipboard." icon:[UIImage systemImageNamed:@"doc.on.doc.fill"] autoHide:2 openURL:nil];
             }
         }
@@ -442,7 +442,7 @@ static void downloadAnimatedImage(NSURL *url) {
         NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:url completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
             if (error) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Download Failed" subtitle:@"Failed to download media." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
                     }
                 });
@@ -451,7 +451,7 @@ static void downloadAnimatedImage(NSURL *url) {
             
             if (!location) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Download Failed" subtitle:@"No file location received." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
                     }
                 });
@@ -489,7 +489,7 @@ static void downloadAnimatedImage(NSURL *url) {
             [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:permanentFilePath] error:&fileError];
             if (fileError) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Download Failed" subtitle:@"Failed to save media file." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
                     }
                 });
@@ -499,16 +499,16 @@ static void downloadAnimatedImage(NSURL *url) {
             // Verify file exists before proceeding
             if (![[NSFileManager defaultManager] fileExistsAtPath:permanentFilePath]) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Download Failed" subtitle:@"File not found after download." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
                     }
                 });
                 return;
             }
             
-            NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
+            BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
             
-            if (saveMethod == 0) {
+            if (saveToCameraRoll) {
                 // Save to camera roll - must be on main thread
                 dispatch_async(dispatch_get_main_queue(), ^{
                     @try {
@@ -527,7 +527,7 @@ static void downloadAnimatedImage(NSURL *url) {
                         } completionHandler:^(BOOL success, NSError * _Nullable error) {
                             if (error) {
                                 dispatch_async(dispatch_get_main_queue(), ^{
-                                    if (ENABLED(@"Show Banners")) {
+                                    if (ENABLED(THAppShowBanners)) {
                                         [ThetaHelper showToastWithTitle:@"Save Failed" subtitle:[NSString stringWithFormat:@"Failed to save to Photos: %@", error.localizedDescription] icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
                                     }
                                 });
@@ -535,7 +535,7 @@ static void downloadAnimatedImage(NSURL *url) {
                                 // Clean up temp file after saving to Photos
                                 [[NSFileManager defaultManager] removeItemAtPath:permanentFilePath error:nil];
                                 dispatch_async(dispatch_get_main_queue(), ^{
-                                    if (ENABLED(@"Show Banners")) {
+                                    if (ENABLED(THAppShowBanners)) {
                                         [ThetaHelper showToastWithTitle:@"Saved to Camera Roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:2 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                                     }
                                 });
@@ -560,7 +560,7 @@ static void downloadAnimatedImage(NSURL *url) {
                     [[NSFileManager defaultManager] moveItemAtPath:permanentFilePath toPath:destPath error:nil];
                 }
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Saved" subtitle:@"Media saved to local folder." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:2 openURL:nil];
                     }
                 });
@@ -570,7 +570,7 @@ static void downloadAnimatedImage(NSURL *url) {
         [downloadTask resume];
     } @catch (NSException *exception) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Download Failed" subtitle:[NSString stringWithFormat:@"Error: %@", exception.reason] icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
             }
         });
@@ -581,7 +581,7 @@ static void (*orig_copyCommentText)(id self, SEL _cmd);
 static void hook_copyCommentText(id self, SEL _cmd) {
     orig_copyCommentText(self, _cmd);
 
-    if (!ENABLED(@"Comment Options")) {
+    if (!ENABLED(THCommentsOptionsButton)) {
         return;
     }
 

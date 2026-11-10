@@ -14,7 +14,7 @@ static NSDateFormatter *THDMDateFormatter(void) {
 
 // Replace "Active Xm/h ago" with a full formatted timestamp
 static void THUpdateSubtitleLabel(UIView *titleView) {
-    if (!ENABLED(@"Full Last Active Date")) return;
+    if (!ENABLED(THDMFullLastActive)) return;
 
     Ivar subIvar = class_getInstanceVariable([titleView class], "_subtitleLabel");
     if (!subIvar) return;

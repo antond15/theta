@@ -45,7 +45,7 @@ static NSURL *THCleanBrowserURL(NSURL *url) {
         }
     }
 
-    if (!ENABLED(@"Strip Tracking from Links")) {
+    if (!ENABLED(THLinksStripTracking)) {
         NSURL *result = [NSURL URLWithString:urlStr];
         return result ?: url;
     }
@@ -78,7 +78,7 @@ static void hook_viewWillAppear_Browser(id self, SEL _cmd, BOOL animated) {
         NSURL *url = req.URL;
 
         // Only web links leave the app; anything else stays with Instagram's own handling.
-        if (url && ENABLED(@"Open Links in External Browser")) {
+        if (url && ENABLED(THLinksOpenExternally)) {
             NSURL *cleaned = THCleanBrowserURL(url);
             if (THIsWebURL(cleaned)) {
                 [[UIApplication sharedApplication] openURL:cleaned options:@{} completionHandler:nil];
@@ -88,7 +88,7 @@ static void hook_viewWillAppear_Browser(id self, SEL _cmd, BOOL animated) {
         }
 
         // Strip tracking params in the in-app browser too
-        if (url && ENABLED(@"Strip Tracking from Links") && urlIvar) {
+        if (url && ENABLED(THLinksStripTracking) && urlIvar) {
             NSURL *cleaned = THCleanBrowserURL(url);
             if (THIsWebURL(cleaned) && ![cleaned isEqual:url]) {
                 NSURLRequest *cleanReq = [NSURLRequest requestWithURL:cleaned];

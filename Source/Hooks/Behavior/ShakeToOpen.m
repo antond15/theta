@@ -1,7 +1,7 @@
 static void (*orig_shakeToOpen)(id self, SEL _cmd, int arg1);
 static void hook_shakeToOpen(id self, SEL _cmd, int arg1) {
     @try {
-        if (!ENABLED(@"Shake To Open")) {
+        if (!ENABLED(THAppShakeToOpen)) {
             orig_shakeToOpen(self, _cmd, arg1);
             return;
         }

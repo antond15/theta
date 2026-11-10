@@ -1,7 +1,7 @@
 #import "Include/ThetaHelper.h"
 
 static void theta_runCreateGroupConfirmation(void (^invokeOrig)(void)) {
-    if (!ENABLED(@"Create Group Confirmation")) {
+    if (!ENABLED(THConfirmCreateGroup)) {
         invokeOrig();
         return;
     }

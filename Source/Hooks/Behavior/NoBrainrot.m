@@ -2,7 +2,7 @@ static void (*orig_hideBrainBot)(IGUnifiedVideoCollectionView *self, SEL _cmd);
 static void hook_hideBrainBot(IGUnifiedVideoCollectionView *self, SEL _cmd) {
     orig_hideBrainBot(self, _cmd);
     
-    if (ENABLED(@"Disable Scrolling Reels")) {
+    if (ENABLED(THReelsDisableScrolling)) {
         self.scrollEnabled = NO;
     }
 }
@@ -11,7 +11,7 @@ static void hook_hideBrainBot(IGUnifiedVideoCollectionView *self, SEL _cmd) {
    would undo the lock above. */
 static void (*orig_setScrollEnabled)(IGUnifiedVideoCollectionView *self, SEL _cmd, BOOL enabled);
 static void hook_setScrollEnabled(IGUnifiedVideoCollectionView *self, SEL _cmd, BOOL enabled) {
-    orig_setScrollEnabled(self, _cmd, enabled && !ENABLED(@"Disable Scrolling Reels"));
+    orig_setScrollEnabled(self, _cmd, enabled && !ENABLED(THReelsDisableScrolling));
 }
 
 void THRegisterNoBrainrotHooks(void) {

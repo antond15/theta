@@ -1,7 +1,7 @@
 #import "Include/ThetaHelper.h"
 
 static void theta_runCallConfirmation(NSString *description, void (^invokeOrig)(void)) {
-    if (!ENABLED(@"Call Confirmation")) {
+    if (!ENABLED(THConfirmCall)) {
         invokeOrig();
         return;
     }

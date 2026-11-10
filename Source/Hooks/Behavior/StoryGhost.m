@@ -88,7 +88,7 @@ static void thetaStoryAddTap(UIButton *button, void (^handler)(void)) {
 }
 
 static void thetaStorySkipIfEnabled(id firstDelegate) {
-    if (!ENABLED(@"Skip On Seen") || !firstDelegate) return;
+    if (!ENABLED(THStorySkipOnSeen) || !firstDelegate) return;
     if (![firstDelegate respondsToSelector:@selector(fullscreenOverlayDidTapNextStoryButton:)]) return;
     @try {
         [firstDelegate fullscreenOverlayDidTapNextStoryButton:nil];
@@ -725,7 +725,7 @@ static void thetaStorySaveURL(NSURL *url, BOOL isVideoHint) {
     NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:url completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         if (error || !location) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (ENABLED(@"Show Banners")) {
+                if (ENABLED(THAppShowBanners)) {
                     [ThetaHelper showToastWithTitle:@"Save failed" subtitle:error.localizedDescription ?: @"Download error" icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
                 }
             });
@@ -739,8 +739,8 @@ static void thetaStorySaveURL(NSURL *url, BOOL isVideoHint) {
         [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:permanentFilePath] error:&fileError];
         if (fileError) return;
 
-        NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-        if (saveMethod == 0) {
+        BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+        if (saveToCameraRoll) {
             [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
                 if (isVideoHint || [ext.lowercaseString isEqualToString:@"mp4"] || [ext.lowercaseString isEqualToString:@"mov"]) {
                     [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:[NSURL fileURLWithPath:permanentFilePath]];
@@ -750,7 +750,7 @@ static void thetaStorySaveURL(NSURL *url, BOOL isVideoHint) {
             } completionHandler:^(BOOL success, NSError * _Nullable err) {
                 [[NSFileManager defaultManager] removeItemAtPath:permanentFilePath error:nil];
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         if (success) {
                             [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                         } else {
@@ -768,14 +768,14 @@ static void thetaStorySaveURL(NSURL *url, BOOL isVideoHint) {
             NSString *destPath = [audioNotesDir stringByAppendingPathComponent:newFilename];
             [[NSFileManager defaultManager] moveItemAtPath:permanentFilePath toPath:destPath error:nil];
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (ENABLED(@"Show Banners")) {
+                if (ENABLED(THAppShowBanners)) {
                     [ThetaHelper showToastWithTitle:@"Saved!" subtitle:@"Saved to Documents." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:nil];
                 }
             });
         }
     }];
     [downloadTask resume];
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         [ThetaHelper showToastWithTitle:@"Saving…" subtitle:@"Downloading story media" icon:[UIImage systemImageNamed:@"arrow.down.circle"] autoHide:2 openURL:nil];
     }
 }
@@ -814,7 +814,7 @@ static void downloadButtonTapped(IGStoryFullscreenCell *self) {
 		} @catch (__unused NSException *e) {}
 	}
 	if (!currentMedia) {
-		if (ENABLED(@"Show Banners")) {
+		if (ENABLED(THAppShowBanners)) {
 			[ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"Couldn't find the current story item." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
 		}
 		return;
@@ -875,7 +875,7 @@ static void downloadButtonTapped(IGStoryFullscreenCell *self) {
 		return;
 	}
 
-	if (ENABLED(@"Show Banners")) {
+	if (ENABLED(THAppShowBanners)) {
 		[ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"No downloadable photo/video URL on this story." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
 	}
 }
@@ -916,7 +916,7 @@ static void downloadAllMedia(IGStoryFullscreenCell *self) {
 	NSMutableArray *igvideos = [NSMutableArray array];
 	//NSString *toastTitle = currentMedia.items.count > 1 ? @"Fetching media..." : @"Saving media...";
 	NSString *toastTitle = items.count > 1 ? @"Fetching media..." : @"Saving media...";
-	if (ENABLED(@"Show Banners")) {
+	if (ENABLED(THAppShowBanners)) {
 		UIImage *fetchingImage = [UIImage systemImageNamed:@"arrow.clockwise"];
 		[ThetaHelper showToastWithTitle:toastTitle subtitle:@"This will only take a second." icon:fetchingImage autoHide:4 openURL:nil];
 	}
@@ -1006,7 +1006,7 @@ static void downloadAllMedia(IGStoryFullscreenCell *self) {
 				if (url) {
 					MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] init];
 					[mediaSelectionVC downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension){
-						if (ENABLED(@"Show Banners")) {
+						if (ENABLED(THAppShowBanners)) {
                             [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                         }
 					}];
@@ -1137,13 +1137,13 @@ static NSArray *theta_storyResolvedItemsForMarkAll(id firstDelegate, id secondDe
 }
 
 static void thetaLocalSeenMarkCurrent(IGStoryFullscreenCell *self) {
-    if (!ENABLED(@"Seen Receipts Stay Local")) return;
+    if (!ENABLED(THStorySeenLocalOnly)) return;
     [ThetaHelper performHapticFeedbackIfEnabled];
     id firstDelegate = nil;
     id secondDelegate = nil;
     thetaLocalSeenResolveDelegates(self, &firstDelegate, &secondDelegate);
     if (!firstDelegate || !secondDelegate) {
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Mark failed" subtitle:@"Story viewer not found." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
         }
         return;
@@ -1158,7 +1158,7 @@ static void thetaLocalSeenMarkCurrent(IGStoryFullscreenCell *self) {
     if (!currentItem) return;
 
     THStorySeenReceiptNetworkGuardEnterWithContext(firstDelegate, secondDelegate);
-    BOOL ghostOn = ENABLED(@"Story Ghost");
+    BOOL ghostOn = ENABLED(THStoryGhost);
     s_thetaLocalSeenMarkActive = YES;
     if (ghostOn) shouldBeSeen = YES;
     BOOL ok = thetaStoryMarkItemAsSeen(self, currentItem);
@@ -1169,7 +1169,7 @@ static void thetaLocalSeenMarkCurrent(IGStoryFullscreenCell *self) {
         THStorySeenReceiptNetworkGuardLeave();
     });
 
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         if (ok) {
             [ThetaHelper showToastWithTitle:@"Marked on this device"
                                     subtitle:@"Stories clear here; receipts are not sent."
@@ -1184,7 +1184,7 @@ static void thetaLocalSeenMarkCurrent(IGStoryFullscreenCell *self) {
 }
 
 static void thetaLocalSeenMarkAll(IGStoryFullscreenCell *self) {
-    if (!ENABLED(@"Seen Receipts Stay Local")) return;
+    if (!ENABLED(THStorySeenLocalOnly)) return;
     [ThetaHelper performHapticFeedbackIfEnabled];
     id firstDelegate = nil;
     id secondDelegate = nil;
@@ -1202,7 +1202,7 @@ static void thetaLocalSeenMarkAll(IGStoryFullscreenCell *self) {
     } @catch (__unused NSException *e) {}
 
     THStorySeenReceiptNetworkGuardEnterWithContext(firstDelegate, secondDelegate);
-    BOOL ghostOn = ENABLED(@"Story Ghost");
+    BOOL ghostOn = ENABLED(THStoryGhost);
     s_thetaLocalSeenMarkActive = YES;
     if (ghostOn) shouldBeSeen = YES;
     @try {
@@ -1233,7 +1233,7 @@ static void thetaLocalSeenMarkAll(IGStoryFullscreenCell *self) {
         } @catch (__unused NSException *e) {}
     }
 
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         [ThetaHelper showToastWithTitle:@"All marked on this device"
                                 subtitle:@"Receipts are not sent."
                                     icon:[UIImage systemImageNamed:@"iphone"]
@@ -1273,7 +1273,7 @@ static void seenButtonPressedAll(IGStoryFullscreenCell *self) {
         shouldBeSeen = false;
     }
 
-    if (ENABLED(@"Show Banners")) {
+    if (ENABLED(THAppShowBanners)) {
         [ThetaHelper showToastWithTitle:@"Marked all as seen!" subtitle:@"They know we are here." icon:[UIImage systemImageNamed:@"eye"] autoHide:4 openURL:nil];
     }
 
@@ -1285,7 +1285,7 @@ static void seenButtonPressedCurrent(IGStoryFullscreenCell *self) {
     id section = thetaStoryPreferredSection(self, viewer);
     id currentItem = thetaStoryCurrentItem(section, viewer);
     if (!currentItem) {
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Mark failed" subtitle:@"Current story item not found." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
         }
         return;
@@ -1297,7 +1297,7 @@ static void seenButtonPressedCurrent(IGStoryFullscreenCell *self) {
     s_thetaAllowStorySeenReceipts = NO;
     shouldBeSeen = false;
 
-	if (ENABLED(@"Show Banners")) {
+	if (ENABLED(THAppShowBanners)) {
         if (ok) {
             [ThetaHelper showToastWithTitle:@"Marked as seen!" subtitle:@"They know we are here." icon:[UIImage systemImageNamed:@"eye"] autoHide:4 openURL:nil];
         } else {
@@ -1325,7 +1325,7 @@ static BOOL isStoryOwnerInAutoMarkList(IGUser *owner) {
     } @catch (__unused NSException *e) {}
     if (!username.length) return NO;
     username = [username lowercaseString];
-    NSArray *list = [[NSUserDefaults standardUserDefaults] objectForKey:@"Theta_StoryGhost_AutoMarkUserIds"];
+    NSArray *list = ThetaSettingList(THStoryGhostUsers);
     if (![list isKindOfClass:[NSArray class]]) return NO;
     for (id obj in list) {
         if ([obj isKindOfClass:[NSString class]] && [[(NSString *)obj lowercaseString] isEqualToString:username])
@@ -1622,7 +1622,7 @@ static void setupButtons(IGStoryFullscreenCell *self) {
     static BOOL s_guard;
     if (s_guard) return;
     if (!self || ![(UIView *)self window]) return;
-    if (!(ENABLED(@"Save Media") || ENABLED(@"Story Ghost") || ENABLED(@"Seen Receipts Stay Local") || ENABLED(@"See Story Mentions"))) {
+    if (!(ENABLED(THSaveMediaButton) || ENABLED(THStoryGhost) || ENABLED(THStorySeenLocalOnly) || ENABLED(THStoryMentionsButton))) {
         return;
     }
 
@@ -1652,14 +1652,7 @@ static void setupButtons(IGStoryFullscreenCell *self) {
 
     UIButton *downloadButton = [UIButton buttonWithType:UIButtonTypeSystem];
     downloadButton.tag = kThetaStoryButtonTag;
-    @try {
-        NSData *data = [[NSUserDefaults standardUserDefaults] objectForKey:@"Save Button Color_Color"];
-        UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:data error:nil];
-        [downloadButton setTintColor:color ?: [UIColor labelColor]];
-    } @catch (NSException *exception) {
-        NSLog(@"Error setting download button color: %@", exception);
-        [downloadButton setTintColor:[UIColor labelColor]];
-    }
+    [downloadButton setTintColor:ThetaSettingColor(THUISaveButtonColor)];
     [downloadButton setImage:[UIImage systemImageNamed:@"arrow.down"] forState:UIControlStateNormal];
     downloadButton.layer.shadowColor = [UIColor blackColor].CGColor;
     downloadButton.layer.shadowOpacity = 0.4;
@@ -1670,14 +1663,7 @@ static void setupButtons(IGStoryFullscreenCell *self) {
 
     UIButton *seenButton = [UIButton buttonWithType:UIButtonTypeSystem];
     seenButton.tag = kThetaStoryButtonTag;
-    @try {
-        NSData *data = [[NSUserDefaults standardUserDefaults] objectForKey:@"Seen Button Color_Color"];
-        UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:data error:nil];
-        [seenButton setTintColor:color ?: [UIColor labelColor]];
-    } @catch (NSException *exception) {
-        NSLog(@"Error setting seen button color: %@", exception);
-        [seenButton setTintColor:[UIColor labelColor]];
-    }
+    [seenButton setTintColor:ThetaSettingColor(THUISeenButtonColor)];
     [seenButton setImage:[UIImage systemImageNamed:@"eye"] forState:UIControlStateNormal];
     seenButton.layer.shadowColor = [UIColor blackColor].CGColor;
     seenButton.layer.shadowOpacity = 0.4;
@@ -1688,13 +1674,7 @@ static void setupButtons(IGStoryFullscreenCell *self) {
 
     UIButton *localSeenButton = [UIButton buttonWithType:UIButtonTypeSystem];
     localSeenButton.tag = kThetaStoryButtonTag;
-    @try {
-        NSData *data = [[NSUserDefaults standardUserDefaults] objectForKey:@"Seen Button Color_Color"];
-        UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:data error:nil];
-        [localSeenButton setTintColor:color ?: [UIColor labelColor]];
-    } @catch (NSException *exception) {
-        [localSeenButton setTintColor:[UIColor labelColor]];
-    }
+    [localSeenButton setTintColor:ThetaSettingColor(THUISeenButtonColor)];
     UIImage *localIcon = [UIImage systemImageNamed:@"iphone"];
     if (!localIcon) localIcon = [UIImage systemImageNamed:@"iphone.circle"];
     if (!localIcon) localIcon = [UIImage systemImageNamed:@"internaldrive"];
@@ -1706,10 +1686,10 @@ static void setupButtons(IGStoryFullscreenCell *self) {
     localSeenButton.layer.masksToBounds = NO;
     [localSeenButton setTranslatesAutoresizingMaskIntoConstraints:false];
 
-    BOOL downloadVideos = ENABLED(@"Save Media");
-    BOOL hideSeenState = ENABLED(@"Story Ghost");
-    BOOL showLocalSeenOnly = ENABLED(@"Seen Receipts Stay Local");
-    BOOL showMentions = ENABLED(@"See Story Mentions");
+    BOOL downloadVideos = ENABLED(THSaveMediaButton);
+    BOOL hideSeenState = ENABLED(THStoryGhost);
+    BOOL showLocalSeenOnly = ENABLED(THStorySeenLocalOnly);
+    BOOL showMentions = ENABLED(THStoryMentionsButton);
 
     NSArray *items = nil;
     @try {
@@ -1719,14 +1699,7 @@ static void setupButtons(IGStoryFullscreenCell *self) {
 
     UIButton *mentionsButton = [UIButton buttonWithType:UIButtonTypeSystem];
     mentionsButton.tag = kThetaStoryButtonTag;
-    @try {
-        NSData *data = [[NSUserDefaults standardUserDefaults] objectForKey:@"Mentions Button Color_Color"];
-        UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:data error:nil];
-        [mentionsButton setTintColor:color ?: [UIColor labelColor]];
-    } @catch (NSException *exception) {
-        NSLog(@"Error setting mentions button color: %@", exception);
-        [mentionsButton setTintColor:[UIColor labelColor]];
-    }
+    [mentionsButton setTintColor:ThetaSettingColor(THUIMentionsButtonColor)];
     UIImage *mentionsImage = nil;
     @try {
         mentionsImage = thetaImageFromBundle(@"ig_icon_story_mention_pano_outline_24_Normal2x.png");
@@ -1862,7 +1835,7 @@ static void setupButtons(IGStoryFullscreenCell *self) {
             NSString *lower = nil;
             if (ownerUsername.length) {
                 lower = [[ownerUsername lowercaseString] copy];
-                NSArray *stored = [[NSUserDefaults standardUserDefaults] objectForKey:@"Theta_StoryGhost_AutoMarkUserIds"];
+                NSArray *stored = ThetaSettingList(THStoryGhostUsers);
                 if ([stored isKindOfClass:[NSArray class]] && [stored containsObject:lower]) {
                     inAutoList = YES;
                 }
@@ -1895,16 +1868,16 @@ static void setupButtons(IGStoryFullscreenCell *self) {
                     if (!ownerUsername.length) return;
                     NSString *lowerLocal = [ownerUsername lowercaseString];
                     NSMutableArray *list = [NSMutableArray array];
-                    NSArray *stored = [[NSUserDefaults standardUserDefaults] objectForKey:@"Theta_StoryGhost_AutoMarkUserIds"];
+                    NSArray *stored = ThetaSettingList(THStoryGhostUsers);
                     if ([stored isKindOfClass:[NSArray class]]) [list addObjectsFromArray:stored];
 
                     BOOL currentlyInList = [list containsObject:lowerLocal];
                     if (currentlyInList) {
                         // Remove from list
                         [list removeObject:lowerLocal];
-                        [[NSUserDefaults standardUserDefaults] setObject:list forKey:@"Theta_StoryGhost_AutoMarkUserIds"];
+                        ThetaSettingSetList(THStoryGhostUsers, list);
                         [[NSUserDefaults standardUserDefaults] synchronize];
-                        if (ENABLED(@"Show Banners")) {
+                        if (ENABLED(THAppShowBanners)) {
                             UIImage *icon = thetaColoredSystemSymbol(@"minus.circle", [UIColor systemRedColor]);
                             [ThetaHelper showToastWithTitle:[NSString stringWithFormat:@"Removed %@ from list", displayName]
                                                     subtitle:@"They won't know we're here."
@@ -1915,9 +1888,9 @@ static void setupButtons(IGStoryFullscreenCell *self) {
                     } else {
                         // Add to list
                         [list addObject:lowerLocal];
-                        [[NSUserDefaults standardUserDefaults] setObject:list forKey:@"Theta_StoryGhost_AutoMarkUserIds"];
+                        ThetaSettingSetList(THStoryGhostUsers, list);
                         [[NSUserDefaults standardUserDefaults] synchronize];
-                        if (ENABLED(@"Show Banners")) {
+                        if (ENABLED(THAppShowBanners)) {
                             UIImage *icon = thetaColoredSystemSymbol(@"checkmark.circle.fill", [UIColor systemGreenColor]);
                             [ThetaHelper showToastWithTitle:[NSString stringWithFormat:@"Added %@ to list", displayName]
                                                     subtitle:@"They will know we're here."
@@ -2062,8 +2035,8 @@ static void hook_storyOverlayLayout(id self, SEL _cmd) {
 static void hook_storyGhost2(id self, SEL _cmd, id fullscreenSectionController, id didMarkItemAsSeen) {
     if (!orig_storyGhost2) return;
 
-    if (!ENABLED(@"Story Ghost")) {
-        if (ENABLED(@"Seen Receipts Stay Local")) {
+    if (!ENABLED(THStoryGhost)) {
+        if (ENABLED(THStorySeenLocalOnly)) {
             THStorySeenReceiptNetworkGuardEnterWithContext(fullscreenSectionController, self);
             @try {
                 orig_storyGhost2(self, _cmd, fullscreenSectionController, didMarkItemAsSeen);
@@ -2090,8 +2063,8 @@ static void hook_storyGhost2(id self, SEL _cmd, id fullscreenSectionController, 
 
 static void hook_storyGhost3(id self, SEL _cmd, id fullscreenSectionController, id didMarkItemAsSeen, NSInteger entryPoint) {
     if (!orig_storyGhost3) return;
-    if (!ENABLED(@"Story Ghost")) {
-        if (ENABLED(@"Seen Receipts Stay Local")) {
+    if (!ENABLED(THStoryGhost)) {
+        if (ENABLED(THStorySeenLocalOnly)) {
             THStorySeenReceiptNetworkGuardEnterWithContext(fullscreenSectionController, self);
             @try {
                 orig_storyGhost3(self, _cmd, fullscreenSectionController, didMarkItemAsSeen, entryPoint);
@@ -2114,7 +2087,7 @@ static void hook_storyGhost3(id self, SEL _cmd, id fullscreenSectionController, 
 
 static void hook_sectionMarkCurrent(id self, SEL _cmd) {
     if (!orig_sectionMarkCurrent) return;
-    if (!ENABLED(@"Story Ghost")) {
+    if (!ENABLED(THStoryGhost)) {
         @try { orig_sectionMarkCurrent(self, _cmd); } @catch (__unused NSException *e) {}
         return;
     }
@@ -2126,7 +2099,7 @@ static void hook_sectionMarkCurrent(id self, SEL _cmd) {
 
 static void hook_sectionMarkItem(id self, SEL _cmd, id item) {
     if (!orig_sectionMarkItem) return;
-    if (!ENABLED(@"Story Ghost")) {
+    if (!ENABLED(THStoryGhost)) {
         @try { orig_sectionMarkItem(self, _cmd, item); } @catch (__unused NSException *e) {}
         return;
     }
@@ -2172,8 +2145,8 @@ static void downloadStoryMedia(id self) {
             return;
         }
 
-        NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-        if (saveMethod == 0) {
+        BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+        if (saveToCameraRoll) {
             // Check photo library permission first
             PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
             if (status == PHAuthorizationStatusNotDetermined) {
@@ -2182,7 +2155,7 @@ static void downloadStoryMedia(id self) {
                         performStoryDownloadWithURL(url);
                     } else {
                         dispatch_async(dispatch_get_main_queue(), ^{
-                            if (ENABLED(@"Show Banners")) {
+                            if (ENABLED(THAppShowBanners)) {
                                 [ThetaHelper showToastWithTitle:@"Permission Denied" subtitle:@"Please enable photo library access in Settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
                             }
                         });
@@ -2192,7 +2165,7 @@ static void downloadStoryMedia(id self) {
                 performStoryDownloadWithURL(url);
             } else {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Permission Denied" subtitle:@"Please enable photo library access in Settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
                     }
                 });
@@ -2227,8 +2200,8 @@ static void performStoryDownloadWithURL(NSURL *url) {
             }
 
             dispatch_async(dispatch_get_main_queue(), ^{
-                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                if (saveMethod == 0) {
+                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                if (saveToCameraRoll) {
                     [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
                         [PHAssetChangeRequest creationRequestForAssetFromImageAtFileURL:[NSURL fileURLWithPath:permanentFilePath]];
                     } completionHandler:^(BOOL success, NSError *error) {
@@ -2243,7 +2216,7 @@ static void performStoryDownloadWithURL(NSURL *url) {
                             NSLog(@"Error deleting temporary file: %@", deleteError);
                         }
 
-                        if (success && ENABLED(@"Show Banners")) {
+                        if (success && ENABLED(THAppShowBanners)) {
                             [ThetaHelper showToastWithTitle:@"Story saved!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                         }
                     }];
@@ -2262,7 +2235,7 @@ static void performStoryDownloadWithURL(NSURL *url) {
                         destPath = [audioNotesDir stringByAppendingPathComponent:unique];
                         [[NSFileManager defaultManager] moveItemAtPath:permanentFilePath toPath:destPath error:nil];
                     }
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Story saved!" subtitle:@"Saved to local folder." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
                     }
                 }

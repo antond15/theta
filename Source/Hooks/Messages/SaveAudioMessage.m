@@ -4,7 +4,7 @@ static void hook_audioMessage(id self, SEL _cmd, id audio, CGFloat progress, id 
     orig_audioMessage(self, _cmd, audio, progress, assetId, offlineAssetId, messageProductType, threadKey);
 
     @try {
-        if (ENABLED(@"Save Audio Messages")) {
+        if (ENABLED(THDMSaveAudioMessages)) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
                 id serverAudio = nil;
                 Ivar iv = class_getInstanceVariable([audio class], "_server_audio");
@@ -36,7 +36,7 @@ static void (*orig_audioPlayerDidPlayToEnd)(id self, SEL _cmd, id arg1);
 static void hook_audioPlayerDidPlayToEnd(id self, SEL _cmd, id arg1) {
     orig_audioPlayerDidPlayToEnd(self, _cmd, arg1);
     
-    if (ENABLED(@"Save Audio Messages")) {
+    if (ENABLED(THDMSaveAudioMessages)) {
         NSURL *url = objc_getAssociatedObject(self, &theta_audio_url_key);
         if (url) {
             [ThetaHelper showCustomAlertWithActions:@"Audio Message Download Confirmation" description:@"Would you like to download the audio from this message?" actions:@[

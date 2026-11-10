@@ -1,6 +1,6 @@
 static void (*orig_storyAutoAdvance)(id self, SEL _cmd, NSInteger arg1);
 static void hook_storyAutoAdvance(id self, SEL _cmd, NSInteger arg1) {
-    if (arg1 == 6 && ENABLED(@"Disable Auto Advance")) {
+    if (arg1 == 6 && ENABLED(THStoryDisableAutoAdvance)) {
         return;
     }
 

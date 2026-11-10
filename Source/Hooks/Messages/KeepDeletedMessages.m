@@ -1,6 +1,6 @@
 static void (*orig_messageCache)(id self, SEL _cmd, id update);
 static void hook_messageCache(id self, SEL _cmd, id update) {
-	if (!ENABLED(@"Keep Deleted Messages")) {
+	if (!ENABLED(THDMKeepDeleted)) {
 		orig_messageCache(self, _cmd, update);
 		return;
 	}
@@ -190,7 +190,7 @@ static UIView *thetaFindInnerTextMessageBubble(UIView *root) {
 static void (*orig_directMessageCell_configure)(id self, SEL _cmd, id viewModel, id specFactory, id launcher);
 static void hook_directMessageCell_configure(id self, SEL _cmd, id viewModel, id specFactory, id launcher) {
 	orig_directMessageCell_configure(self, _cmd, viewModel, specFactory, launcher);
-	if (!ENABLED(@"Keep Deleted Messages")) return;
+	if (!ENABLED(THDMKeepDeleted)) return;
 	if (![viewModel conformsToProtocol:@protocol(IGDirectMessageViewModelProtocol)]) return;
 
 	IGDirectUIMessageMetadata *metadata = [(id<IGDirectMessageViewModelProtocol>)viewModel messageMetadata];
@@ -234,14 +234,7 @@ static void hook_directMessageCell_configure(id self, SEL _cmd, id viewModel, id
 	BOOL exists = [[MessagesManager sharedManager] messageExistsWithID:serverId];
 	UIColor *targetColor = nil;
 	if (exists) {
-		@try {
-			NSData *data = [[NSUserDefaults standardUserDefaults] objectForKey:@"Deleted Message Color_Color"];
-			if (!data) {
-				targetColor = [UIColor systemRedColor];
-			}
-			targetColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:data error:nil];
-		} @catch (__unused NSException *e) {}
-		if (!targetColor) targetColor = [UIColor systemRedColor];
+		targetColor = ThetaSettingColor(THDMDeletedColor);
 	} else if (originalBackgroundColor) {
 		targetColor = originalBackgroundColor;
 	}
@@ -304,7 +297,7 @@ static void thetaStripDeletedMessageKeys(id messageUpdate) {
 
 static void (*orig_messageCache3)(id self, SEL _cmd, id updates, id completion, id userAccess);
 static void hook_messageCache3(id self, SEL _cmd, id updates, id completion, id userAccess) {
-	if (ENABLED(@"Keep Deleted Messages")) {
+	if (ENABLED(THDMKeepDeleted)) {
 		// updates: [IGDirectCacheThreadUpdate] -> threadUpdates: [IGDirectThreadUpdate] -> _messageUpdate
 		NSArray *cacheThreadUpdates = [updates isKindOfClass:[NSArray class]] ? updates : (updates ? @[updates] : @[]);
 		for (id cacheThreadUpdate in cacheThreadUpdates) {

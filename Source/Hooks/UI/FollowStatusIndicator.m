@@ -14,7 +14,7 @@ static void saveMedia(id hostView);
         host = [(UIView *)sender superview];
     }
     if (!host) {
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"Lost profile context." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
         }
         return;
@@ -482,7 +482,7 @@ static void saveMedia(id hostView) {
     @try {
         UIViewController *profileVC = theta_profileViewControllerFromView([hostView isKindOfClass:[UIView class]] ? hostView : nil);
         if (!profileVC) {
-            if (ENABLED(@"Show Banners")) {
+            if (ENABLED(THAppShowBanners)) {
                 [ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"Open a user profile and try again." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
             }
             return;
@@ -655,7 +655,7 @@ static void saveMedia(id hostView) {
         });
     } @catch (NSException *exception) {
         NSLog(@"[Theta] Save Profile Posts: %@", exception);
-        if (ENABLED(@"Show Banners")) {
+        if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Save failed" subtitle:exception.reason ?: @"Unexpected error." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
         }
     }
@@ -696,8 +696,8 @@ static void hook_followStatusIndicator(UIView *self, SEL _cmd) {
         }
     } @catch (__unused NSException *e) {}
 
-    BOOL showFollowIndicator = [[NSUserDefaults standardUserDefaults] boolForKey:@"Follow Status Indicator_Enabled"];
-    BOOL showSaveButton = [[NSUserDefaults standardUserDefaults] boolForKey:@"Save Profile Posts_Enabled"];
+    BOOL showFollowIndicator = ENABLED(THProfileFollowStatusIndicator);
+    BOOL showSaveButton = ENABLED(THSaveProfilePosts);
 
     for (UIView *view in [self subviews]) {
         if (![view isKindOfClass:NSClassFromString(@"IGCoreTextView")]) {

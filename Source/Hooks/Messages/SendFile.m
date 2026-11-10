@@ -56,7 +56,7 @@ static void THShowFilePicker(UIViewController *threadVC) {
 
 static id (*orig_IGDSMenu_init)(id, SEL, NSArray *, BOOL, id);
 static id hook_IGDSMenu_init(id self, SEL _cmd, NSArray *items, BOOL edr, id header) {
-    if (!ENABLED(@"Send Files") || !sTHFileMenuPending) {
+    if (!ENABLED(THDMSendFiles) || !sTHFileMenuPending) {
         return orig_IGDSMenu_init(self, _cmd, items, edr, header);
     }
     sTHFileMenuPending = NO;
@@ -98,7 +98,7 @@ static id hook_IGDSMenu_init(id self, SEL _cmd, NSArray *items, BOOL edr, id hea
 static void (*orig_composerOverflow)(id, SEL, id);
 static void hook_composerOverflow(id self, SEL _cmd, id plusButton) {
     orig_composerOverflow(self, _cmd, plusButton);
-    if (!ENABLED(@"Send Files")) return;
+    if (!ENABLED(THDMSendFiles)) return;
     sTHFileThreadVC = (UIViewController *)self;
     sTHFileMenuPending = YES;
 }

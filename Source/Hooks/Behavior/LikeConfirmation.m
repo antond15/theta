@@ -10,7 +10,7 @@ static void showLikeConfirmationAlert(NSString *mediaType, void (^confirmAction)
 
 /// If the setting is off, invokes `invokeOrig` only. If on, shows the confirmation alert, then invokes `invokeOrig` when the user confirms.
 static void theta_runLikeConfirmation(NSString *mediaType, void (^invokeOrig)(void)) {
-    if (!ENABLED(@"Like Confirmation")) {
+    if (!ENABLED(THConfirmLike)) {
         invokeOrig();
         return;
     }

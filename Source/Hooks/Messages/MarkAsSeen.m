@@ -152,7 +152,7 @@ static BOOL theta_isNavBarRecipientInAutoMarkList(UIView *navBarView) {
 	if (!navBarView) return NO;
 	NSString *username = theta_recipientUsernameFromNavBarRootView(navBarView);
 	if (!username.length) return NO;
-	NSArray *list = [[NSUserDefaults standardUserDefaults] objectForKey:@"Theta_MarkAsSeen_AutoMarkUserIds"];
+	NSArray *list = ThetaSettingList(THDMAutoSeenUsers);
 	if (![list isKindOfClass:[NSArray class]]) return NO;
 	for (id obj in list) {
 		if ([obj isKindOfClass:[NSString class]] && [[(NSString *)obj lowercaseString] isEqualToString:username])
@@ -179,7 +179,7 @@ static BOOL isThreadVCInAutoMarkList(id threadVC) {
 			}
 		}
 		if (!usernames.count) return NO;
-		NSArray *list = [[NSUserDefaults standardUserDefaults] objectForKey:@"Theta_MarkAsSeen_AutoMarkUserIds"];
+		NSArray *list = ThetaSettingList(THDMAutoSeenUsers);
 		if (![list isKindOfClass:[NSArray class]]) return NO;
 		NSMutableSet *listSet = [NSMutableSet set];
 		for (id obj in list) {
@@ -214,16 +214,16 @@ static BOOL isThreadParticipantInAutoMarkList(id dataSource) {
 }
 
 static BOOL theta_autoMarkListIsEmpty(void) {
-	NSArray *list = [[NSUserDefaults standardUserDefaults] objectForKey:@"Theta_MarkAsSeen_AutoMarkUserIds"];
+	NSArray *list = ThetaSettingList(THDMAutoSeenUsers);
 	return ![list isKindOfClass:[NSArray class]] || list.count == 0;
 }
 
 static BOOL (*orig_markMessagesAsSeen)(id self, SEL _cmd);
 static BOOL hook_markMessagesAsSeen(id self, SEL _cmd) {
-	BOOL markAsSeen = ENABLED(@"Mark As Seen");
-	BOOL seenOnTyping = ENABLED(@"Seen On Typing");
-	BOOL seenOnReact = ENABLED(@"Seen On React");
-	BOOL seenOnSend = ENABLED(@"Seen On Send");
+	BOOL markAsSeen = ENABLED(THDMSeenButton);
+	BOOL seenOnTyping = ENABLED(THDMSeenOnTyping);
+	BOOL seenOnReact = ENABLED(THDMSeenOnReact);
+	BOOL seenOnSend = ENABLED(THDMSeenOnSend);
 	BOOL anyFeature = markAsSeen || seenOnTyping || seenOnReact || seenOnSend;
 
 	// Fast path: nothing to intercept — avoid KVC that can throw on IG 441 data sources.
@@ -831,7 +831,7 @@ BOOL theta_hasUnreadFromRecipient(id threadVC) {
 /// Shows "Marked as seen!" toast after a short delay so the key window is stable (reaction sheet/composer dismissed). Use for auto-mark, Seen On Send, Seen On Typing, Seen On React. Manual button uses immediate toast.
 void theta_showMarkedAsSeenToastDeferred(void) {
 	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-		if (ENABLED(@"Show Banners")) {
+		if (ENABLED(THAppShowBanners)) {
 			[ThetaHelper showToastWithTitle:@"Marked as seen!" subtitle:@"They know we are here." icon:[ThetaHelper imageFromEmojiString:@"👀" width:60] autoHide:4 openURL:nil];
 		}
 	});
@@ -939,7 +939,7 @@ static NSString *theta_autoMarkUsername(void) {
 
 static BOOL theta_autoMarkUsernameIsInList(NSString *username) {
 	if (!username.length) return NO;
-	NSArray *list = [[NSUserDefaults standardUserDefaults] objectForKey:@"Theta_MarkAsSeen_AutoMarkUserIds"];
+	NSArray *list = ThetaSettingList(THDMAutoSeenUsers);
 	if (![list isKindOfClass:[NSArray class]]) return NO;
 	NSString *needle = [username lowercaseString];
 	for (id obj in list) {
@@ -957,7 +957,7 @@ static void theta_listToggleTapped(UIBarButtonItem *listItem) {
 	}
 	NSString *normalized = [resolvedUsername lowercaseString];
 	NSMutableArray *list = [NSMutableArray array];
-	NSArray *stored = [[NSUserDefaults standardUserDefaults] objectForKey:@"Theta_MarkAsSeen_AutoMarkUserIds"];
+	NSArray *stored = ThetaSettingList(THDMAutoSeenUsers);
 	if ([stored isKindOfClass:[NSArray class]]) [list addObjectsFromArray:stored];
 	BOOL anyInList = theta_autoMarkUsernameIsInList(normalized);
 	if (anyInList) {
@@ -979,7 +979,7 @@ static void theta_listToggleTapped(UIBarButtonItem *listItem) {
 		UIImage *icon = thetaColoredSystemSymbol(@"checkmark.circle.fill", [UIColor systemGreenColor]);
 		[ThetaHelper showToastWithTitle:[NSString stringWithFormat:@"Added @%@ to list", normalized] subtitle:@"They will know we're here." icon:icon autoHide:3 openURL:nil];
 	}
-	[[NSUserDefaults standardUserDefaults] setObject:list forKey:@"Theta_MarkAsSeen_AutoMarkUserIds"];
+	ThetaSettingSetList(THDMAutoSeenUsers, list);
 	[[NSUserDefaults standardUserDefaults] synchronize];
 }
 
@@ -1105,10 +1105,10 @@ static BOOL isDirectThreadNavigationBar(id navBarView) {
 static void (*orig_rightBarButtonItems)(id self, SEL _cmd, id arg1);
 static void hook_rightBarButtonItems(id self, SEL _cmd, id arg1) {
 	NSMutableArray *new_items = [arg1 mutableCopy] ?: [NSMutableArray array];
-	BOOL hideBlend = ENABLED(@"Hide Blend Button");
-	BOOL hideCalls = ENABLED(@"Hide Call Buttons");
+	BOOL hideBlend = ENABLED(THDMHideBlendButton);
+	BOOL hideCalls = ENABLED(THDMHideCallButtons);
 
-	if (ENABLED(@"Mark As Seen")) {
+	if (ENABLED(THDMSeenButton)) {
 		@try {
 			theta_insertSeenBarButtonItems(new_items, self, NO);
 		} @catch (__unused NSException *e) {}
@@ -1139,7 +1139,7 @@ static void (*orig_seenOnSend)(id self, SEL _cmd, id arg1);
 static void hook_seenOnSend(id self, SEL _cmd, id arg1) {
 	orig_seenOnSend(self, _cmd, arg1);
 
-	if (ENABLED(@"Seen On Send")) {
+	if (ENABLED(THDMSeenOnSend)) {
 		@try {
 			UIViewController *viewController = [ThetaHelper nearestViewController:self];
 			id threadViewController = [viewController valueForKey:@"delegate"];
@@ -1183,7 +1183,7 @@ static void (*orig_seenOnSend2)(id self, SEL _cmd);
 static void hook_seenOnSend2(id self, SEL _cmd) {
 	if (orig_seenOnSend2) orig_seenOnSend2(self, _cmd);
 
-	if (!ENABLED(@"Seen On Send")) return;
+	if (!ENABLED(THDMSeenOnSend)) return;
 	@try {
 		id threadViewController = nil;
 		UIViewController *viewController = [ThetaHelper nearestViewController:self];
@@ -1209,7 +1209,7 @@ static void (*orig_messageReactionSelection2)(id self, SEL _cmd, id arg1, id arg
 static void hook_messageReactionSelection2(id self, SEL _cmd, id arg1, id arg2, BOOL arg3) {
 	orig_messageReactionSelection2(self, _cmd, arg1, arg2, arg3);
 
-	if (!ENABLED(@"Seen On React")) return;
+	if (!ENABLED(THDMSeenOnReact)) return;
 	@try {
 		// Double-tap: arg1 is the cell; prefer window so we get the visible thread VC.
 		id threadViewController = theta_threadVCFromWindow();
@@ -1230,7 +1230,7 @@ static void hook_messageReactionSelection3(id self, SEL _cmd, id arg1, id arg2, 
     orig_messageReactionSelection3(self, _cmd, arg1, arg2, arg3, arg4, arg5);
 
     @try {
-        if (!ENABLED(@"Seen On React")) return;
+        if (!ENABLED(THDMSeenOnReact)) return;
         id threadViewController = [[self valueForKey:@"messageActionBlockHandler"] valueForKey:@"_threadViewFeatureDelegate"];
         if (!threadViewController) threadViewController = theta_threadVCFromWindow();
         if (!threadViewController) return;
@@ -1248,7 +1248,7 @@ static void hook_messageReactionSelection5(id self, SEL _cmd, id arg1, id arg2, 
     orig_messageReactionSelection5(self, _cmd, arg1, arg2, arg3, arg4, arg5, arg6);
 
     @try {
-        if (!ENABLED(@"Seen On React")) return;
+        if (!ENABLED(THDMSeenOnReact)) return;
         id threadViewController = [[self valueForKey:@"messageActionBlockHandler"] valueForKey:@"_threadViewFeatureDelegate"];
         if (!threadViewController) threadViewController = theta_threadVCFromWindow();
         if (!threadViewController) return;
@@ -1265,7 +1265,7 @@ static void (*orig_messageReactionSelection4)(id self, SEL _cmd, id arg1, id arg
 static void hook_messageReactionSelection4(id self, SEL _cmd, id arg1, id arg2, BOOL arg3) {
 	orig_messageReactionSelection4(self, _cmd, arg1, arg2, arg3);
 
-	if (!ENABLED(@"Seen On React")) return;
+	if (!ENABLED(THDMSeenOnReact)) return;
 	@try {
 		id threadViewController = theta_threadVCFromWindow();
 		if (!threadViewController && arg1 && [arg1 isKindOfClass:[UIView class]]) threadViewController = theta_threadVCFromView((UIView *)arg1);
@@ -1283,7 +1283,7 @@ static void hook_messageReactionSelection4(id self, SEL _cmd, id arg1, id arg2, 
 static void (*orig_doubleTapTwoArg)(id self, SEL _cmd, id arg1, id arg2);
 static void hook_doubleTapTwoArg(id self, SEL _cmd, id arg1, id arg2) {
 	if (orig_doubleTapTwoArg) orig_doubleTapTwoArg(self, _cmd, arg1, arg2);
-	if (!ENABLED(@"Seen On React")) return;
+	if (!ENABLED(THDMSeenOnReact)) return;
 	@try {
 		id threadViewController = theta_threadVCFromWindow();
 		if (!threadViewController && arg1 && [arg1 isKindOfClass:[UIView class]]) threadViewController = theta_threadVCFromView((UIView *)arg1);
@@ -1312,10 +1312,10 @@ static void hook_threadViewDidAppear(id self, SEL _cmd, BOOL animated) {
 }
 
 static BOOL theta_shouldSuppressAutoSeen(id context) {
-	BOOL markAsSeen = ENABLED(@"Mark As Seen");
-	BOOL seenOnTyping = ENABLED(@"Seen On Typing");
-	BOOL seenOnReact = ENABLED(@"Seen On React");
-	BOOL seenOnSend = ENABLED(@"Seen On Send");
+	BOOL markAsSeen = ENABLED(THDMSeenButton);
+	BOOL seenOnTyping = ENABLED(THDMSeenOnTyping);
+	BOOL seenOnReact = ENABLED(THDMSeenOnReact);
+	BOOL seenOnSend = ENABLED(THDMSeenOnSend);
 	BOOL anyFeature = markAsSeen || seenOnTyping || seenOnReact || seenOnSend;
 	if (!anyFeature && theta_autoMarkListIsEmpty()) return NO;
 	if (isThreadVCInAutoMarkList(context) || isThreadParticipantInAutoMarkList(context)) return NO;
@@ -1356,7 +1356,7 @@ static void hook_navItem_setRightBarButtonItems(id self, SEL _cmd, id arg1) {
 	} @catch (__unused NSException *e) {
 		isThreadItem = NO;
 	}
-	if (isThreadItem && ENABLED(@"Mark As Seen")) {
+	if (isThreadItem && ENABLED(THDMSeenButton)) {
 		@try {
 			UIView *host = nil;
 			@try {

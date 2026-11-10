@@ -27,7 +27,7 @@ static void (*orig_seenStoryOnReply)(id self, SEL _cmd, id inputView, id text, i
 static void hook_seenStoryOnReply(id self, SEL _cmd, id inputView, id text, id quotedContent, id animatedEmojiCharacterRanges, id defaultPowerupsMetadata, id imageGlyphLocations, id replayBarGroupRecipients) {
     orig_seenStoryOnReply(self, _cmd, inputView, text, quotedContent, animatedEmojiCharacterRanges, defaultPowerupsMetadata, imageGlyphLocations, replayBarGroupRecipients);
 
-    if (!ENABLED(@"Story Seen On Reply")) {
+    if (!ENABLED(THStorySeenOnReply)) {
         return;
     }
 

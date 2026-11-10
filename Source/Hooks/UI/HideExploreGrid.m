@@ -1,6 +1,6 @@
 static void (*orig_hideExploreGrid)(id self, SEL _cmd);
 static void hook_hideExploreGrid(id self, SEL _cmd) {
-    if (ENABLED(@"Hide Explore Grid")) {
+    if (ENABLED(THExploreHideGrid)) {
         UIResponder *responder = self;
         while ((responder = [responder nextResponder])) {
             if ([responder isKindOfClass:[UIViewController class]]) {

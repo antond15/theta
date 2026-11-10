@@ -17,10 +17,10 @@ static NSString *THTabIntentForLabel(NSString *label) {
 
 static BOOL THShouldHideTabByIntent(NSString *intent) {
     if (!intent) return NO;
-    if ([intent isEqualToString:@"FEED"]   && ENABLED(@"Hide Feed Tab"))     return YES;
-    if ([intent isEqualToString:@"CLIPS"]  && ENABLED(@"Hide Reels Tab"))    return YES;
-    if ([intent isEqualToString:@"SEARCH"] && ENABLED(@"Hide Explore Tab"))  return YES;
-    if ([intent isEqualToString:@"DIRECT"] && ENABLED(@"Hide Messages Tab")) return YES;
+    if ([intent isEqualToString:@"FEED"]   && ENABLED(THNavHideFeedTab))     return YES;
+    if ([intent isEqualToString:@"CLIPS"]  && ENABLED(THNavHideReelsTab))    return YES;
+    if ([intent isEqualToString:@"SEARCH"] && ENABLED(THNavHideExploreTab))  return YES;
+    if ([intent isEqualToString:@"DIRECT"] && ENABLED(THNavHideMessagesTab)) return YES;
     return NO;
 }
 
@@ -37,11 +37,11 @@ static BOOL THShouldHideTabForSurface(id surface) {
 
 static NSInteger (*orig_tabOrdering)(id, SEL) = NULL;
 static NSInteger hook_tabOrdering(id self, SEL _cmd) {
-    // 0 = classic, 1 = standard, 2 = alternate
-    NSInteger idx = [[NSUserDefaults standardUserDefaults] integerForKey:@"Tab Icon Order_SegmentIndex"];
-    if (idx == 1) return 0;  // Classic
-    if (idx == 2) return 1;  // Standard
-    if (idx == 3) return 2;  // Alternate
+    // Instagram's values: 0 = classic, 1 = standard, 2 = alternate
+    NSString *order = ThetaSettingChoice(THNavTabOrder);
+    if ([order isEqualToString:@"classic"]) return 0;
+    if ([order isEqualToString:@"standard"]) return 1;
+    if ([order isEqualToString:@"alternate"]) return 2;
     return orig_tabOrdering ? orig_tabOrdering(self, _cmd) : 1;
 }
 
@@ -49,9 +49,9 @@ static NSInteger hook_tabOrdering(id self, SEL _cmd) {
 
 static BOOL (*orig_isTabSwipingEnabled)(id, SEL) = NULL;
 static BOOL hook_isTabSwipingEnabled(id self, SEL _cmd) {
-    NSInteger idx = [[NSUserDefaults standardUserDefaults] integerForKey:@"Swipe Between Tabs_SegmentIndex"];
-    if (idx == 1) return YES;   // Enabled
-    if (idx == 2) return NO;    // Disabled
+    NSString *swipe = ThetaSettingChoice(THNavSwipeBetweenTabs);
+    if ([swipe isEqualToString:@"enabled"]) return YES;
+    if ([swipe isEqualToString:@"disabled"]) return NO;
     return orig_isTabSwipingEnabled ? orig_isTabSwipingEnabled(self, _cmd) : YES;
 }
 
@@ -62,23 +62,26 @@ static void hook_viewWillAppear_tabBar(id self, SEL _cmd, BOOL animated) {
     orig_viewWillAppear_tabBar(self, _cmd, animated);
 
     // Only fire once at launch, and only if Messenger Mode is not active
-    if (ENABLED(@"Messenger Mode")) return;
+    if (ENABLED(THNavMessengerMode)) return;
 
     static BOOL sLaunchFired = NO;
     if (sLaunchFired) return;
     sLaunchFired = YES;
 
-    NSInteger launchIdx = [[NSUserDefaults standardUserDefaults] integerForKey:@"Launch Tab_SegmentIndex"];
-    NSString *selName = nil;
-    NSString *intent = nil;
-    switch (launchIdx) {
-        case 1:  selName = @"_timelineButtonPressed";     intent = @"FEED";    break; // Home
-        case 2:  selName = @"_exploreButtonPressed";      intent = @"SEARCH";  break; // Explore
-        case 3:  selName = @"_discoverVideoButtonPressed"; intent = @"CLIPS";  break; // Reels
-        case 4:  selName = @"_directInboxButtonPressed";  intent = @"DIRECT";  break; // Messages
-        case 5:  selName = @"_profileButtonPressed";      intent = @"PROFILE"; break; // Profile
-        default: break;
-    }
+    static NSDictionary<NSString *, NSArray<NSString *> *> *sLaunchTargets;
+    static dispatch_once_t sLaunchTargetsOnce;
+    dispatch_once(&sLaunchTargetsOnce, ^{
+        sLaunchTargets = @{
+            @"home":     @[@"_timelineButtonPressed", @"FEED"],
+            @"explore":  @[@"_exploreButtonPressed", @"SEARCH"],
+            @"reels":    @[@"_discoverVideoButtonPressed", @"CLIPS"],
+            @"messages": @[@"_directInboxButtonPressed", @"DIRECT"],
+            @"profile":  @[@"_profileButtonPressed", @"PROFILE"],
+        };
+    });
+    NSArray<NSString *> *target = sLaunchTargets[ThetaSettingChoice(THNavLaunchTab)];
+    NSString *selName = target[0];
+    NSString *intent = target[1];
     // A hidden tab has no view controller to switch to.
     if (THShouldHideTabByIntent(intent)) selName = nil;
     if (selName) {

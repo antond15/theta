@@ -42,7 +42,7 @@ static void theta_applyComposerCharacterLimitBypass(id composer) {
 }
 
 static NSInteger hook_characterLimit(id self, SEL _cmd) {
-    if (ENABLED(@"Bypass Character Limit")) {
+    if (ENABLED(THDMBypassCharLimit)) {
         return kThetaBypassCharacterLimitValue;
     }
     return orig_characterLimit(self, _cmd);
@@ -52,7 +52,7 @@ static void hook_directComposer2(id self, SEL _cmd) {
     @try {
         orig_directComposer2(self, _cmd);
 
-        if (ENABLED(@"Seen On Typing")) {
+        if (ENABLED(THDMSeenOnTyping)) {
             IGUser *lastSender = nil;
 
             UIViewController *viewController = [ThetaHelper nearestViewController:self];
@@ -225,7 +225,7 @@ static void hook_directComposer2(id self, SEL _cmd) {
             }
         }
 
-        if (!ENABLED(@"Bypass Character Limit")) {
+        if (!ENABLED(THDMBypassCharLimit)) {
             return;
         }
 

@@ -2,7 +2,7 @@
 
 static void (*orig_followConfirmation)(id self, SEL _cmd);
 static void hook_followConfirmation(id self, SEL _cmd) {
-    if (!ENABLED(@"Follow Confirmation")) {
+    if (!ENABLED(THConfirmFollow)) {
         orig_followConfirmation(self, _cmd);
         return;
     }

@@ -38,7 +38,7 @@ static BOOL thetaIsProfileHeaderPicture(UIView *view) {
 }
 
 static void thetaShowProfilePictureMenu(id self) {
-    if (ENABLED(@"Save Profile Pictures") || ENABLED(@"Fullscreen Profile Pictures")) {
+    if (ENABLED(THSaveProfilePictures) || ENABLED(THMediaFullscreenProfilePictures)) {
 		NSURL *imageURL = nil;
 		@try {
 			id imageView = [self valueForKey:@"_imageView"];
@@ -78,14 +78,14 @@ static void thetaShowProfilePictureMenu(id self) {
 		}
         
         NSMutableArray *actions = [NSMutableArray array];
-        if (ENABLED(@"Save Profile Pictures")) {
+        if (ENABLED(THSaveProfilePictures)) {
             [actions addObject:@{
                 @"title": @"Save",
 				@"handler": ^{
 					@try {
 						if (imageURL) {
-							NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-							if (saveMethod == 0) {
+							BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+							if (saveToCameraRoll) {
 								PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
 								if (status == PHAuthorizationStatusNotDetermined) {
 									[PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus authorizationStatus) {
@@ -93,7 +93,7 @@ static void thetaShowProfilePictureMenu(id self) {
 											performProfilePictureDownloadWithURL(imageURL);
 										} else {
 											dispatch_async(dispatch_get_main_queue(), ^{
-												if (ENABLED(@"Show Banners")) {
+												if (ENABLED(THAppShowBanners)) {
 													[ThetaHelper showToastWithTitle:@"Permission Denied" subtitle:@"Please enable photo library access in Settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
 												}
 											});
@@ -103,7 +103,7 @@ static void thetaShowProfilePictureMenu(id self) {
 									performProfilePictureDownloadWithURL(imageURL);
 								} else {
 									dispatch_async(dispatch_get_main_queue(), ^{
-										if (ENABLED(@"Show Banners")) {
+										if (ENABLED(THAppShowBanners)) {
 											[ThetaHelper showToastWithTitle:@"Permission Denied" subtitle:@"Please enable photo library access in Settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
 										}
 									});
@@ -120,7 +120,7 @@ static void thetaShowProfilePictureMenu(id self) {
 				}
             }];
         }
-        if (ENABLED(@"Fullscreen Profile Pictures")) {
+        if (ENABLED(THMediaFullscreenProfilePictures)) {
             [actions addObject:@{
                 @"title": @"Fullscreen",
 				@"handler": ^{
@@ -171,8 +171,8 @@ static void performProfilePictureDownloadWithURL(NSURL *imageURL) {
             }
 
             dispatch_async(dispatch_get_main_queue(), ^{
-                NSInteger saveMethod = [[NSUserDefaults standardUserDefaults] integerForKey:@"Save Method_SegmentIndex"];
-                if (saveMethod == 0) {
+                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+                if (saveToCameraRoll) {
                     [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
                         [PHAssetChangeRequest creationRequestForAssetFromImageAtFileURL:[NSURL fileURLWithPath:permanentFilePath]];
                     } completionHandler:^(BOOL success, NSError *error) {
@@ -187,7 +187,7 @@ static void performProfilePictureDownloadWithURL(NSURL *imageURL) {
                             NSLog(@"Error deleting temporary file: %@", deleteError);
                         }
 
-                        if (success && ENABLED(@"Show Banners")) {
+                        if (success && ENABLED(THAppShowBanners)) {
                             [ThetaHelper showToastWithTitle:@"Profile picture saved!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                         }
                     }];
@@ -205,7 +205,7 @@ static void performProfilePictureDownloadWithURL(NSURL *imageURL) {
                         destPath = [audioNotesDir stringByAppendingPathComponent:unique];
                         [[NSFileManager defaultManager] moveItemAtPath:permanentFilePath toPath:destPath error:nil];
                     }
-                    if (ENABLED(@"Show Banners")) {
+                    if (ENABLED(THAppShowBanners)) {
                         [ThetaHelper showToastWithTitle:@"Profile picture saved!" subtitle:@"Saved to local folder." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
                     }
                 }

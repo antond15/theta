@@ -1,26 +1,19 @@
 #import "Include/ThetaTweakCommon.h"
 #import <objc/runtime.h>
 
-// Maps segment index to NSDateFormatter format pattern
-// Indices match SettingsViewController Date Format options:
-//   0=Default, 1=Short (MMM d), 2=Medium (MMM d yyyy),
-//   3=12h, 4=24h, 5=ISO, 6=ISO+T
-static NSString *THDateFormatPattern(NSInteger idx, BOOL withTime) {
-    switch (idx) {
-        case 1:  return @"MMM d";
-        case 2:  return @"MMM d, yyyy";
-        case 3:  return withTime ? @"MMM d 'at' h:mm a"  : @"MMM d";
-        case 4:  return withTime ? @"MMM d 'at' HH:mm"   : @"MMM d";
-        case 5:  return @"yyyy-MM-dd";
-        case 6:  return withTime ? @"yyyy-MM-dd HH:mm"   : @"yyyy-MM-dd";
-        default: return nil;
-    }
+// NSDateFormatter pattern for a THUIDateFormat option; nil keeps Instagram's own format.
+static NSString *THDateFormatPattern(NSString *format, BOOL withTime) {
+    if ([format isEqualToString:@"short"])    return @"MMM d";
+    if ([format isEqualToString:@"medium"])   return @"MMM d, yyyy";
+    if ([format isEqualToString:@"12h"])      return withTime ? @"MMM d 'at' h:mm a" : @"MMM d";
+    if ([format isEqualToString:@"24h"])      return withTime ? @"MMM d 'at' HH:mm"  : @"MMM d";
+    if ([format isEqualToString:@"iso"])      return @"yyyy-MM-dd";
+    if ([format isEqualToString:@"iso_time"]) return withTime ? @"yyyy-MM-dd HH:mm"  : @"yyyy-MM-dd";
+    return nil;
 }
 
 static NSString *THFormattedDate(NSDate *date) {
-    NSInteger idx = [[NSUserDefaults standardUserDefaults] integerForKey:@"Date Format_SegmentIndex"];
-    if (idx <= 0) return nil;
-    NSString *pattern = THDateFormatPattern(idx, YES);
+    NSString *pattern = THDateFormatPattern(ThetaSettingChoice(THUIDateFormat), YES);
     if (!pattern) return nil;
     static NSDateFormatter *df = nil;
     static dispatch_once_t once;
