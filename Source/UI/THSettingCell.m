@@ -34,16 +34,27 @@ static void THShowRestartToastIfNeeded(THSettingDefinition *setting) {
                           icon:[ThetaHelper imageFromEmojiString:@"⚠️" width:300] autoHide:4 openURL:nil];
 }
 
+/* Asks first, then runs `perform`. */
+static void THConfirm(NSString *title, NSString *message, NSString *button, void (^perform)(void)) {
+    [ThetaHelper showCustomAlertWithActions:title description:message actions:@[
+        @{@"title": button, @"handler": ^(id sender) { perform(); }},
+        @{@"title": @"Cancel", @"handler": ^(id sender) {}},
+    ]];
+}
+
 static void THPerformAction(THSettingDefinition *setting, UITableViewController *host) {
     if ([setting.key isEqualToString:THAppClearCache]) {
-        [ThetaHelper clearAppCache];
+        THConfirm(@"Clear Cache?", setting.detail, @"Clear", ^{ [ThetaHelper clearAppCache]; });
     } else if ([setting.key isEqualToString:THUIResetColors]) {
-        for (THSettingDefinition *def in [THSettingDefinition allDefinitions]) {
-            if (def.type == THSettingTypeColor) ThetaSettingReset(def.key);
-        }
-        [host.tableView reloadData];
-        [ThetaHelper showToastWithTitle:@"Colors Reset" subtitle:@"The default colors are back."
-                                   icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
+        __weak UITableViewController *weakHost = host;
+        THConfirm(@"Reset Colors?", setting.detail, @"Reset", ^{
+            for (THSettingDefinition *def in [THSettingDefinition allDefinitions]) {
+                if (def.type == THSettingTypeColor) ThetaSettingReset(def.key);
+            }
+            [weakHost.tableView reloadData];
+            [ThetaHelper showToastWithTitle:@"Colors Reset" subtitle:@"The default colors are back."
+                                       icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:3 openURL:nil];
+        });
     }
 }
 
