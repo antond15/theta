@@ -36,6 +36,14 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - **Launch cleanup** deletes only Theta's own leftover temp files. It used to delete every audio and video file in `Documents/`.
 - Bulk-save and thumbnail temp files have unique names, so overlapping saves can't overwrite each other.
 
+## Settings storage
+
+- **Fixed setting keys.** Settings used to be stored under their on-screen title (`Story Ghost_Enabled`), so rewording a title reset the setting. Each setting now has a fixed key such as `story.ghost`, stored as `theta.story.ghost`. The `theta.` prefix keeps Theta's values apart from Instagram's, which live in the same user defaults. On first launch, existing values are moved to the new keys, including the older "Strip …" feed titles and the two auto-mark user lists.
+- **Choices are stored by name** (`folder`, `messages`), not by their position in the list, so reordering options can't change what was picked.
+- **Export and import.** Exports use a versioned format keyed by setting key, and include choices, colors and user lists. Older exports still import. "Import from Clipboard" now accepts what "Export to Clipboard" copies; before, they used different formats. Importing a QR code from the camera now restores choices too.
+- **Reset Settings** also resets choices. User lists are kept.
+- Opening an auto-mark list from search results shows the list. It used to open an empty, unnamed editor.
+
 ## New settings
 
 - **Hide Shared Reel Thumbnails** (Messages). Replaces the preview image while preserving Instagram’s rounded corners, play button, reel icon and account details. The message remains tappable.
