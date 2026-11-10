@@ -22,6 +22,7 @@ static NSString *const kRestart = @"restart";      // @YES: needs an app restart
 static NSString *const kBiometrics = @"biometrics";// @YES: needs Face ID / Touch ID / passcode
 static NSString *const kMinIG = @"minIG";          // NSString: lowest supported Instagram version
 static NSString *const kViewController = @"vc";    // page: view controller class name
+static NSString *const kParent = @"parent";        // NSString: key of the parent setting (indentation only)
 
 static NSComparisonResult THCompareVersions(NSString *a, NSString *b) {
     NSArray<NSString *> *pa = [a componentsSeparatedByString:@"."], *pb = [b componentsSeparatedByString:@"."];
@@ -45,6 +46,7 @@ static NSComparisonResult THCompareVersions(NSString *a, NSString *b) {
         _requiresBiometrics = [extra[kBiometrics] boolValue];
         _minimumInstagramVersion = [extra[kMinIG] copy];
         _viewControllerClassName = [extra[kViewController] copy];
+        _parentKey = [extra[kParent] copy];
 
         NSMutableArray *options = [NSMutableArray array];
         for (NSArray *pair in extra[kOptions]) {
@@ -103,171 +105,156 @@ static THSettingDefinition *Page(NSString *key, NSString *title, NSString *detai
     return [[THSettingDefinition alloc] initWithType:THSettingTypePage key:key title:title detail:detail extra:extra];
 }
 
-static NSString *const kRestartInfo = @"Requires an app restart to take effect.";
-
 + (NSArray<THSettingDefinition *> *)allDefinitions {
     static NSArray *all;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         all = @[
             // Theta itself
-            Toggle(THAppLoadBanner, @"Load Banner", @"When Theta loads, see a banner.", nil),
-            Toggle(THAppShowBanners, @"Show Banners", @"Upon certain actions, show a banner.", nil),
-            Toggle(THAppHaptics, @"Haptic Feedback", @"Enables haptic feedback for certain actions.", nil),
-            Toggle(THAppLock, @"Lock Instagram", @"Protect Instagram with Face ID/passcode.", @{kBiometrics: @YES}),
-            Toggle(THAppShakeToOpen, @"Shake To Open", @"Open Theta's settings with a shake.", nil),
-            Action(THAppClearCache, @"Clear App Cache", @"Clear all cached files and data."),
+            Toggle(THAppShakeToOpen, @"Shake to Open", @"Shake your phone to open Theta. Replaces the gear button on the home feed.", nil),
+            Toggle(THAppShowBanners, @"Show Banners", @"Shows a banner to confirm actions such as saving or marking as seen.", nil),
+            Toggle(THAppHaptics, @"Haptic Feedback", @"Vibrates briefly when a banner appears.", @{kParent: THAppShowBanners}),
+            Toggle(THAppLoadBanner, @"Startup Banner", @"Shows the Theta and Instagram versions when Instagram opens.", nil),
+            Action(THAppClearCache, @"Clear Cache", @"Deletes Instagram's cached files and temporary data."),
+            Toggle(THAppLock, @"Lock Instagram", @"Asks for Face ID, Touch ID or your passcode when you open Instagram.", @{kBiometrics: @YES}),
 
             // Tab bar and launch
-            Choice(THNavTabOrder, @"Tab Icon Order", @"Reorder the tab bar icons.", @{
+            Choice(THNavTabOrder, @"Tab Order", @"Arranges the tabs in one of Instagram's layouts.", @{
                 kOptions: @[@[@"default", @"Default"], @[@"classic", @"Classic"], @[@"standard", @"Standard"], @[@"alternate", @"Alternate"]],
-                kInfo: @"Requires an app restart to take effect.\n\nClassic: Feed · Explore · Create · Reels · Profile\nStandard: Feed · Explore · Reels · Messages · Profile\nAlternate: Feed · Reels · Create · Messages · Profile"}),
-            Choice(THNavSwipeBetweenTabs, @"Swipe Between Tabs", @"Control whether you can swipe horizontally to switch between tabs.", @{
-                kOptions: @[@[@"default", @"Default"], @[@"enabled", @"Enabled"], @[@"disabled", @"Disabled"]]}),
-            Choice(THNavLaunchTab, @"Launch Tab", @"Choose which tab the app opens to on launch.", @{
-                kOptions: @[@[@"default", @"Default"], @[@"home", @"Home"], @[@"explore", @"Explore"], @[@"reels", @"Reels"], @[@"messages", @"Messages"], @[@"profile", @"Profile"]]}),
-            Toggle(THNavHideFeedTab, @"Hide Feed Tab", @"Removes the Home/Feed tab from the tab bar.", @{kInfo: kRestartInfo, kRestart: @YES}),
-            Toggle(THNavHideExploreTab, @"Hide Explore Tab", @"Removes the Explore tab from the tab bar.", @{kInfo: kRestartInfo, kRestart: @YES}),
-            Toggle(THNavHideReelsTab, @"Hide Reels Tab", @"GET RID OF THE BRAINROT.", @{kInfo: kRestartInfo, kRestart: @YES}),
-            Toggle(THNavHideMessagesTab, @"Hide Messages Tab", @"Removes the Direct Messages tab from the tab bar.", @{kInfo: kRestartInfo, kRestart: @YES}),
-            Toggle(THNavHideCreateTab, @"Hide Create Tab/Button", @"Hides the create tab and button.", @{kRestart: @YES}),
-            Toggle(THNavMessengerMode, @"Messenger Mode", @"Only Profile and Direct tabs; long-press the messages tab for Theta settings.", @{
-                kInfo: @"Hides all other tab bar items and swipe surfaces except Profile and Direct messages. When enabled, open Theta settings with a long press on the Direct messages tab (home tab long press is restored to Instagram's default). Requires an app restart.",
+                kInfo: @"Classic: Home · Explore · Create · Reels · Profile\nStandard: Home · Explore · Reels · Messages · Profile\nAlternate: Home · Reels · Create · Messages · Profile",
                 kRestart: @YES}),
+            Choice(THNavSwipeBetweenTabs, @"Swipe Between Tabs", @"Switch tabs by swiping left or right.", @{
+                kOptions: @[@[@"default", @"Default"], @[@"enabled", @"On"], @[@"disabled", @"Off"]]}),
+            Choice(THNavLaunchTab, @"Open To", @"The tab Instagram shows when it opens. Not used in Messenger Mode.", @{
+                kOptions: @[@[@"default", @"Default"], @[@"home", @"Home"], @[@"explore", @"Explore"], @[@"reels", @"Reels"], @[@"messages", @"Messages"], @[@"profile", @"Profile"]]}),
+            Toggle(THNavHideFeedTab, @"Hide Home Tab", @"Removes Home from the tab bar.", @{kRestart: @YES}),
+            Toggle(THNavHideExploreTab, @"Hide Explore Tab", @"Removes Explore from the tab bar.", @{kRestart: @YES}),
+            Toggle(THNavHideReelsTab, @"Hide Reels Tab", @"Removes Reels from the tab bar.", @{kRestart: @YES}),
+            Toggle(THNavHideMessagesTab, @"Hide Messages Tab", @"Removes Messages from the tab bar.", @{kRestart: @YES}),
+            Toggle(THNavHideCreateTab, @"Hide Create Buttons", @"Removes the + buttons for new posts from the home and profile headers.", @{kRestart: @YES}),
+            Toggle(THNavMessengerMode, @"Messenger Mode", @"Shows only the Messages and Profile tabs.", @{kRestart: @YES}),
 
             // Home feed
-            Toggle(THFeedHideAds, @"Disable Ads", @"Removes all ads from the app.", nil),
-            Toggle(THFeedHideSuggestedPosts, @"Hide Suggested Posts", @"Inline suggested rails and previews.", nil),
-            Toggle(THFeedHideSuggestedReels, @"Hide Suggested Reels", @"Reels preview row.", nil),
-            Toggle(THFeedHideSuggestedPeople, @"Hide People You May Know", @"Suggested people carousels.", nil),
-            Toggle(THFeedHideThreadsCarousel, @"Hide Threads Carousel", @"Threads promos in feed.", nil),
-            Toggle(THFeedHideStoriesTray, @"Hide Home Stories", @"Top story tray on home.", nil),
-            Toggle(THFeedHideAllPosts, @"Mute Entire Home Feed", @"Blank feed list; keeps chrome.", nil),
-            Toggle(THFeedHideEndFooter, @"Hide End-of-Feed Footer", @"Clears end-of-feed suggestion text.", nil),
-            Toggle(THFeedHideRepostButton, @"Hide Repost Button", @"Hides the repost button in the feed/reels.", nil),
+            Toggle(THFeedHideAds, @"Hide Ads", @"Removes sponsored posts from your feed, Reels and Explore.", nil),
+            Toggle(THFeedHideSuggestedPosts, @"Hide Suggested Posts", @"Removes suggested posts from accounts you don't follow.", nil),
+            Toggle(THFeedHideSuggestedReels, @"Hide Suggested Reels", @"Removes the row of suggested reels from your feed.", nil),
+            Toggle(THFeedHideSuggestedPeople, @"Hide Suggested Accounts", @"Removes \"Suggested for you\" accounts from your feed and Reels.", nil),
+            Toggle(THFeedHideThreadsCarousel, @"Hide Threads Posts", @"Removes Threads posts and promotions from your feed and Reels.", nil),
+            Toggle(THFeedHideStoriesTray, @"Hide Stories Bar", @"Removes the row of stories at the top of your feed.", nil),
+            Toggle(THFeedHideEndFooter, @"Hide \"You're All Caught Up\"", @"Removes the text that marks the end of new posts.", nil),
+            Toggle(THFeedHideAllPosts, @"Hide All Posts", @"Leaves your home feed empty. Stories and the top bar stay.", nil),
+            Toggle(THFeedHideRepostButton, @"Hide Repost Button", @"Removes the repost button from posts and reels.", nil),
 
             // Explore and search
-            Toggle(THExploreHideGrid, @"Hide Explore Grid", @"Hides the explore grid view.", @{kRestart: @YES}),
-            Toggle(THExploreHideRecentSearches, @"Hide Recent Searches", @"Hide the recent searches in the search tab.", nil),
+            Toggle(THExploreHideGrid, @"Hide Explore Grid", @"Removes the grid of posts from Explore, leaving search.", @{kRestart: @YES}),
+            Toggle(THExploreHideRecentSearches, @"Don't Save Recent Searches", @"Accounts you search for aren't added to Recent.", @{
+                kInfo: @"Accounts already in Recent stay until you clear them in Instagram."}),
 
             // Direct messages
-            Toggle(THDMKeepDeleted, @"Keep Deleted Messages", @"Keep messages even after deletion.", @{
-                kInfo: @"Whenever messages are deleted (either from yourself or the other person), they will be kept locally as long as you don't refresh your chat feed.\n\nDeleted messages will be colored with the color you choose below.",
+            Toggle(THDMSeenButton, @"Mark Seen Manually", @"Opening a chat doesn't mark it as seen. Tap the eye button to mark it.", @{
+                kInfo: @"The eye button is at the top of each chat. The + button next to it adds the person to Always Mark Seen."}),
+            Toggle(THDMSeenOnTyping, @"Mark Seen When Typing", @"Marks the chat as seen when you start typing.", @{kParent: THDMSeenButton}),
+            Toggle(THDMSeenOnReact, @"Mark Seen When Reacting", @"Marks the chat as seen when you react to a message.", @{kParent: THDMSeenButton}),
+            Toggle(THDMSeenOnSend, @"Mark Seen When Sending", @"Marks the chat as seen when you send a message.", @{kParent: THDMSeenButton}),
+            List(THDMAutoSeenUsers, @"Always Mark Seen", @"Chats with these people are marked as seen as usual.", @{
+                kParent: THDMSeenButton,
+                kInfo: @"Chats with people on this list are marked as seen when you open them, as Instagram normally does.\n\nTo add someone, tap +, or tap the + button next to the eye in your chat with them."}),
+            Toggle(THDMHideTypingIndicator, @"Hide Typing Indicator", @"Others don't see when you're typing.", nil),
+            Toggle(THDMPrivateMediaGhost, @"Disappearing Media Ghost", @"Open disappearing photos and videos without marking them as seen.", @{
+                kInfo: @"Adds an eye button to the viewer. Tap it to mark the photo or video as seen."}),
+            Toggle(THDMKeepDeleted, @"Keep Unsent Messages", @"Messages that get unsent stay in the chat, highlighted.", @{
+                kInfo: @"Works for messages unsent by either side. They disappear when Instagram reloads the chat.",
                 kMinIG: @"313.0.3"}),
-            Color(THDMDeletedColor, @"Deleted Message Color", @"Choose the color used for deleted messages.", @{kDefault: [UIColor systemRedColor]}),
-            Toggle(THDMSaveAudioMessages, @"Save Audio Messages", @"Save audio messages to device.", @{
-                kInfo: @"When enabled, you will be able to download audio messages after they have finished playing."}),
-            Toggle(THDMUploadAudioMessages, @"Upload Audio Messages", @"Upload audio messages.", @{
-                kInfo: @"When enabled, whenever you press the voice message button, you will get a dialog asking if you want to upload audio from a video that's in your camera roll or record a new one."}),
-            Toggle(THDMBypassCharLimit, @"Bypass Character Limit", @"Bypass the character limit in messages.", nil),
-            Toggle(THDMHideTypingIndicator, @"Hide Typing Indicator", @"Recipients won't know you're typing.", nil),
-            Toggle(THDMHideSharedReelThumbnails, @"Hide Shared Reel Thumbnails", @"Hide reel preview images in DMs.", @{
-                kInfo: @"Shared reels keep their play button, account details and icons while the thumbnail image is replaced. Tap the message to open the reel."}),
-            Toggle(THDMHideSharedPostThumbnails, @"Hide Shared Post Thumbnails", @"Hide shared post images and caption previews in DMs.", @{
-                kInfo: @"Shared posts keep their account details and icons while the thumbnail image and caption preview are hidden. Tap the message to open the post."}),
-            Toggle(THDMMuteSharedReelNotifications, @"Mute Shared Reel Notifications", @"No notification when someone sends you a reel.", @{
-                kInfo: @"Messages with a reel shared from the Reels tab no longer alert you. They still arrive in your inbox. Other messages, including posts and stories, notify as usual."}),
-            Toggle(THDMSeenButton, @"Mark As Seen", @"Mark messages as seen with a button.", nil),
-            List(THDMAutoSeenUsers, @"Mark As Seen Auto-Mark List", @"Users in this list: their DMs are marked seen automatically.", @{
-                kInfo: @"Users in this list will be auto-marked as seen in DMs.\n\nTo add someone, tap + and enter their username, or use the list toggle button next to the eye icon in a DM thread (Mark As Seen setting must be enabled).\n\nIf the button above doesn't work, you may need a kickstart to this by manually adding the user to this list. Then when you send/receive a message from them, the button should work."}),
-            Toggle(THDMSeenOnTyping, @"Seen On Typing", @"Mark messages as seen when typing.", nil),
-            Toggle(THDMSeenOnReact, @"Seen On React", @"Mark messages as seen when reacting.", nil),
-            Toggle(THDMSeenOnSend, @"Seen On Send", @"Mark messages as seen when sending.", nil),
-            Toggle(THDMPrivateMediaGhost, @"Private Media Ghost", @"Manually mark photos/videos in DMs as seen.", nil),
-            Toggle(THConfirmVanishMode, @"Disappearing DM Confirmation", @"Confirm disappearing messages.", @{
-                kInfo: @"When enabled and swiping up in a DM to toggle disappearing messages, a confirmation will be asked before enabling/disabling disappearing messages."}),
-            Toggle(THDMHideCreateGroupButton, @"Hide \"Create Group\" Button", @"Hides the Create Group button.", @{
-                kInfo: @"When selecting multiple recipients to send a post/reel to, the Create Group button will be hidden."}),
-            Toggle(THConfirmCreateGroup, @"Create Group Confirmation", @"Asks before creating a group.", @{
-                kInfo: @"When selecting multiple recipients to send a post/reel to, a confirmation will be asked before creating a group."}),
-            Toggle(THDMHideBlendButton, @"Hide Blend Button", @"Hide the 'Blend' button in DMs.", nil),
-            Toggle(THDMHideCallButtons, @"Hide Call Buttons", @"Hide the audio and video call buttons in DMs.", nil),
-            Toggle(THDMFullLastActive, @"Full Last Active Date", @"Replaces 'Active Xm ago' with the exact date and time in DM conversations.", @{
-                kInfo: @"Shows the full timestamp (e.g. 'May 13 at 2:45 PM') instead of the relative 'Active X minutes ago' text in DM conversation headers."}),
-            Toggle(THDMSendFiles, @"Send Files", @"Adds a 'Send File' option to the DM plus menu to send any file from your device.", @{
-                kInfo: @"When enabled, a 'Send File' button appears in the DM composer plus menu. Tapping it opens a document picker so you can send any file type directly in a DM thread."}),
-
-            // Live
-            Toggle(THLiveNoViewerPolling, @"Live Without Viewer List", @"Stop IG from polling viewer counts during live broadcasts (you remain anonymous in the attendee list mechanics).", nil),
-            Toggle(THLiveCommentsToggle, @"Live Comments Sheet Toggle", @"While watching a live story, long-press the heart to hide or reveal the floating comment strip for this session only.", @{
-                kInfo: @"This only affects layout on your device until you leave the live. Useful if you want a cleaner stage without losing quick access."}),
+            Color(THDMDeletedColor, @"Highlight Color", @"The color of unsent messages.", @{kDefault: [UIColor systemRedColor], kParent: THDMKeepDeleted}),
+            Toggle(THDMFullLastActive, @"Exact Last Active Time", @"Shows when someone was last active, like \"May 13 at 2:45 PM\", instead of \"Active 5m ago\".", nil),
+            Toggle(THDMHideCallButtons, @"Hide Call Buttons", @"Removes the audio and video call buttons from the top of chats.", nil),
+            Toggle(THDMHideBlendButton, @"Hide Blend Button", @"Removes the Blend button from the top of chats.", nil),
+            Toggle(THDMSendFiles, @"Send Files", @"Adds Send File to the + menu in chats, for sending any file.", nil),
+            Toggle(THDMUploadAudioMessages, @"Upload Voice Messages", @"Send audio from a video or file as a voice message.", @{
+                kInfo: @"Tapping the microphone in a chat asks whether to use audio from a video in your library, from an audio file, or to record as usual."}),
+            Toggle(THDMBypassCharLimit, @"Remove Character Limit", @"Lets you send messages longer than Instagram's limit.", nil),
+            Toggle(THDMHideSharedReelThumbnails, @"Hide Shared Reel Thumbnails", @"Hides the preview image of reels shared in chats.", @{
+                kInfo: @"The play button and account name stay. Tap the message to open the reel."}),
+            Toggle(THDMHideSharedPostThumbnails, @"Hide Shared Post Thumbnails", @"Hides the image and caption of posts shared in chats.", @{
+                kInfo: @"The account name stays. Tap the message to open the post."}),
+            Toggle(THDMMuteSharedReelNotifications, @"Mute Shared Reel Notifications", @"Reels shared with you from the Reels tab arrive without a notification.", @{
+                kInfo: @"They still arrive in your inbox. Other messages, including shared posts and stories, notify as usual."}),
+            Toggle(THDMHideCreateGroupButton, @"Hide Create Group Button", @"Removes Create Group when you share to several people.", nil),
+            Toggle(THDMSaveAudioMessages, @"Save Voice Messages", @"Offers to save a voice message after it finishes playing.", nil),
 
             // Stories
-            Toggle(THStoryGhost, @"Story Ghost", @"Manually mark stories as seen.", nil),
-            List(THStoryGhostUsers, @"Story Ghost Auto-Mark List", @"Users in this list: their stories are marked seen when you view.", @{
-                kInfo: @"Users in this list will be auto-marked as seen in Story Ghost when you view their stories (unless you enable Skip On Seen).\n\nTo add someone, tap + and enter their username, or long-press the Story Ghost seen button on their story (Story Ghost setting must be enabled)."}),
-            Toggle(THStorySeenOnReply, @"Story Seen On Reply", @"Mark stories as seen when replying to a story.", nil),
-            Toggle(THStorySeenLocalOnly, @"Seen Receipts Stay Local", @"Keep story rings cleared on this phone but pause server-side seen receipts.", @{
-                kInfo: @"Shows a phone icon on the story overlay (with Save / Ghost / mentions). Tap marks the current slide seen only on this device; long-press marks every slide in this reel the same way. Works alongside Story Ghost—the eye is for normal mark-as-seen; the phone icon is always local-only."}),
-            Toggle(THStorySkipOnSeen, @"Skip On Seen", @"Skip to the next story when marked as seen.", nil),
-            Toggle(THStoryMentionsButton, @"See Story Mentions", @"Use a button to see who is mentioned in a story.", nil),
-            Toggle(THStoryDisableAutoAdvance, @"Disable Auto Advance", @"Turn off the annoying auto advance.", nil),
-
-            // Saving media
-            Toggle(THSaveMediaButton, @"Save Media", @"Save media to your camera roll.", nil),
-            Choice(THSaveMethod, @"Save Method", @"Save media to camera roll or local folder.", @{
-                kOptions: @[@[@"camera_roll", @"Camera Roll"], @[@"folder", @"Folder"]]}),
-            Toggle(THSaveProfilePictures, @"Save Profile Pictures", @"Save profile pictures to your camera roll.", @{
-                kInfo: @"When enabled, you will be able to long press on a profile picture to get an alert asking if you want to save the profile picture."}),
-            Toggle(THSaveProfilePosts, @"Save Profile Posts", @"Bulk save profile posts.", @{
-                kInfo: @"When enabled, you will see a pink save button on a user's profile page. Tap it and it will gather all loaded posts and will either save them to your camera roll or save them to a local folder.\n\nThe save button will only be able to gather posts that are actively loaded. If you want to save everything, make sure to scroll all the way to the bottom of the user's profile and tap the save button."}),
-            Toggle(THSaveAudioNotes, @"Save Audio Notes", @"Save audio notes to your device.", nil),
+            Toggle(THStoryGhost, @"Story Ghost", @"Watch stories without marking them as seen.", @{
+                kInfo: @"Adds an eye button to stories. Tap it to mark the story as seen. Long-press it to add or remove the account from Always Mark Seen."}),
+            List(THStoryGhostUsers, @"Always Mark Seen", @"Stories from these accounts are marked as seen as usual.", @{
+                kParent: THStoryGhost,
+                kInfo: @"Stories from these accounts are marked as seen when you watch them, even with Story Ghost on.\n\nTo add an account, tap +, or long-press the eye button on one of their stories."}),
+            Toggle(THStorySkipOnSeen, @"Skip After Marking Seen", @"Moves to the next story after a story is marked as seen with the eye or phone button.", @{kParent: THStoryGhost}),
+            Toggle(THStorySeenLocalOnly, @"Mark Seen on This Device Only", @"Stories you watch clear on this device, but the account isn't told you saw them.", @{
+                kInfo: @"Adds a phone button to stories. Tap it to mark the story as seen on this device only. Long-press it to do the same for all of the account's current stories.\n\nWith Story Ghost also on, the eye button still sends a normal seen receipt."}),
+            Toggle(THStorySeenOnReply, @"Mark Seen When Replying", @"Marks a story as seen when you reply to it.", nil),
+            Toggle(THStoryDisableAutoAdvance, @"Disable Auto-Advance", @"Stays on a story when it ends instead of moving to the next one.", nil),
+            Toggle(THStoryMentionsButton, @"Mentions Button", @"Adds a button that lists the accounts mentioned in a story.", nil),
 
             // Instants
-            Toggle(THInstantsSaveButton, @"Save Instants", @"Save Instants while viewing them.", @{
-                kInfo: @"When enabled, a save button appears while viewing an Instant (Quick Snap). Tap it to download the current photo or video using your Save Method (camera roll or local folder)."}),
-            Toggle(THInstantsGhost, @"Instant Ghost", @"View Instants without marking them seen.", @{
-                kInfo: @"When enabled, opening Instants will not mark them seen. An eye button appears next to Save on the Instant viewer; tap it to mark only the Instant you are currently viewing."}),
+            Toggle(THInstantsGhost, @"Instants Ghost", @"Watch Instants without marking them as seen.", @{
+                kInfo: @"Adds an eye button to the Instants viewer. Tap it to mark the Instant you're viewing as seen."}),
+            Toggle(THInstantsSaveButton, @"Save Instants", @"Adds a save button to the Instants viewer.", nil),
 
-            // Viewing media
-            Toggle(THMediaFullscreenPosts, @"Fullscreen Posts", @"View posts in fullscreen mode.", nil),
-            Toggle(THMediaFullscreenProfilePictures, @"Fullscreen Profile Pictures", @"View profile pictures in fullscreen mode.", @{
-                kInfo: @"When enabled, you will be able to long press on a profile picture to get an alert asking if you want to view the profile picture in fullscreen mode."}),
+            // Live
+            Toggle(THLiveNoViewerPolling, @"Stop Viewer Count Updates", @"Stops refreshing the viewer count while you watch a live video.", nil),
+            Toggle(THLiveCommentsToggle, @"Hide Live Comments", @"Long-press the heart in a live video to hide or show comments.", @{
+                kInfo: @"Comments come back when you leave the live video. Only you see the change."}),
 
             // Reels
-            Choice(THReelsTapAction, @"Tap Controls", @"Choose what a single tap does while watching a reel.", @{
-                kOptions: @[@[@"default", @"Default"], @[@"pause_play", @"Pause/Play"], @[@"mute", @"Mute"]]}),
-            Toggle(THReelsAlwaysShowScrubber, @"Always Show Scrubber", @"Always show the progress scrubber on reels, regardless of video length.", @{
-                kInfo: @"By default Instagram only shows the progress scrubber on longer videos. This forces it to always appear so you can seek in any reel."}),
-            Toggle(THReelsBypassPassword, @"Bypass Reel Password", @"Bypass reels that require a password.", @{
-                kInfo: @"When enabled and you view a reel that requires a password, you will see a button to bypass the password requirement."}),
-            Toggle(THReelsDisableScrolling, @"Disable Scrolling Reels", @"GET RID OF THE BRAINROT 2.", nil),
+            Choice(THReelsTapAction, @"Tap Action", @"What a single tap does on a reel.", @{
+                kOptions: @[@[@"default", @"Default"], @[@"pause_play", @"Pause"], @[@"mute", @"Mute"]]}),
+            Toggle(THReelsAlwaysShowScrubber, @"Always Show Progress Bar", @"Shows the progress bar on every reel so you can seek, not only on long ones.", nil),
+            Toggle(THReelsDisableScrolling, @"Disable Reels Scrolling", @"Stops swiping to the next reel, so only the reel you opened plays.", nil),
+            Toggle(THReelsBypassPassword, @"Skip Reel Passwords", @"Adds a Bypass button to reels that ask for a password.", nil),
+
+            // Saving and viewing media
+            Choice(THSaveMethod, @"Save To", @"Where downloads go.", @{
+                kOptions: @[@[@"camera_roll", @"Photos"], @[@"folder", @"Saved Media"]]}),
+            Toggle(THSaveMediaButton, @"Download Button", @"Adds a download button to posts, reels, stories and disappearing photos in chats.", nil),
+            Toggle(THMediaFullscreenPosts, @"Fullscreen Posts", @"Adds a button to posts for viewing them full screen.", nil),
+            Toggle(THSaveProfilePictures, @"Save Profile Pictures", @"Long-press the picture at the top of a profile to save it.", nil),
+            Toggle(THMediaFullscreenProfilePictures, @"Fullscreen Profile Pictures", @"Long-press the picture at the top of a profile to view it full screen.", nil),
+            Toggle(THSaveProfilePosts, @"Save Profile Posts", @"Adds a button to profiles that saves all loaded posts.", @{
+                kInfo: @"Only posts that have loaded are saved. To save all of them, scroll to the end of the profile first."}),
+            Toggle(THSaveAudioNotes, @"Save Music from Stickers", @"Long-press a music sticker to save its audio.", nil),
 
             // Profiles
-            Page(THProfileAnalyzerPage, @"Profile Analyzer", @"Track who follows and unfollows you.", @{
-                kViewController: @"THProfileAnalyzerViewController",
-                kInfo: @"Scans your current followers and following lists and compares them to the last scan. Results show new followers, unfollowers, who you followed/unfollowed, mutual followers, and who doesn't follow you back. Data is stored locally. Scan history (from the analyzer screen) supports clearing all, swipe-to-delete for a single snapshot, or Compare mode to delete several at once. Requests are paced to reduce Instagram throttling; very large lists (13,000+ total) may still be limited by Instagram."}),
-            Toggle(THProfileFollowStatusIndicator, @"Follow Status Indicator", @"Indicates if a user follows you.", @{
-                kInfo: @"When enabled, you will see a \"✅\" or \"❌\" next to a user's name on their profile page based on whether they follow you or not."}),
+            Page(THProfileAnalyzerPage, @"Profile Analyzer", @"See who followed and unfollowed you.", @{kViewController: @"THProfileAnalyzerViewController"}),
+            Toggle(THProfileFollowStatusIndicator, @"Show If They Follow You", @"Adds ✅ or ❌ after the name on a profile.", nil),
 
             // Comments and links
-            Toggle(THCommentsOptionsButton, @"Comment Options", @"Have some options when viewing a comment.", @{
-                kInfo: @"When enabled, you will see a button on comments.\n\nIf there is media attached to the comment, you will see an options button. If there is no media attached to the comment, you will see a copy button."}),
-            Toggle(THLinksOpenExternally, @"Open Links in External Browser", @"Opens links from Instagram in your default browser instead of the in-app browser.", nil),
-            Toggle(THLinksStripTracking, @"Strip Tracking from Links", @"Removes tracking parameters (UTM, fbclid, igshid, etc.) from links before opening them.", nil),
+            Toggle(THCommentsOptionsButton, @"Comment Actions", @"Adds a button to comments for copying text or saving media.", @{
+                kInfo: @"Comments with only text get a copy button. Comments with a photo or GIF get a menu to save it, copy its link or copy the GIF name."}),
+            Toggle(THLinksOpenExternally, @"Open Links in Browser", @"Opens links in your default browser instead of Instagram's.", nil),
+            Toggle(THLinksStripTracking, @"Remove Link Tracking", @"Removes tracking parameters such as utm, fbclid and igshid from links you open.", nil),
 
             // Confirmations
-            Toggle(THConfirmLike, @"Like Confirmation", @"Display an alert when you like a post.", nil),
-            Toggle(THConfirmFollow, @"Follow Confirmation", @"Display an alert when you follow someone.", nil),
-            Toggle(THConfirmCall, @"Call Confirmation", @"Display an alert when you call someone.", nil),
-            Toggle(THConfirmExploreRefresh, @"Explore Refresh Confirmation", @"Confirm before refreshing the explore page.", nil),
+            Toggle(THConfirmLike, @"Confirm Likes", @"Asks before liking a post or reel, including with a double tap.", nil),
+            Toggle(THConfirmFollow, @"Confirm Follows", @"Asks before following an account.", nil),
+            Toggle(THConfirmCall, @"Confirm Calls", @"Asks before starting an audio or video call.", nil),
+            Toggle(THConfirmCreateGroup, @"Confirm New Groups", @"Asks before creating a group when you share to several people.", nil),
+            Toggle(THConfirmVanishMode, @"Confirm Disappearing Messages", @"Asks before turning disappearing messages on or off.", nil),
+            Toggle(THConfirmExploreRefresh, @"Confirm Explore Refresh", @"Asks before pulling to refresh Explore.", nil),
 
             // Privacy
-            Toggle(THPrivacySuppressScreenshotAlerts, @"Screenshot Suppression", @"Prevents screenshot and screen recording notifications.", nil),
-            Toggle(THPrivacyHideThetaInScreenshots, @"Hide Theta From Screenshots", @"Hides Theta buttons from screenshots and screen recordings.", @{
-                kInfo: @"When enabled, Theta UI elements (such as Mark as Seen, Save, Story Ghost buttons, etc.) will be invisible in screenshots and screen recordings, but still visible on screen."}),
+            Toggle(THPrivacySuppressScreenshotAlerts, @"Silent Screenshots", @"Others aren't notified of your screenshots or recordings, and protected photos can be captured.", nil),
+            Toggle(THPrivacyHideThetaInScreenshots, @"Hide Theta in Screenshots", @"Theta's buttons don't appear in screenshots or screen recordings.", @{kRestart: @YES}),
 
             // Appearance
-            Choice(THUIDateFormat, @"Date Format", @"Custom timestamp format for feed, notes, comments, stories, and DMs.", @{
-                kOptions: @[@[@"default", @"Default"], @[@"short", @"Short"], @[@"medium", @"Medium"], @[@"12h", @"12h"], @[@"24h", @"24h"], @[@"iso", @"ISO"], @[@"iso_time", @"ISO+T"]]}),
-            Toggle(THUILiquidGlassButtons, @"Enable Liquid Glass Buttons", @"Enables experimental liquid glass-style action buttons throughout the app.", @{
-                kInfo: @"Requires an app restart to take effect. This feature relies on hidden Instagram experiments and may not work on all accounts or app versions.", kRestart: @YES}),
-            Toggle(THUILiquidGlassSurfaces, @"Enable Liquid Glass Surfaces", @"Enables the floating liquid glass tab bar and other glassmorphic UI surfaces.", @{
-                kInfo: @"Requires an app restart to take effect. This enables the floating tab bar and other surfaces powered by Instagram's Homecoming/Lucent navigation experiment.", kRestart: @YES}),
-            Color(THUIMentionsButtonColor, @"Mentions Button Color", @"Choose the color used for mentions buttons.", nil),
-            Color(THUISaveButtonColor, @"Save Button Color", @"Choose the color used for save buttons.", nil),
-            Color(THUISeenButtonColor, @"Seen Button Color", @"Choose the color used for seen buttons.", nil),
-            Action(THUIResetColors, @"Reset Colors", @"Reset all colors back to default."),
+            Choice(THUIDateFormat, @"Date Format", @"How dates appear on posts, comments, stories, notes and messages.", @{
+                kOptions: @[@[@"default", @"Default"], @[@"short", @"Mar 14"], @[@"medium", @"Mar 14, 2026"], @[@"12h", @"Mar 14 at 2:45 PM"],
+                            @[@"24h", @"Mar 14 at 14:45"], @[@"iso", @"2026-03-14"], @[@"iso_time", @"2026-03-14 14:45"]]}),
+            Toggle(THUILiquidGlassButtons, @"Liquid Glass Buttons", @"Gives Instagram's buttons the glass look.", @{kRestart: @YES}),
+            Toggle(THUILiquidGlassSurfaces, @"Liquid Glass Tab Bar", @"Uses the floating glass tab bar and other glass surfaces.", @{kRestart: @YES}),
+            Color(THUISaveButtonColor, @"Download Button Color", @"Used on stories, Instants and disappearing photos.", nil),
+            Color(THUISeenButtonColor, @"Seen Button Color", @"Used for the eye and phone buttons on stories, Instants and disappearing photos.", nil),
+            Color(THUIMentionsButtonColor, @"Mentions Button Color", @"Used for the mentions button on stories.", nil),
+            Action(THUIResetColors, @"Reset Colors", @"Restores the default colors, including the unsent message highlight."),
         ];
     });
     return all;
@@ -295,62 +282,139 @@ static NSString *const kRestartInfo = @"Requires an app restart to take effect."
 
 #pragma mark - Pages
 
+@implementation THSettingsSection
+
++ (instancetype)sectionWithHeader:(NSString *)header footer:(NSString *)footer keys:(NSArray<NSString *> *)keys {
+    THSettingsSection *section = [THSettingsSection new];
+    section->_header = [header copy];
+    section->_footer = [footer copy];
+    NSMutableArray *settings = [NSMutableArray array];
+    for (NSString *key in keys) {
+        THSettingDefinition *def = [THSettingDefinition definitionForKey:key];
+        NSAssert(def, @"Settings section %@ lists unknown key %@", header, key);
+        if (def) [settings addObject:def];
+    }
+    section->_settings = settings;
+    return section;
+}
+
+@end
+
+static THSettingsSection *Section(NSString *header, NSString *footer, NSArray<NSString *> *keys) {
+    return [THSettingsSection sectionWithHeader:header footer:footer keys:keys];
+}
+
 @implementation THSettingsPage
 
-+ (instancetype)pageWithTitle:(NSString *)title detail:(NSString *)detail icon:(NSString *)icon keys:(NSArray<NSString *> *)keys {
++ (instancetype)pageWithTitle:(NSString *)title detail:(NSString *)detail icon:(NSString *)icon sections:(NSArray<THSettingsSection *> *)sections {
     THSettingsPage *page = [THSettingsPage new];
     page->_title = [title copy];
     page->_detail = [detail copy];
     page->_iconName = [icon copy];
+    page->_sections = [sections copy];
     NSMutableArray *settings = [NSMutableArray array];
-    for (NSString *key in keys) {
-        THSettingDefinition *def = [THSettingDefinition definitionForKey:key];
-        NSAssert(def, @"Settings page %@ lists unknown key %@", title, key);
-        if (def) [settings addObject:def];
-    }
+    for (THSettingsSection *section in sections) [settings addObjectsFromArray:section.settings];
     page->_settings = settings;
     return page;
 }
 
+- (THSettingsSection *)sectionForSetting:(THSettingDefinition *)setting {
+    for (THSettingsSection *section in _sections) {
+        if ([section.settings containsObject:setting]) return section;
+    }
+    return nil;
+}
+
 /* Where each setting is shown. Moving a setting between pages never touches its stored value. */
-+ (NSArray<THSettingsPage *> *)allPages {
-    static NSArray *pages;
++ (NSArray<NSArray<THSettingsPage *> *> *)pageGroups {
+    static NSArray *groups;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        pages = @[
-            [self pageWithTitle:@"General" detail:@"General Theta behavior on Instagram." icon:@"gearshape" keys:@[
-                THProfileAnalyzerPage, THPrivacySuppressScreenshotAlerts, THConfirmLike, THConfirmFollow, THConfirmCall,
-                THFeedHideAds, THConfirmExploreRefresh, THCommentsOptionsButton, THUIDateFormat, THLinksOpenExternally,
-                THLinksStripTracking, THUILiquidGlassButtons, THUILiquidGlassSurfaces]],
-            [self pageWithTitle:@"Feed" detail:@"Hide suggested rails and promo rows." icon:@"rectangle.stack" keys:@[
-                THFeedHideSuggestedPosts, THFeedHideSuggestedReels, THFeedHideSuggestedPeople, THFeedHideThreadsCarousel,
-                THFeedHideStoriesTray, THFeedHideAllPosts, THFeedHideEndFooter]],
-            [self pageWithTitle:@"Messages" detail:@"Settings related to Instagram messages." icon:@"message" keys:@[
-                THDMKeepDeleted, THDMDeletedColor, THDMSaveAudioMessages, THDMUploadAudioMessages, THDMBypassCharLimit,
-                THDMHideTypingIndicator, THDMHideSharedReelThumbnails, THDMHideSharedPostThumbnails,
-                THDMMuteSharedReelNotifications, THDMSeenButton, THDMAutoSeenUsers, THDMSeenOnTyping, THDMSeenOnReact,
-                THDMSeenOnSend, THDMPrivateMediaGhost, THConfirmVanishMode, THDMHideCreateGroupButton, THConfirmCreateGroup,
-                THDMHideBlendButton, THDMHideCallButtons, THDMFullLastActive, THDMSendFiles]],
-            [self pageWithTitle:@"Media" detail:@"Various media options for Theta." icon:@"photo" keys:@[
-                THLiveNoViewerPolling, THLiveCommentsToggle, THStoryGhost, THStoryGhostUsers, THStorySeenOnReply,
-                THStorySeenLocalOnly, THStorySkipOnSeen, THStoryMentionsButton, THSaveMediaButton, THInstantsSaveButton,
-                THInstantsGhost, THSaveProfilePictures, THSaveProfilePosts, THSaveMethod, THSaveAudioNotes,
-                THMediaFullscreenPosts, THMediaFullscreenProfilePictures, THStoryDisableAutoAdvance, THReelsBypassPassword,
-                THReelsDisableScrolling]],
-            [self pageWithTitle:@"Reels" detail:@"Tap controls, scrubber, and reel behavior." icon:@"play.rectangle" keys:@[
-                THReelsTapAction, THReelsAlwaysShowScrubber]],
-            [self pageWithTitle:@"Navigation" detail:@"Tab bar order, visibility, and launch behavior." icon:@"square.grid.2x2" keys:@[
-                THNavTabOrder, THNavSwipeBetweenTabs, THNavLaunchTab, THNavHideFeedTab, THNavHideExploreTab,
-                THNavHideReelsTab, THNavHideMessagesTab, THNavMessengerMode]],
-            [self pageWithTitle:@"Interface" detail:@"Customize the interface of Instagram." icon:@"paintbrush" keys:@[
-                THNavHideCreateTab, THExploreHideGrid, THExploreHideRecentSearches, THProfileFollowStatusIndicator,
-                THFeedHideRepostButton, THPrivacyHideThetaInScreenshots, THUIMentionsButtonColor, THUISaveButtonColor,
-                THUISeenButtonColor, THUIResetColors]],
-            [self pageWithTitle:@"Miscellaneous" detail:@"Other settings and options." icon:@"ellipsis" keys:@[
-                THAppLoadBanner, THAppShowBanners, THAppHaptics, THAppLock, THAppShakeToOpen, THAppClearCache]],
+        THSettingsPage *feed = [self pageWithTitle:@"Feed & Explore" detail:@"Hide ads, suggestions and clutter." icon:@"house" sections:@[
+            Section(nil, nil, @[THFeedHideAds]),
+            Section(@"Home Feed", nil, @[THFeedHideSuggestedPosts, THFeedHideSuggestedReels, THFeedHideSuggestedPeople,
+                                          THFeedHideThreadsCarousel, THFeedHideStoriesTray, THFeedHideEndFooter, THFeedHideAllPosts]),
+            Section(@"Posts and Comments", nil, @[THFeedHideRepostButton, THCommentsOptionsButton]),
+            Section(@"Explore and Search", nil, @[THExploreHideGrid, THExploreHideRecentSearches]),
+        ]];
+        THSettingsPage *stories = [self pageWithTitle:@"Stories" detail:@"Story Ghost, Instants and live videos." icon:@"circle.dashed" sections:@[
+            Section(@"Seen Receipts", @"With Story Ghost on, watching a story doesn't tell the account you saw it. Tap the eye button on a story to mark it seen.",
+                    @[THStoryGhost, THStoryGhostUsers, THStorySkipOnSeen, THStorySeenLocalOnly, THStorySeenOnReply]),
+            Section(@"Viewing", nil, @[THStoryDisableAutoAdvance, THStoryMentionsButton]),
+            Section(@"Instants", nil, @[THInstantsGhost]),
+            Section(@"Live Videos", nil, @[THLiveNoViewerPolling, THLiveCommentsToggle]),
+        ]];
+        THSettingsPage *reels = [self pageWithTitle:@"Reels" detail:@"Tap action, progress bar and scrolling." icon:@"play.rectangle" sections:@[
+            Section(nil, nil, @[THReelsTapAction, THReelsAlwaysShowScrubber, THReelsDisableScrolling, THReelsBypassPassword]),
+        ]];
+        THSettingsPage *messages = [self pageWithTitle:@"Messages" detail:@"Read receipts, unsent messages and chat tools." icon:@"message" sections:@[
+            Section(@"Read Receipts", @"If any option here is on, opening a chat no longer marks it as seen. Chats with people on your Always Mark Seen list work as usual.",
+                    @[THDMSeenButton, THDMSeenOnTyping, THDMSeenOnReact, THDMSeenOnSend, THDMAutoSeenUsers]),
+            Section(@"Privacy", nil, @[THDMHideTypingIndicator, THDMPrivateMediaGhost]),
+            Section(@"Unsent Messages", nil, @[THDMKeepDeleted, THDMDeletedColor]),
+            Section(@"Chat Screen", nil, @[THDMFullLastActive, THDMHideCallButtons, THDMHideBlendButton]),
+            Section(@"Sending", nil, @[THDMSendFiles, THDMUploadAudioMessages, THDMBypassCharLimit]),
+            Section(@"Shared Posts and Reels", nil, @[THDMHideSharedReelThumbnails, THDMHideSharedPostThumbnails,
+                                                       THDMMuteSharedReelNotifications, THDMHideCreateGroupButton]),
+        ]];
+        THSettingsPage *profiles = [self pageWithTitle:@"Profiles" detail:@"Profile Analyzer and follow status." icon:@"person.crop.circle" sections:@[
+            Section(nil, @"Compares your followers and following with your last scan: new followers, unfollowers, mutuals, and who doesn't follow you back. Scans are stored on this device. Instagram may limit scans of very large lists (over 13,000 accounts).",
+                    @[THProfileAnalyzerPage]),
+            Section(nil, nil, @[THProfileFollowStatusIndicator]),
+        ]];
+        THSettingsPage *downloads = [self pageWithTitle:@"Downloads" detail:@"Save posts, stories, reels and audio." icon:@"arrow.down.circle" sections:@[
+            Section(nil, @"Saved Media is Theta's own folder. Open it with the folder button at the top of Theta settings.", @[THSaveMethod]),
+            Section(@"Posts, Reels and Stories", @"Download and Fullscreen share one button next to Share on posts.",
+                    @[THSaveMediaButton, THMediaFullscreenPosts, THInstantsSaveButton]),
+            Section(@"Profiles", nil, @[THSaveProfilePictures, THMediaFullscreenProfilePictures, THSaveProfilePosts]),
+            Section(@"Audio", nil, @[THDMSaveAudioMessages, THSaveAudioNotes]),
+        ]];
+        THSettingsPage *privacy = [self pageWithTitle:@"Privacy" detail:@"App lock, screenshots and links." icon:@"hand.raised" sections:@[
+            Section(nil, nil, @[THAppLock]),
+            Section(@"Screenshots", nil, @[THPrivacySuppressScreenshotAlerts, THPrivacyHideThetaInScreenshots]),
+            Section(@"Links", nil, @[THLinksOpenExternally, THLinksStripTracking]),
+        ]];
+        THSettingsPage *confirmations = [self pageWithTitle:@"Confirmations" detail:@"Ask before liking, following, calling and more." icon:@"questionmark.circle" sections:@[
+            Section(@"Ask Before", nil, @[THConfirmLike, THConfirmFollow, THConfirmCall, THConfirmCreateGroup, THConfirmVanishMode, THConfirmExploreRefresh]),
+        ]];
+        THSettingsPage *navigation = [self pageWithTitle:@"Navigation" detail:@"Tabs, launch tab and Messenger Mode." icon:@"dock.rectangle" sections:@[
+            Section(@"Tab Bar", nil, @[THNavTabOrder, THNavSwipeBetweenTabs, THNavLaunchTab]),
+            Section(@"Hide Tabs", @"Restart Instagram after changing these.",
+                    @[THNavHideFeedTab, THNavHideExploreTab, THNavHideReelsTab, THNavHideMessagesTab, THNavHideCreateTab]),
+            Section(@"Messenger Mode", @"In Messenger Mode, long-press the Messages tab to open Theta. Long-pressing Home works as it does in Instagram.",
+                    @[THNavMessengerMode]),
+        ]];
+        THSettingsPage *appearance = [self pageWithTitle:@"Appearance" detail:@"Date format, Liquid Glass and button colors." icon:@"paintbrush" sections:@[
+            Section(nil, nil, @[THUIDateFormat]),
+            Section(@"Liquid Glass", @"Needs iOS 26 and a restart. These turn on Instagram experiments that may not work on every account or version.",
+                    @[THUILiquidGlassButtons, THUILiquidGlassSurfaces]),
+            Section(@"Button Colors", nil, @[THUISaveButtonColor, THUISeenButtonColor, THUIMentionsButtonColor, THUIResetColors]),
+        ]];
+        THSettingsPage *theta = [self pageWithTitle:@"Theta" detail:@"Banners, shake to open and cache." icon:@"gearshape" sections:@[
+            Section(@"Opening Theta", @"You can always open Theta by long-pressing the Home tab.", @[THAppShakeToOpen]),
+            Section(@"Banners", nil, @[THAppShowBanners, THAppHaptics, THAppLoadBanner]),
+            Section(@"Storage", nil, @[THAppClearCache]),
+        ]];
+        groups = @[
+            @[feed, stories, reels, messages, profiles],
+            @[downloads, privacy, confirmations, navigation, appearance],
+            @[theta],
         ];
+
+#if DEBUG || THETA_DEBUG
+        // Every setting appears exactly once.
+        NSCountedSet *placed = [NSCountedSet set];
+        for (NSArray *group in groups) for (THSettingsPage *page in group) [placed addObjectsFromArray:[page.settings valueForKey:@"key"]];
+        for (THSettingDefinition *def in [THSettingDefinition allDefinitions]) {
+            NSAssert([placed countForObject:def.key] == 1, @"Setting %@ is placed %lu times", def.key, (unsigned long)[placed countForObject:def.key]);
+        }
+#endif
     });
-    return pages;
+    return groups;
+}
+
++ (NSArray<THSettingsPage *> *)allPages {
+    return [[self pageGroups] valueForKeyPath:@"@unionOfArrays.self"];
 }
 
 @end

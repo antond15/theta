@@ -39,6 +39,8 @@ typedef NS_ENUM(NSInteger, THSettingType) {
 @property (nonatomic, copy, readonly, nullable) NSString *minimumInstagramVersion;
 /** THSettingTypePage: view controller class to push. */
 @property (nonatomic, copy, readonly, nullable) NSString *viewControllerClassName;
+/** Key of the setting this one is a sub-option of. Only affects layout: it is shown indented. */
+@property (nonatomic, copy, readonly, nullable) NSString *parentKey;
 
 @property (nonatomic, readonly) BOOL storesValue;
 @property (nonatomic, copy, readonly) NSArray<NSString *> *optionTitles;
@@ -50,11 +52,24 @@ typedef NS_ENUM(NSInteger, THSettingType) {
 + (NSArray<THSettingDefinition *> *)allDefinitions;
 @end
 
+@interface THSettingsSection : NSObject
+@property (nonatomic, copy, readonly, nullable) NSString *header;
+@property (nonatomic, copy, readonly, nullable) NSString *footer;
+@property (nonatomic, copy, readonly) NSArray<THSettingDefinition *> *settings;
+@end
+
 @interface THSettingsPage : NSObject
 @property (nonatomic, copy, readonly) NSString *title;
 @property (nonatomic, copy, readonly) NSString *detail;
 @property (nonatomic, copy, readonly) NSString *iconName;
+@property (nonatomic, copy, readonly) NSArray<THSettingsSection *> *sections;
+/** Every setting on the page, in order. */
 @property (nonatomic, copy, readonly) NSArray<THSettingDefinition *> *settings;
+/** The section a setting on this page belongs to. */
+- (nullable THSettingsSection *)sectionForSetting:(THSettingDefinition *)setting;
+/** Pages as grouped on the main settings screen. */
++ (NSArray<NSArray<THSettingsPage *> *> *)pageGroups;
+/** pageGroups, flattened. */
 + (NSArray<THSettingsPage *> *)allPages;
 @end
 
