@@ -23,8 +23,10 @@ static void hook_videoCallConfirmation2(id self, SEL _cmd) {
 
 void THRegisterCallConfirmationHooks(void) {
     Class klass = objc_getClass("IGDirectThreadCallButtonsCoordinator");
-    if ([klass respondsToSelector:@selector(_didTapAudioButton)] && [klass respondsToSelector:@selector(_didTapVideoButton)]) {
+    if ([klass instancesRespondToSelector:@selector(_didTapAudioButton)]) {
         NullHookMessageEx(klass, @selector(_didTapAudioButton), (void *)hook_audioCallConfirmation2, &orig_audioCallConfirmation2);
+    }
+    if ([klass instancesRespondToSelector:@selector(_didTapVideoButton)]) {
         NullHookMessageEx(klass, @selector(_didTapVideoButton), (void *)hook_videoCallConfirmation2, &orig_videoCallConfirmation2);
     }
 }
