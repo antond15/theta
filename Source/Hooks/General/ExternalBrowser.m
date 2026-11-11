@@ -51,13 +51,17 @@ static NSURL *THCleanBrowserURL(NSURL *url) {
     }
 
     NSURLComponents *comps = [NSURLComponents componentsWithString:urlStr];
-    if (comps.queryItems.count) {
+    // Work on the encoded items and rebuild only when a parameter was dropped: decoding and re-encoding
+    // the query turns %2B into + and rewrites characters such as ; in values Theta doesn't touch.
+    NSArray<NSURLQueryItem *> *items = comps.percentEncodedQueryItems;
+    if (items.count) {
         NSSet *tracking = THTrackingParamSet();
         NSMutableArray *clean = [NSMutableArray array];
-        for (NSURLQueryItem *q in comps.queryItems) {
-            if (![tracking containsObject:q.name]) [clean addObject:q];
+        for (NSURLQueryItem *q in items) {
+            if (![tracking containsObject:q.name.stringByRemovingPercentEncoding ?: q.name]) [clean addObject:q];
         }
-        comps.queryItems = clean.count ? clean : nil;
+        if (clean.count != items.count)
+            comps.percentEncodedQueryItems = clean.count ? clean : nil;
     }
 
     NSURL *result = comps.URL;
