@@ -272,6 +272,10 @@ static NSURL *ThetaHPKESharedDirectory(void) {
    for THETA_HPKE_SERVICE. Up to 2026-11 every key had a hash-named file plus a service-named
    alias; ThetaHPKEMigrateLegacyFiles folds those in once. */
 static NSString *const kThetaHPKEStoreFile = @"keys.plist";
+/* settings.plist, next to keys.plist: the Theta settings the NSE needs, written by the app. On 451
+   the NSE always read the shared NSUserDefaults suite as off although the app mirrored the toggle
+   there; this directory already carries the HPKE keys from the app to the NSE. */
+static NSString *const kThetaSharedSettingsFile = @"settings.plist";
 
 static NSObject *ThetaHPKELock(void) {
     static NSObject *lock;
@@ -358,7 +362,8 @@ static void ThetaHPKEMigrateLegacyFiles(NSURL *dir) {
     NSMutableDictionary *found = [NSMutableDictionary dictionary];
     for (NSURL *file in files) {
         if (![file.pathExtension isEqualToString:@"plist"] ||
-            [file.lastPathComponent isEqualToString:kThetaHPKEStoreFile]) continue;
+            [file.lastPathComponent isEqualToString:kThetaHPKEStoreFile] ||
+            [file.lastPathComponent isEqualToString:kThetaSharedSettingsFile]) continue;
         NSData *raw = [NSData dataWithContentsOfURL:file options:0 error:NULL];
         if (!raw) return; // locked: try again on the next store access
         [legacy addObject:file];
@@ -399,10 +404,6 @@ static void ThetaHPKEChangeItems(void (^change)(NSMutableDictionary *items)) {
     }
 }
 
-/* settings.plist, next to keys.plist: the Theta settings the NSE needs, written by the app. On 451
-   the NSE read the shared NSUserDefaults suite as off although the app mirrored the toggle there
-   (cause not found); this directory already carries the HPKE keys from the app to the NSE. */
-static NSString *const kThetaSharedSettingsFile = @"settings.plist";
 
 /* The stored settings, empty if there is no file, or nil if it exists but can't be read. */
 static NSDictionary *ThetaSharedSettingsLoad(NSURL *dir) {
