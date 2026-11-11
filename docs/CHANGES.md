@@ -39,7 +39,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - **Media preview downloads** (Save Profile Posts, bulk save) no longer pretend to be Safari.
 - **Open Links in External Browser** only opens http/https links. Other schemes inside an `l.instagram.com` redirect are left to Instagram. Redirect targets are no longer percent-decoded twice, which used to break links with encoded characters.
 - **Strip Tracking from Links** also removes `gclid`, `ttclid` and `mc_eid`, and unwraps `lm.instagram.com` and `l.facebook.com` redirects. A link is rebuilt only when a parameter was removed, and the rest of its query stays encoded as it was, so a signature like `%2B` no longer turns into `+`.
-- **Clear App Cache** clears `Library/Caches` and Theta's own temp files only. It used to delete almost all of `Documents/`, including media saved with Save Method = Folder and, on sideload, Instagram's app-group data.
+- **Clear App Cache** clears `Library/Caches` and Theta's own temp files only. It used to delete almost all of `Documents/`, including media saved with Save Method = Folder and, on sideload, Instagram's app-group data. It refuses with the usual "Download in progress" toast while a save is running, so it can't delete a save's files under it.
 - **Launch cleanup** deletes only Theta's own leftover temp files. It used to delete every audio and video file in `Documents/`.
 - Bulk-save and thumbnail temp files have unique names, so overlapping saves can't overwrite each other.
 

@@ -3,8 +3,11 @@
 #import "Include/InstagramHeaders.h"
 #import "Include/CustomToastView.h"
 #import <AudioToolbox/AudioToolbox.h>
+#import <Photos/Photos.h>
 
 #import "Include/ThetaSettings.h"
+
+NSString *const ThetaSaveErrorDomain = @"ThetaSave";
 
 @implementation ThetaHelper
 
@@ -225,6 +228,8 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
 }
 
 + (void)clearAppCache {
+    // A running save owns files in Documents, Caches and tmp: refuse (the usual "Download in progress" toast).
+    if (![self tryBeginGlobalDownloadOrNotify]) return;
     NSFileManager *fm = [NSFileManager defaultManager];
     unsigned long long bytes = 0;
     NSUInteger removed = 0;
@@ -239,6 +244,7 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
         }
     }
     removed += ThetaRemoveTemporaryItems(&bytes);
+    [self endGlobalDownload];
 
     if (!ENABLED(THAppShowBanners)) return;
     NSString *subtitle = @"There was nothing to clear.";
@@ -278,6 +284,95 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
 + (BOOL)isGlobalDownloadInProgress {
     @synchronized(self) {
         return sGlobalDownloadInProgress;
+    }
+}
+
+#pragma mark - Save Helpers
+
+static BOOL ThetaPhotosStatusAllowsWrite(PHAuthorizationStatus status) {
+    return status == PHAuthorizationStatusAuthorized || status == PHAuthorizationStatusLimited;
+}
+
++ (void)ensurePhotosAccess:(void (^)(BOOL granted))completion {
+    void (^finish)(BOOL) = ^(BOOL granted) {
+        if (!completion) return;
+        if ([NSThread isMainThread]) completion(granted);
+        else dispatch_async(dispatch_get_main_queue(), ^{ completion(granted); });
+    };
+    PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
+    if (status == PHAuthorizationStatusNotDetermined) {
+        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus newStatus) {
+            finish(ThetaPhotosStatusAllowsWrite(newStatus));
+        }];
+    } else {
+        finish(ThetaPhotosStatusAllowsWrite(status));
+    }
+}
+
++ (NSError *)saveErrorWithCode:(ThetaSaveErrorCode)code message:(NSString *)message underlying:(NSError *)underlying {
+    NSMutableDictionary *info = [NSMutableDictionary dictionaryWithObject:message ?: @"Save failed" forKey:NSLocalizedDescriptionKey];
+    if (underlying) info[NSUnderlyingErrorKey] = underlying;
+    return [NSError errorWithDomain:ThetaSaveErrorDomain code:code userInfo:info];
+}
+
++ (NSError *)downloadFailureForResponse:(NSURLResponse *)response error:(NSError *)error {
+    if (error) return [self saveErrorWithCode:ThetaSaveErrorDownload message:@"Download failed" underlying:error];
+    if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+        NSInteger status = ((NSHTTPURLResponse *)response).statusCode;
+        if (status < 200 || status > 299) {
+            return [self saveErrorWithCode:ThetaSaveErrorHTTP message:[NSString stringWithFormat:@"Download failed (HTTP %ld)", (long)status] underlying:nil];
+        }
+    }
+    return nil;
+}
+
++ (NSString *)savedMediaDirectory {
+    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *dir = [documents stringByAppendingPathComponent:@"AudioNotes"];
+    BOOL isDir = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:dir isDirectory:&isDir] || !isDir) {
+        [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    return dir;
+}
+
++ (BOOL)isSavedMediaPath:(NSString *)path {
+    return path.length && [path hasPrefix:[self savedMediaDirectory]];
+}
+
++ (NSString *)moveIntoSavedMedia:(NSString *)path name:(NSString *)name error:(NSError **)error {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *dir = [self savedMediaDirectory];
+    NSString *base = [name stringByDeletingPathExtension];
+    NSString *ext = [name pathExtension];
+    NSString *dest = [dir stringByAppendingPathComponent:name];
+    for (NSInteger n = 2; [fm fileExistsAtPath:dest] && n < 1000; n++) {
+        NSString *unique = ext.length ? [NSString stringWithFormat:@"%@-%ld.%@", base, (long)n, ext] : [NSString stringWithFormat:@"%@-%ld", base, (long)n];
+        dest = [dir stringByAppendingPathComponent:unique];
+    }
+    return [fm moveItemAtPath:path toPath:dest error:error] ? dest : nil;
+}
+
++ (void)showSaveFailure:(NSError *)error {
+    BOOL access = [error.domain isEqualToString:ThetaSaveErrorDomain] && error.code == ThetaSaveErrorPhotosAccess;
+    UIImage *icon = [UIImage systemImageNamed:@"exclamationmark.triangle"];
+    if (access) {
+        [self showToastWithTitle:@"Photos access is off" subtitle:@"Tap here to open Settings." icon:icon autoHide:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
+    } else {
+        [self showToastWithTitle:@"Save failed" subtitle:error.localizedDescription ?: @"Couldn't save the media." icon:icon autoHide:4 openURL:nil];
+    }
+}
+
++ (void)showSaveResultForPath:(NSString *)path error:(NSError *)error {
+    if (error || !path.length) {
+        [self showSaveFailure:error];
+        return;
+    }
+    UIImage *icon = [UIImage systemImageNamed:@"checkmark.circle.fill"];
+    if ([self isSavedMediaPath:path]) {
+        [self showToastWithTitle:@"Saved!" subtitle:@"Saved to Saved Media." icon:icon autoHide:4 openURL:nil];
+    } else {
+        [self showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:icon autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
     }
 }
 
