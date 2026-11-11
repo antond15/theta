@@ -41,7 +41,8 @@ typedef NS_ENUM(NSInteger, ThetaSaveErrorCode) {
 + (BOOL)isGlobalDownloadInProgress;
 
 #pragma mark - Save Helpers
-/** Authorized or Limited -> YES; asks once when undetermined; otherwise NO. Completion runs on the main queue. */
+/** Add access (add-only, limited or full) -> YES; asks for add-only once when undetermined; otherwise NO.
+    Completion runs on the main queue. */
 + (void)ensurePhotosAccess:(void (^)(BOOL granted))completion;
 /** Error in `ThetaSaveErrorDomain`; `underlying` may be nil. */
 + (NSError *)saveErrorWithCode:(ThetaSaveErrorCode)code message:(NSString *)message underlying:(NSError *)underlying;

@@ -624,6 +624,8 @@ static void saveMedia(id hostView) {
                         }];
                     } @catch (NSException *exception) {
                         THDebugLog(@"[Theta] Save Profile Posts single: %@", exception);
+                        [ThetaHelper endGlobalDownload];
+                        [ThetaHelper showSaveFailure:nil];
                     }
                     return;
                 }

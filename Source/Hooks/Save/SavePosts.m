@@ -6,7 +6,6 @@
 #import "Include/AV1Transcoder.h"
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
-#import <AssetsLibrary/AssetsLibrary.h>
 #import "Include/ThetaDashManifest.h"
 
 // Helper functions for cleaner code
@@ -155,7 +154,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
     CustomToastView *progressToast = [CustomToastView showProgressToastWithTitle:@"Saving video" subtitle:@"Preparing..."];
     
     // Run everything on a background queue to avoid blocking UI
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+    void (^run)(void) = ^{ dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
       /* Nothing below may let an exception escape: this is a bare dispatch block, so an
          AVFoundation raise here terminates Instagram instead of failing the save. */
       __block void (^finishJob)(void) = nil;
@@ -510,7 +509,20 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         // Raised before finishJob was set up: only the global download lock is held.
         if (finishJob) finishJob(); else [ThetaHelper endGlobalDownload];
       }
-    });
+    }); };
+    if (!toPhotos) {
+        run();
+        return;
+    }
+    // Photos access before the download, not after the transcode (delivery asks again; it is decided by then).
+    [ThetaHelper ensurePhotosAccess:^(BOOL granted) {
+        if (granted) {
+            run();
+            return;
+        }
+        showCompletionToast(progressToast, NO, @"Photos access is off", @"Tap here to open Settings.", [UIImage systemImageNamed:@"exclamationmark.triangle"], [NSURL URLWithString:UIApplicationOpenSettingsURLString]);
+        [ThetaHelper endGlobalDownload];
+    }];
 }
 
 /// Single photo save (feed and reels): takes the download lock, shows the real result, releases the lock.

@@ -144,9 +144,12 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
                 id initialVisualMessage = [strongSelf valueForKey:@"_initialVisualMessage"];
                 id visualMediaInfo = [initialVisualMessage valueForKey:@"_visualMediaInfo"];
                 id media = [visualMediaInfo valueForKey:@"media"];
-                if ([media valueForKey:@"_video_video"]) {
-                    IGVideo *video = [media valueForKey:@"_video_video"];
+                // A video also carries its cover photo: save the video only (it holds the download lock).
+                IGVideo *video = [media valueForKey:@"_video_video"];
+                NSData *videoManifest = video ? ThetaValueForKey(video, @"dashManifestData") : nil;
+                if ([videoManifest isKindOfClass:[NSData class]] && videoManifest.length > 0) {
                     downloadHDVideo(video);
+                    return;
                 }
 
                 if ([media valueForKey:@"_photo_photo"]) {

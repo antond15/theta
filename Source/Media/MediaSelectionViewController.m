@@ -1,7 +1,6 @@
 #import <UIKit/UIKit.h>
 #import "Include/ThetaDebug.h"
 #import <Photos/Photos.h>
-#import <AssetsLibrary/AssetsLibrary.h>
 #import "Include/MediaSelectionViewController.h"
 #import "Include/CustomToastView.h"
 #import <objc/runtime.h>
@@ -1046,16 +1045,53 @@ static NSString *ThetaDownloadExtension(NSURL *url, NSURLResponse *response) {
     return @"mp4";
 }
 
-/** Photos from the downloaded file: original bytes and metadata are kept. */
-static void ThetaImportPhotoFile(NSString *path, void (^completion)(NSError *error)) {
+/** Image type from the file's first bytes (a CDN path or MIME type can disagree with them); nil when not an image. */
+static NSString *ThetaSniffImageUTI(NSString *path) {
+    NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+    NSData *head = [handle readDataOfLength:16];
+    [handle closeFile];
+    if (head.length < 12) return nil;
+    const unsigned char *b = head.bytes;
+    if (b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return @"public.jpeg";
+    if (b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') return @"public.png";
+    if (!memcmp(b, "GIF8", 4)) return @"com.compuserve.gif";
+    if (!memcmp(b, "RIFF", 4) && !memcmp(b + 8, "WEBP", 4)) return @"org.webmproject.webp";
+    if (!memcmp(b + 4, "ftyp", 4)) {
+        if (!memcmp(b + 8, "heic", 4) || !memcmp(b + 8, "heix", 4) || !memcmp(b + 8, "mif1", 4)) return @"public.heic";
+        if (!memcmp(b + 8, "avif", 4)) return @"public.avif";
+    }
+    return nil;
+}
+
+/** Photos from the downloaded file: original bytes and metadata are kept, typed by `uti` when known. If Photos
+    rejects the file, it is decoded and saved as an image once more before the save fails. */
+static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completion)(NSError *error)) {
     NSURL *fileURL = [NSURL fileURLWithPath:path];
+    void (^fail)(NSError *) = ^(NSError *error) {
+        completion([ThetaHelper saveErrorWithCode:ThetaSaveErrorPhotosWrite message:error.localizedDescription ?: @"Photos couldn't save this photo" underlying:error]);
+    };
     [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
         PHAssetCreationRequest *request = [PHAssetCreationRequest creationRequestForAsset];
         PHAssetResourceCreationOptions *options = [PHAssetResourceCreationOptions new];
         options.shouldMoveFile = NO;
+        if (uti.length) options.uniformTypeIdentifier = uti;
         [request addResourceWithType:PHAssetResourceTypePhoto fileURL:fileURL options:options];
     } completionHandler:^(BOOL success, NSError *error) {
-        completion(success ? nil : [ThetaHelper saveErrorWithCode:ThetaSaveErrorPhotosWrite message:error.localizedDescription ?: @"Photos couldn't save this photo" underlying:error]);
+        if (success) {
+            completion(nil);
+            return;
+        }
+        UIImage *image = [UIImage imageWithContentsOfFile:path];
+        if (!image) {
+            fail(error);
+            return;
+        }
+        [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+            [PHAssetChangeRequest creationRequestForAssetFromImage:image];
+        } completionHandler:^(BOOL retryOK, NSError *retryError) {
+            if (retryOK) completion(nil);
+            else fail(retryError ?: error);
+        }];
     }];
 }
 
@@ -1092,12 +1128,15 @@ static void ThetaImportPhotoFile(NSString *path, void (^completion)(NSError *err
                     if (saveError) fail(saveError);
                     else if (completion) completion(stagedPath, fileExtension, nil);
                 };
-                if ([fileExtension isEqualToString:@"mp4"] || [fileExtension isEqualToString:@"mov"] || [fileExtension isEqualToString:@"m4v"]) {
+                // The bytes decide photo or video; the extension only when they aren't a known image.
+                NSString *imageUTI = ThetaSniffImageUTI(stagedPath);
+                BOOL videoExtension = [fileExtension isEqualToString:@"mp4"] || [fileExtension isEqualToString:@"mov"] || [fileExtension isEqualToString:@"m4v"];
+                if (!imageUTI && videoExtension) {
                     ThetaPhotoLibraryImportVideoFromURL([NSURL fileURLWithPath:stagedPath], ^(BOOL ok, NSError *importError) {
                         finish(ok ? nil : [ThetaHelper saveErrorWithCode:ThetaSaveErrorPhotosWrite message:importError.localizedDescription ?: @"Photos couldn't import this video" underlying:importError]);
                     });
                 } else {
-                    ThetaImportPhotoFile(stagedPath, finish);
+                    ThetaImportPhotoFile(stagedPath, imageUTI, finish);
                 }
             } else {
                 // Saved Media: one move, under the download's own unique name
@@ -1129,19 +1168,11 @@ static void ThetaImportPhotoFile(NSString *path, void (^completion)(NSError *err
                 return;
             }
 
-            NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+            // Straight into Saved Media: no staged copy in Documents for Clear Cache to find.
             NSString *fileExtension = ThetaDownloadExtension(url, response);
-            NSString *stagedPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"media-%@.%@", [[NSUUID UUID] UUIDString], fileExtension]];
-
             NSError *moveError = nil;
-            if (![[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:stagedPath] error:&moveError]) {
-                THDebugLog(@"audio move failed: %@", moveError);
-                if (completion) completion(nil, nil);
-                return;
-            }
-
-            NSString *destPath = [ThetaHelper moveIntoSavedMedia:stagedPath name:[stagedPath lastPathComponent] error:nil];
-            if (!destPath) [[NSFileManager defaultManager] removeItemAtPath:stagedPath error:nil];
+            NSString *destPath = [ThetaHelper moveIntoSavedMedia:location.path name:[NSString stringWithFormat:@"media-%@.%@", [[NSUUID UUID] UUIDString], fileExtension] error:&moveError];
+            if (!destPath) THDebugLog(@"audio move failed: %@", moveError);
 
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (completion) completion(destPath, destPath ? fileExtension : nil);
@@ -1582,40 +1613,14 @@ static void ThetaImportPhotoFile(NSString *path, void (^completion)(NSError *err
                 
                 // Save to Photos or Saved Media, as read once when the picker started
                 if (toPhotos) {
-                    // For sideload builds, copy to Caches and use ALAssetsLibrary
-                    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
-                    NSString *cachesDir = [paths firstObject];
-                    NSString *cacheVideoPath = [cachesDir stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_%ld_%@.mp4", (long)videoIndex, [[NSUUID UUID] UUIDString]]];
-                    
-                    NSError *copyError = nil;
-                    if ([fm copyItemAtPath:outputPath toPath:cacheVideoPath error:&copyError]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                        ALAssetsLibrary *library = [[ALAssetsLibrary alloc] init];
-                        [library writeVideoAtPathToSavedPhotosAlbum:[NSURL fileURLWithPath:cacheVideoPath] completionBlock:^(NSURL *assetURL, NSError *error) {
-                            // Cleanup
-                            [fm removeItemAtPath:videoPath error:nil];
-                            if (audioPath) [fm removeItemAtPath:audioPath error:nil];
-                            [fm removeItemAtPath:outputPath error:nil];
-                            [fm removeItemAtPath:cacheVideoPath error:nil];
-                            
-                            BOOL savedOK = (!error && assetURL);
-                            if (!savedOK) {
-                                NSLog(@"Failed to save video %ld: %@", (long)videoIndex, error);
-                            }
-                            finishItem(!savedOK, videoIndex, nil);
-                        }];
-#pragma clang diagnostic pop
-                    } else {
-                        NSLog(@"Failed to copy video %ld to Caches: %@", (long)videoIndex, copyError);
-                        
-                        // Cleanup
+                    // The same Photos import as a single save, straight from the merged file
+                    ThetaPhotoLibraryImportVideoFromURL([NSURL fileURLWithPath:outputPath], ^(BOOL savedOK, NSError *error) {
                         [fm removeItemAtPath:videoPath error:nil];
                         if (audioPath) [fm removeItemAtPath:audioPath error:nil];
                         [fm removeItemAtPath:outputPath error:nil];
-                        
-                        finishItem(YES, videoIndex, nil);
-                    }
+                        if (!savedOK) THDebugLog(@"Failed to save video %ld: %@", (long)videoIndex, error);
+                        finishItem(!savedOK, videoIndex, nil);
+                    });
                 } else {
                     // Save to Saved Media
                     NSDateFormatter *formatter = [NSDateFormatter new];
@@ -1629,7 +1634,7 @@ static void ThetaImportPhotoFile(NSString *path, void (^completion)(NSError *err
                     [fm removeItemAtPath:videoPath error:nil];
                     if (audioPath) [fm removeItemAtPath:audioPath error:nil];
                     if (!destPath) {
-                        NSLog(@"Failed to move video %ld to Saved Media: %@", (long)videoIndex, moveError);
+                        THDebugLog(@"Failed to move video %ld to Saved Media: %@", (long)videoIndex, moveError);
                         [fm removeItemAtPath:outputPath error:nil];
                     }
                     finishItem(destPath == nil, videoIndex, nil);

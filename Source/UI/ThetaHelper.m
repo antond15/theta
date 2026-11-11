@@ -299,9 +299,14 @@ static BOOL ThetaPhotosStatusAllowsWrite(PHAuthorizationStatus status) {
         if ([NSThread isMainThread]) completion(granted);
         else dispatch_async(dispatch_get_main_queue(), ^{ completion(granted); });
     };
-    PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
+    // Saves only add to Photos: add-only access is enough, and full (or limited) access covers it too.
+    if (ThetaPhotosStatusAllowsWrite([PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelReadWrite])) {
+        finish(YES);
+        return;
+    }
+    PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelAddOnly];
     if (status == PHAuthorizationStatusNotDetermined) {
-        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus newStatus) {
+        [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus newStatus) {
             finish(ThetaPhotosStatusAllowsWrite(newStatus));
         }];
     } else {
@@ -337,7 +342,9 @@ static BOOL ThetaPhotosStatusAllowsWrite(PHAuthorizationStatus status) {
 }
 
 + (BOOL)isSavedMediaPath:(NSString *)path {
-    return path.length && [path hasPrefix:[self savedMediaDirectory]];
+    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *dir = [[documents stringByAppendingPathComponent:@"AudioNotes"] stringByAppendingString:@"/"];
+    return path.length && [path hasPrefix:dir];
 }
 
 + (NSString *)moveIntoSavedMedia:(NSString *)path name:(NSString *)name error:(NSError **)error {
