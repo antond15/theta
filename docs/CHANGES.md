@@ -73,7 +73,8 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - The "Easter Eggs" setting (random creepy usernames in the feed).
 - The unused GIF name overlay. "Copy GIF Name" on a comment GIF still works.
 - Suggested-posts hooks that had no setting and could never run.
-- Unused hook helpers.
+- The hidden long-press sort on profile grids (it had no setting and hooked every collection view's layout).
+- Unused hook helpers, the unused native toast helpers and the never-registered first-launch welcome alert.
 
 ## Tooling
 
