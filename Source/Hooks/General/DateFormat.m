@@ -15,10 +15,14 @@ static NSString *THDateFormatPattern(NSString *format, BOOL withTime) {
 static NSString *THFormattedDate(NSDate *date) {
     NSString *pattern = THDateFormatPattern(ThetaSettingChoice(THUIDateFormat), YES);
     if (!pattern) return nil;
-    static NSDateFormatter *df = nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ df = [NSDateFormatter new]; });
-    df.dateFormat = pattern;
+    NSMutableDictionary *threadDict = NSThread.currentThread.threadDictionary;
+    NSString *key = [@"ThetaDateFormatter." stringByAppendingString:pattern];
+    NSDateFormatter *df = threadDict[key];
+    if (!df) {
+        df = [NSDateFormatter new];
+        df.dateFormat = pattern;
+        threadDict[key] = df;
+    }
     return [df stringFromDate:date];
 }
 

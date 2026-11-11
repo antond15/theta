@@ -1,4 +1,5 @@
 #import "Include/ThetaHelper.h"
+#import "Include/ThetaDebug.h"
 #import "Include/InstagramHeaders.h"
 #import "Include/CustomToastView.h"
 #import <AudioToolbox/AudioToolbox.h>
@@ -100,7 +101,7 @@ static volatile BOOL sGlobalDownloadInProgress = NO;
                 }
             }
         } @catch (NSException *exception) {
-            NSLog(@"Error showing custom alert: %@", exception);
+            THDebugLog(@"Error showing custom alert: %@", exception);
         }
     });
 }
@@ -283,6 +284,7 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
 #pragma mark - Utility Functions
 
 + (UIViewController *)nearestViewController:(UIView *)view {
+    if (!view) return nil;
     UIResponder *nextResponder = [view nextResponder];
     
     if ([nextResponder isKindOfClass:[UIViewController class]]) {

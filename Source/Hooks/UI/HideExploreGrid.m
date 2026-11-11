@@ -1,4 +1,10 @@
 static void (*orig_hideExploreGrid)(id self, SEL _cmd);
+static Class THExploreGridViewControllerClass(void) {
+    static Class cls;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cls = NSClassFromString(@"IGExploreGridViewController"); });
+    return cls;
+}
 static void hook_hideExploreGrid(id self, SEL _cmd) {
     if (ENABLED(THExploreHideGrid)) {
         UIResponder *responder = self;
@@ -7,7 +13,7 @@ static void hook_hideExploreGrid(id self, SEL _cmd) {
                 break;
             }
         }
-        if ([responder isKindOfClass:NSClassFromString(@"IGExploreGridViewController")]) {
+        if ([responder isKindOfClass:THExploreGridViewControllerClass()]) {
             [self removeFromSuperview];
             return;
         }

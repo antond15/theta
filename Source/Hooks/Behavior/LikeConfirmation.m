@@ -37,14 +37,19 @@ static void hook_likeConfirmation4(id self, SEL _cmd, id arg1) {
     theta_runLikeConfirmation(@"post", ^{ orig_likeConfirmation4(self, _cmd, arg1); });
 }
 
+static void (*orig_likeConfirmation6a)(id self, SEL _cmd);
+static void hook_likeConfirmation6a(id self, SEL _cmd) {
+    theta_runLikeConfirmation(@"post", ^{ orig_likeConfirmation6a(self, _cmd); });
+}
+
+static void (*orig_likeConfirmation6b)(id self, SEL _cmd);
+static void hook_likeConfirmation6b(id self, SEL _cmd) {
+    theta_runLikeConfirmation(@"post", ^{ orig_likeConfirmation6b(self, _cmd); });
+}
+
 static void (*orig_likeConfirmation5)(id self, SEL _cmd, id arg1);
 static void hook_likeConfirmation5(id self, SEL _cmd, id arg1) {
     theta_runLikeConfirmation(@"post", ^{ orig_likeConfirmation5(self, _cmd, arg1); });
-}
-
-static void (*orig_likeConfirmation6)(id self, SEL _cmd);
-static void hook_likeConfirmation6(id self, SEL _cmd) {
-    theta_runLikeConfirmation(@"post", ^{ orig_likeConfirmation6(self, _cmd); });
 }
 
 void THRegisterLikeConfirmationHooks(void) {
@@ -71,8 +76,8 @@ void THRegisterLikeConfirmationHooks(void) {
         @"IGSundialViewerVerticalUFI"
     ]);
     if (ufi) {
-        NullHookMessageIfPresent(ufi, @selector(didTapLikeButton), (void *)hook_likeConfirmation6, &orig_likeConfirmation6);
-        NullHookMessageIfPresent(ufi, @selector(_didTapLikeButton), (void *)hook_likeConfirmation6, &orig_likeConfirmation6);
+        NullHookMessageIfPresent(ufi, @selector(didTapLikeButton), (void *)hook_likeConfirmation6a, &orig_likeConfirmation6a);
+        NullHookMessageIfPresent(ufi, @selector(_didTapLikeButton), (void *)hook_likeConfirmation6b, &orig_likeConfirmation6b);
         NullHookMessageIfPresent(ufi, @selector(_didTapLikeButton:), (void *)hook_likeConfirmation5, &orig_likeConfirmation5);
     }
 }
