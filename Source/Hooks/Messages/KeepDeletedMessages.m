@@ -1,142 +1,3 @@
-static void (*orig_messageCache)(id self, SEL _cmd, id update);
-static void hook_messageCache(id self, SEL _cmd, id update) {
-	if (!ENABLED(THDMKeepDeleted)) {
-		orig_messageCache(self, _cmd, update);
-		return;
-	}
-
-	if (update) {
-		id retained = update;
-		static char kThetaRetainedUpdateKey;
-		objc_setAssociatedObject(self, &kThetaRetainedUpdateKey, retained, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-		NSString *debugDescription = [retained respondsToSelector:@selector(debugDescription)] ? [retained debugDescription] : [retained description];
-
-		id cacheThreadUpdate = nil;
-		if ([retained isKindOfClass:[NSArray class]] && [(NSArray *)retained count] > 0) {
-			cacheThreadUpdate = [(NSArray *)retained firstObject];
-		} else {
-			cacheThreadUpdate = retained;
-		}
-
-		id threadUpdates = nil;
-		if (cacheThreadUpdate && [cacheThreadUpdate respondsToSelector:@selector(valueForKey:)]) {
-			threadUpdates = [cacheThreadUpdate valueForKey:@"threadUpdates"];
-		}
-
-		id threadUpdateObj = nil;
-		if ([threadUpdates isKindOfClass:[NSArray class]] && [(NSArray *)threadUpdates count] > 0) {
-			threadUpdateObj = [(NSArray *)threadUpdates firstObject];
-		}
-
-		if (threadUpdateObj) {
-			static char kThetaRetainedThreadUpdateKey;
-			objc_setAssociatedObject(self, &kThetaRetainedThreadUpdateKey, threadUpdateObj, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-			@try {
-				id messageUpdate = [threadUpdateObj valueForKey:@"_messageUpdate"];
-				if (messageUpdate) {
-					NSArray *removeKeys = [messageUpdate valueForKey:@"_removeMessages_messageKeys"];
-					if (removeKeys.count == 0) {
-						orig_messageCache(self, _cmd, retained);
-						return;
-					}
-
-					for (id messageKey in removeKeys) {
-						if (![messageKey isKindOfClass:NSClassFromString(@"IGDirectMessageUpdateMessageKey")]) {
-							orig_messageCache(self, _cmd, retained);
-							return;
-						}
-						IGDirectMessageUpdateMessageKey *updateKey = messageKey;
-
-						if (![updateKey valueForKey:@"_messageServerId"]) {
-							orig_messageCache(self, _cmd, retained);
-							return;
-						}
-
-						NSString *MsgKey = [updateKey valueForKey:@"_messageServerId"];
-						[[MessagesManager sharedManager] saveDeletedMessageWithID:MsgKey];
-						return;
-					}
-				}
-			} @catch (NSException *e) {
-				NSLog(@"Error accessing IGDirectThreadUpdate: %@", e);
-			}
-		}
-	}
-
-	orig_messageCache(self, _cmd, update);
-}
-
-/* static void (*orig_directMessageCell)(id self, SEL _cmd, id viewModel, id specFactory, id launcher);
- static void hook_directMessageCell(id self, SEL _cmd, id viewModel, id specFactory, id launcher) {
- 	orig_directMessageCell(self, _cmd, viewModel, specFactory, launcher);
-
- 	if (![viewModel conformsToProtocol:@protocol(IGDirectMessageViewModelProtocol)]) return;
- 	IGDirectUIMessageMetadata *metadata = [(id<IGDirectMessageViewModelProtocol>)viewModel messageMetadata];
- 	NSString *serverId = metadata.key.serverId;
-
- 	if (![[MessagesManager sharedManager] messageExistsWithID:serverId]) return;
-
- 	UIButton *deletedButton = [UIButton buttonWithType:UIButtonTypeSystem];
- 	[deletedButton setImage:[UIImage systemImageNamed:@"trash.circle"] forState:UIControlStateNormal];
- 	[deletedButton setTintColor:UIColor.systemRedColor];
-	deletedButton.translatesAutoresizingMaskIntoConstraints = NO;
-	static char kThetaDeletedServerIdKey;
-	objc_setAssociatedObject(deletedButton, &kThetaDeletedServerIdKey, serverId, OBJC_ASSOCIATION_COPY_NONATOMIC);
-
- 	UIView *container = nil;
- 	if ([self respondsToSelector:@selector(contentViewForVisualMessageViewerPresentation)]) {
- 		#pragma clang diagnostic push
- 		#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
- 		container = [self performSelector:@selector(contentViewForVisualMessageViewerPresentation)];
- 		#pragma clang diagnostic pop
- 	}
- 	if (!container && [self respondsToSelector:@selector(contentView)]) {
- 		container = [self valueForKey:@"contentView"];
- 	}
- 	if (!container && [self isKindOfClass:[UIView class]]) {
- 		container = (UIView *)self;
- 	}
- 	if (!container) return;
-
- 	for (UIView *sub in container.subviews) {
- 		if ([sub isKindOfClass:[UIButton class]] && sub.tag == 9911) { return; }
- 	}
- 	deletedButton.tag = 9911;
- 	ThetaSetCaptureHiding(deletedButton);
- 	[container addSubview:deletedButton];
-
- 	[NSLayoutConstraint activateConstraints:@[
- 		[deletedButton.centerYAnchor constraintEqualToAnchor:container.centerYAnchor],
- 		[deletedButton.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:30],
- 		[deletedButton.widthAnchor constraintEqualToConstant:20],
- 		[deletedButton.heightAnchor constraintEqualToConstant:20],
- 	]];
-
-	if (@available(iOS 14.0, *)) {
-		[deletedButton addAction:[UIAction actionWithHandler:^(__kindof UIAction * _Nonnull action) {
-			NSString *sid = objc_getAssociatedObject(deletedButton, &kThetaDeletedServerIdKey);
-			NSString *deletedMessageDate = [[MessagesManager sharedManager] dateForDeletedMessageWithID:sid];
-			UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"BHInsta, Hi" message:[NSString stringWithFormat:@"Message deleted at: %@", deletedMessageDate ?: @"Unknown"] preferredStyle:UIAlertControllerStyleAlert];
-			[alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-			[topMostController() presentViewController:alert animated:YES completion:nil];
-		}] forControlEvents:UIControlEventTouchUpInside];
-	}
-	[deletedButton addTarget:self action:@selector(_thetaShowDeletedInfo:) forControlEvents:UIControlEventTouchUpInside];
-}*/
-
-static void _thetaShowDeletedInfo(id self, SEL _cmd, id sender) {
-	if (![sender isKindOfClass:[UIButton class]]) return;
-	UIButton *button = (UIButton *)sender;
-	static char kThetaDeletedServerIdKey;
-	NSString *sid = objc_getAssociatedObject(button, &kThetaDeletedServerIdKey);
-	if (sid.length == 0) return;
-	NSString *deletedMessageDate = [[MessagesManager sharedManager] dateForDeletedMessageWithID:sid];
-	UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"BHInsta, Hi" message:[NSString stringWithFormat:@"Message deleted at: %@", deletedMessageDate ?: @"Unknown"] preferredStyle:UIAlertControllerStyleAlert];
-	[alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-	[topMostController() presentViewController:alert animated:YES completion:nil];
-}
-
 static char kThetaOriginalBackgroundColorKey;
 static char kThetaProcessedMessageIdKey;
 static char kThetaOverlayViewKey;
@@ -187,9 +48,7 @@ static UIView *thetaFindInnerTextMessageBubble(UIView *root) {
 	return inner ?: nil;
 }
 
-static void (*orig_directMessageCell_configure)(id self, SEL _cmd, id viewModel, id specFactory, id launcher);
-static void hook_directMessageCell_configure(id self, SEL _cmd, id viewModel, id specFactory, id launcher) {
-	orig_directMessageCell_configure(self, _cmd, viewModel, specFactory, launcher);
+static void ThetaColorDeletedMessageCell(id self, id viewModel) {
 	if (!ENABLED(THDMKeepDeleted)) return;
 	if (![viewModel conformsToProtocol:@protocol(IGDirectMessageViewModelProtocol)]) return;
 
@@ -273,6 +132,19 @@ static void hook_directMessageCell_configure(id self, SEL _cmd, id viewModel, id
 	objc_setAssociatedObject(bubble, &kThetaProcessedMessageIdKey, serverId, OBJC_ASSOCIATION_COPY_NONATOMIC);
 }
 
+// 451 renamed the last argument (launcherSet: -> mobileConfig:); each selector keeps its own original.
+static void (*orig_directMessageCell_configure)(id self, SEL _cmd, id viewModel, id specFactory, id config);
+static void hook_directMessageCell_configure(id self, SEL _cmd, id viewModel, id specFactory, id config) {
+	orig_directMessageCell_configure(self, _cmd, viewModel, specFactory, config);
+	ThetaColorDeletedMessageCell(self, viewModel);
+}
+
+static void (*orig_directMessageCell_configureLegacy)(id self, SEL _cmd, id viewModel, id specFactory, id launcher);
+static void hook_directMessageCell_configureLegacy(id self, SEL _cmd, id viewModel, id specFactory, id launcher) {
+	orig_directMessageCell_configureLegacy(self, _cmd, viewModel, specFactory, launcher);
+	ThetaColorDeletedMessageCell(self, viewModel);
+}
+
 // Strips the server-ID keys out of a removeMessages update and saves them, so the
 // deletion becomes a no-op while the rest of the batch still applies. The update is
 // a plain FBIvarBasedEqualityObject, so its key list is replaced in place.
@@ -309,7 +181,7 @@ static void hook_messageCache3(id self, SEL _cmd, id updates, id completion, id 
 					if (messageUpdate) thetaStripDeletedMessageKeys(messageUpdate);
 				}
 			} @catch (NSException *e) {
-				NSLog(@"Error accessing IGDirectThreadUpdate: %@", e);
+				THDebugLog(@"[Theta] keep deleted: error reading IGDirectThreadUpdate: %@", e);
 			}
 		}
 	}
@@ -327,8 +199,14 @@ void THRegisterKeepDeletedMessagesHooks(void) {
 		@"_TtC19IGDirectMessageCell19IGDirectMessageCell",
 		@"IGDirectMessageCell"
 	]);
+	// Only the base cell is hooked: its text-message subclass inherits the method, but the
+	// photo, video, post and other cell subclasses override it and Swift's super call skips this hook.
 	NullHookMessageIfPresent(messageCell,
-		@selector(configureWithViewModel:ringViewSpecFactory:launcherSet:),
+		@selector(configureWithViewModel:ringViewSpecFactory:mobileConfig:),
 		(void *)hook_directMessageCell_configure,
 		&orig_directMessageCell_configure);
+	NullHookMessageIfPresent(messageCell,
+		@selector(configureWithViewModel:ringViewSpecFactory:launcherSet:),
+		(void *)hook_directMessageCell_configureLegacy,
+		&orig_directMessageCell_configureLegacy);
 }
