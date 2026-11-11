@@ -1,10 +1,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 
-extern void THStorySeenReceiptNetworkGuardEnter(void);
-extern void THStorySeenReceiptNetworkGuardEnterWithContext(id fullscreenSectionController, id storyViewer);
-extern void THStorySeenReceiptNetworkGuardResealAfterMark(id fullscreenSectionController, id storyViewer);
-extern void THStorySeenReceiptNetworkGuardLeave(void);
+extern BOOL THStorySeenReceiptsBlocked(void);
 
 @class IGVideo;
 static void downloadHDVideo(IGVideo *inputVideo);
@@ -624,7 +621,7 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
             invoked = thetaStoryInvokeSeenSelector(target, NSSelectorFromString(name), section, item) || invoked;
         }
         for (NSString *name in kKnownSectionVoidSels) {
-            if (s_thetaLocalSeenMarkActive && [name.lowercaseString containsString:@"sendseen"]) continue;
+            if (THStorySeenReceiptsBlocked() && [name.lowercaseString containsString:@"sendseen"]) continue;
             invoked = thetaStoryInvokeSeenSelector(target, NSSelectorFromString(name), section, item) || invoked;
         }
         if (invoked) break;
@@ -633,7 +630,7 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
     if (!invoked) {
         for (id target in targets) {
             for (NSString *name in thetaStoryMarkSeenSelectorNamesOn(target)) {
-                if (s_thetaLocalSeenMarkActive && [name.lowercaseString containsString:@"sendseen"]) continue;
+                if (THStorySeenReceiptsBlocked() && [name.lowercaseString containsString:@"sendseen"]) continue;
                 invoked = thetaStoryInvokeSeenSelector(target, NSSelectorFromString(name), section, item) || invoked;
             }
             if (invoked) break;
@@ -1157,17 +1154,10 @@ static void thetaLocalSeenMarkCurrent(IGStoryFullscreenCell *self) {
         currentItem = thetaStoryCurrentItem(firstDelegate, secondDelegate);
     if (!currentItem) return;
 
-    THStorySeenReceiptNetworkGuardEnterWithContext(firstDelegate, secondDelegate);
     BOOL ghostOn = ENABLED(THStoryGhost);
-    s_thetaLocalSeenMarkActive = YES;
     if (ghostOn) shouldBeSeen = YES;
     BOOL ok = thetaStoryMarkItemAsSeen(self, currentItem);
     if (ghostOn) shouldBeSeen = NO;
-    THStorySeenReceiptNetworkGuardResealAfterMark(firstDelegate, secondDelegate);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        s_thetaLocalSeenMarkActive = NO;
-        THStorySeenReceiptNetworkGuardLeave();
-    });
 
     if (ENABLED(THAppShowBanners)) {
         if (ok) {
@@ -1201,9 +1191,7 @@ static void thetaLocalSeenMarkAll(IGStoryFullscreenCell *self) {
             priorFocused = [firstDelegate performSelector:@selector(currentStoryItem)];
     } @catch (__unused NSException *e) {}
 
-    THStorySeenReceiptNetworkGuardEnterWithContext(firstDelegate, secondDelegate);
     BOOL ghostOn = ENABLED(THStoryGhost);
-    s_thetaLocalSeenMarkActive = YES;
     if (ghostOn) shouldBeSeen = YES;
     @try {
         for (id item in items) {
@@ -1218,11 +1206,6 @@ static void thetaLocalSeenMarkAll(IGStoryFullscreenCell *self) {
         }
     } @catch (__unused NSException *e) {}
     if (ghostOn) shouldBeSeen = NO;
-    THStorySeenReceiptNetworkGuardResealAfterMark(firstDelegate, secondDelegate);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        s_thetaLocalSeenMarkActive = NO;
-        THStorySeenReceiptNetworkGuardLeave();
-    });
 
     if (priorFocused) {
         @try {
@@ -2032,15 +2015,6 @@ static void hook_storyGhost2(id self, SEL _cmd, id fullscreenSectionController, 
     if (!orig_storyGhost2) return;
 
     if (!ENABLED(THStoryGhost)) {
-        if (ENABLED(THStorySeenLocalOnly)) {
-            THStorySeenReceiptNetworkGuardEnterWithContext(fullscreenSectionController, self);
-            @try {
-                orig_storyGhost2(self, _cmd, fullscreenSectionController, didMarkItemAsSeen);
-            } @catch (__unused NSException *e) {
-            }
-            THStorySeenReceiptNetworkGuardLeave();
-            return;
-        }
         @try {
             orig_storyGhost2(self, _cmd, fullscreenSectionController, didMarkItemAsSeen);
         } @catch (__unused NSException *e) {
@@ -2060,14 +2034,6 @@ static void hook_storyGhost2(id self, SEL _cmd, id fullscreenSectionController, 
 static void hook_storyGhost3(id self, SEL _cmd, id fullscreenSectionController, id didMarkItemAsSeen, NSInteger entryPoint) {
     if (!orig_storyGhost3) return;
     if (!ENABLED(THStoryGhost)) {
-        if (ENABLED(THStorySeenLocalOnly)) {
-            THStorySeenReceiptNetworkGuardEnterWithContext(fullscreenSectionController, self);
-            @try {
-                orig_storyGhost3(self, _cmd, fullscreenSectionController, didMarkItemAsSeen, entryPoint);
-            } @catch (__unused NSException *e) {}
-            THStorySeenReceiptNetworkGuardLeave();
-            return;
-        }
         @try {
             orig_storyGhost3(self, _cmd, fullscreenSectionController, didMarkItemAsSeen, entryPoint);
         } @catch (__unused NSException *e) {}

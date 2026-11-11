@@ -247,6 +247,7 @@ static void ThetaLoad(void) {
     // Privacy and protection hooks: iOS can launch Instagram in the background (push, refresh),
     // where InitializeHooks waits for the foreground, so these must be in place from the start.
     THRegisterKeepDeletedMessagesHooks();
+    THRegisterSeenRequestBlockHooks();
     THRegisterStorySeenLocalOnlyHooks();
     THRegisterInstantsGhostHooks();
     THRegisterDBBHooks();

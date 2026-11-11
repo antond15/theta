@@ -29,7 +29,6 @@ NSString *keychainAccessGroup;
 NSURL *fakeGroupContainerURL;
 static BOOL shouldBeSeen = false;
 static BOOL s_thetaAllowStorySeenReceipts = false;
-static BOOL s_thetaLocalSeenMarkActive = false;
 static BOOL storeUserSearch = NO;
 static BOOL hooksInitialized = NO;
 static NSTimeInterval s_lastToastShowTime = 0;

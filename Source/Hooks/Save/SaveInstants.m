@@ -1,6 +1,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <stdint.h>
+#import <os/lock.h>
 #import <Photos/Photos.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -11,7 +12,24 @@ static const NSInteger kThetaInstantSaveButtonTag = 0x74685356; // 'thSV'
 static const NSInteger kThetaInstantSeenButtonTag = 0x74685353; // 'thSS'
 static char kThetaInstantHostVCKey;
 
+// The Instant the eye button is marking seen. Written on the main thread, read from network threads:
+// always through these two functions.
 static NSString *sThetaInstantGhostAllowMediaId = nil;
+static os_unfair_lock sThetaInstantGhostAllowLock = OS_UNFAIR_LOCK_INIT;
+
+static NSString *thetaInstantGhostAllowedId(void) {
+    os_unfair_lock_lock(&sThetaInstantGhostAllowLock);
+    NSString *mediaId = sThetaInstantGhostAllowMediaId;
+    os_unfair_lock_unlock(&sThetaInstantGhostAllowLock);
+    return mediaId;
+}
+
+static void thetaInstantSetGhostAllowedId(NSString *mediaId) {
+    NSString *copy = [mediaId copy];
+    os_unfair_lock_lock(&sThetaInstantGhostAllowLock);
+    sThetaInstantGhostAllowMediaId = copy;
+    os_unfair_lock_unlock(&sThetaInstantGhostAllowLock);
+}
 static __weak id sThetaInstantQuickSnapService;
 
 static id (*orig_instantSeenRequestInit)(id self, SEL _cmd, id mediaIds);
@@ -1008,54 +1026,18 @@ static BOOL thetaInstantGhostEnabled(void) {
 }
 
 static BOOL thetaInstantGhostShouldBlockNetwork(void) {
-    return thetaInstantGhostEnabled() && !sThetaInstantGhostAllowMediaId.length;
+    return thetaInstantGhostEnabled() && !thetaInstantGhostAllowedId().length;
 }
 
-static BOOL thetaInstantStringLooksLikeSeen(NSString *s) {
-    if (!s.length) return NO;
-    NSString *l = s.lowercaseString;
-    if ([l containsString:@"xdt_mark_quick_snap_seen"]) return YES;
-    if ([l containsString:@"mark_quick_snap_seen"]) return YES;
-    if ([l containsString:@"markquicksnapseen"]) return YES;
-    if ([l containsString:@"quicksnapupdateseenstatemutation"]) return YES;
-    if ([l containsString:@"igxdtmarkquicksnapseen"]) return YES;
-    return NO;
-}
-
-static BOOL thetaInstantPayloadLooksLikeSeen(id obj) {
-    if (!obj) return NO;
-    if ([obj isKindOfClass:[NSString class]]) return thetaInstantStringLooksLikeSeen(obj);
-    if ([obj isKindOfClass:[NSURL class]]) {
-        NSURL *url = (NSURL *)obj;
-        return thetaInstantStringLooksLikeSeen(url.absoluteString) || thetaInstantStringLooksLikeSeen(url.path);
-    }
-    if ([obj isKindOfClass:[NSURLRequest class]]) {
-        NSURLRequest *req = (NSURLRequest *)obj;
-        if (thetaInstantPayloadLooksLikeSeen(req.URL)) return YES;
-        NSString *friendly = [req valueForHTTPHeaderField:@"X-FB-Friendly-Name"];
-        if (thetaInstantStringLooksLikeSeen(friendly)) return YES;
-        NSData *body = req.HTTPBody;
-        if (body.length && body.length < 256u * 1024u) {
-            NSString *s = [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding];
-            if (!s) s = [[NSString alloc] initWithData:body encoding:NSISOLatin1StringEncoding];
-            if (thetaInstantStringLooksLikeSeen(s)) return YES;
-        }
-        return NO;
-    }
-    NSString *name = ThetaValueForKey(obj, @"queryName");
-    if (![name isKindOfClass:[NSString class]]) name = ThetaValueForKey(obj, @"friendlyName");
-    if (thetaInstantStringLooksLikeSeen(name)) return YES;
-    NSURL *url = ThetaValueForKey(obj, @"URL");
-    if (![url isKindOfClass:[NSURL class]]) url = ThetaValueForKey(obj, @"url");
-    if (thetaInstantPayloadLooksLikeSeen(url)) return YES;
-    id inner = ThetaValueForKey(obj, @"request");
-    if (inner && inner != obj) return thetaInstantPayloadLooksLikeSeen(inner);
-    return NO;
+/* SeenRequestBlock.m drops the Instants seen mutation at the network layer while this is YES. */
+BOOL THInstantsSeenBlocked(void) {
+    return thetaInstantGhostShouldBlockNetwork();
 }
 
 static id thetaInstantFilterMediaIds(id mediaIds) {
     if (!thetaInstantGhostEnabled()) return mediaIds;
-    if (sThetaInstantGhostAllowMediaId.length) return @[ sThetaInstantGhostAllowMediaId ];
+    NSString *allowed = thetaInstantGhostAllowedId();
+    if (allowed.length) return @[ allowed ];
     return @[];
 }
 
@@ -1084,9 +1066,10 @@ static void hook_instantSyncSeenSnaps(id self, SEL _cmd, id sessionId, id onSucc
         }
         return;
     }
-    if (sThetaInstantGhostAllowMediaId.length && orig_instantSeenRequestData) {
+    NSString *allowed = thetaInstantGhostAllowedId();
+    if (allowed.length && orig_instantSeenRequestData) {
         Class reqCls = NSClassFromString(@"IGXDTMarkQuickSnapSeenRequest");
-        if (reqCls) orig_instantSeenRequestData(reqCls, @selector(dataWithMediaIds:), @[ sThetaInstantGhostAllowMediaId ]);
+        if (reqCls) orig_instantSeenRequestData(reqCls, @selector(dataWithMediaIds:), @[ allowed ]);
     }
     if (orig_instantSyncSeenSnaps) orig_instantSyncSeenSnaps(self, _cmd, sessionId, onSuccess, onFailure);
 }
@@ -1095,95 +1078,6 @@ static id hook_instantSeenMutationBuilder(id self, SEL _cmd, id includeMusic, id
     if (thetaInstantGhostShouldBlockNetwork()) return nil;
     if (!orig_instantSeenMutationBuilder) return nil;
     return orig_instantSeenMutationBuilder(self, _cmd, includeMusic, input);
-}
-
-static NSURLRequest *thetaInstantDummyRequest(void) {
-    return [NSURLRequest requestWithURL:[NSURL URLWithString:@"data:text/plain,"]];
-}
-
-static NSURLSessionDataTask *(*orig_instantNSURLDataTaskComp)(id, SEL, NSURLRequest *, void (^)(NSData *, NSURLResponse *, NSError *));
-static NSURLSessionDataTask *hook_instantNSURLDataTaskComp(id self, SEL _cmd, NSURLRequest *req, void (^comp)(NSData *, NSURLResponse *, NSError *)) {
-    if (thetaInstantGhostShouldBlockNetwork() && thetaInstantPayloadLooksLikeSeen(req)) {
-        if (comp) {
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                NSError *err = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
-                comp(nil, nil, err);
-            });
-        }
-        NSURLSessionDataTask *task = orig_instantNSURLDataTaskComp ? orig_instantNSURLDataTaskComp(self, _cmd, thetaInstantDummyRequest(), nil) : nil;
-        [task cancel];
-        return task;
-    }
-    return orig_instantNSURLDataTaskComp(self, _cmd, req, comp);
-}
-
-static NSURLSessionDataTask *(*orig_instantNSURLDataTask)(id, SEL, NSURLRequest *);
-static NSURLSessionDataTask *hook_instantNSURLDataTask(id self, SEL _cmd, NSURLRequest *req) {
-    if (thetaInstantGhostShouldBlockNetwork() && thetaInstantPayloadLooksLikeSeen(req)) {
-        NSURLSessionDataTask *task = orig_instantNSURLDataTask ? orig_instantNSURLDataTask(self, _cmd, thetaInstantDummyRequest()) : nil;
-        [task cancel];
-        return task;
-    }
-    return orig_instantNSURLDataTask(self, _cmd, req);
-}
-
-static NSURLSessionUploadTask *(*orig_instantNSURLUpload)(id, SEL, NSURLRequest *, NSData *, void (^)(NSData *, NSURLResponse *, NSError *));
-static NSURLSessionUploadTask *hook_instantNSURLUpload(id self, SEL _cmd, NSURLRequest *req, NSData *data, void (^comp)(NSData *, NSURLResponse *, NSError *)) {
-    BOOL drop = thetaInstantGhostShouldBlockNetwork() && (thetaInstantPayloadLooksLikeSeen(req) || thetaInstantStringLooksLikeSeen([[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding]));
-    if (drop) {
-        if (comp) {
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                NSError *err = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
-                comp(nil, nil, err);
-            });
-        }
-        NSURLSessionUploadTask *task = orig_instantNSURLUpload ? orig_instantNSURLUpload(self, _cmd, thetaInstantDummyRequest(), [NSData data], nil) : nil;
-        [task cancel];
-        return task;
-    }
-    return orig_instantNSURLUpload(self, _cmd, req, data, comp);
-}
-
-static void (*orig_instantSetHTTPBody)(id, SEL, NSData *);
-static void hook_instantSetHTTPBody(id self, SEL _cmd, NSData *data) {
-    if (thetaInstantGhostShouldBlockNetwork() && data.length && data.length < 256u * 1024u) {
-        NSString *s = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        if (!s) s = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
-        if (thetaInstantStringLooksLikeSeen(s)) {
-            if (orig_instantSetHTTPBody) orig_instantSetHTTPBody(self, _cmd, [NSData data]);
-            return;
-        }
-    }
-    if (orig_instantSetHTTPBody) orig_instantSetHTTPBody(self, _cmd, data);
-}
-
-static void (*orig_instantSetHeader)(id, SEL, NSString *, NSString *);
-static void hook_instantSetHeader(id self, SEL _cmd, NSString *value, NSString *field) {
-    if (thetaInstantGhostShouldBlockNetwork() && thetaInstantStringLooksLikeSeen(value)) {
-        if (orig_instantSetHeader) orig_instantSetHeader(self, _cmd, @"", field);
-        return;
-    }
-    if (orig_instantSetHeader) orig_instantSetHeader(self, _cmd, value, field);
-}
-
-/* IGURLRequest reaches Tigon here. A dropped request fails the way Tigon fails one it won't start. */
-static id (*orig_instantTigonStartRequest)(id, SEL, id, id, id);
-static id hook_instantTigonStartRequest(id self, SEL _cmd, id req, id policy, id callbacks) {
-    if (thetaInstantGhostShouldBlockNetwork()) {
-        NSURL *url = [req respondsToSelector:@selector(URL)] ? ((id (*)(id, SEL))objc_msgSend)(req, @selector(URL)) : nil;
-        NSDictionary *headers = [req respondsToSelector:@selector(allHTTPHeaderFields)]
-            ? ((id (*)(id, SEL))objc_msgSend)(req, @selector(allHTTPHeaderFields)) : nil;
-        id friendly = [headers isKindOfClass:[NSDictionary class]] ? headers[@"X-FB-Friendly-Name"] : nil;
-        Class summaryCls = objc_getClass("IGNetworkRequestSummary");
-        Class taskCls = objc_getClass("IGCompletedRequestTask");
-        if ((thetaInstantPayloadLooksLikeSeen(url) || ([friendly isKindOfClass:[NSString class]] && thetaInstantStringLooksLikeSeen(friendly)))
-            && summaryCls && taskCls && [callbacks respondsToSelector:@selector(failure:summary:)]) {
-            NSError *err = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
-            ((void (*)(id, SEL, id, id))objc_msgSend)(callbacks, @selector(failure:summary:), err, [summaryCls new]);
-            return [taskCls new];
-        }
-    }
-    return orig_instantTigonStartRequest(self, _cmd, req, policy, callbacks);
 }
 
 static void (*orig_instantDefaultsSetObject)(id, SEL, id, id);
@@ -1226,36 +1120,8 @@ static void thetaInstantEnsureGhostHooks(void) {
                                  (void *)hook_instantSeenMutationBuilder,
                                  &orig_instantSeenMutationBuilder);
     }
-    if (!orig_instantNSURLDataTaskComp) {
-        NullHookMessageIfPresent([NSURLSession class], @selector(dataTaskWithRequest:completionHandler:), (void *)hook_instantNSURLDataTaskComp, &orig_instantNSURLDataTaskComp);
-        Class local = NSClassFromString(@"__NSURLSessionLocal");
-        if (local && !orig_instantNSURLDataTaskComp)
-            NullHookMessageIfPresent(local, @selector(dataTaskWithRequest:completionHandler:), (void *)hook_instantNSURLDataTaskComp, &orig_instantNSURLDataTaskComp);
-    }
-    if (!orig_instantNSURLDataTask) {
-        NullHookMessageIfPresent([NSURLSession class], @selector(dataTaskWithRequest:), (void *)hook_instantNSURLDataTask, &orig_instantNSURLDataTask);
-        Class local = NSClassFromString(@"__NSURLSessionLocal");
-        if (local && !orig_instantNSURLDataTask)
-            NullHookMessageIfPresent(local, @selector(dataTaskWithRequest:), (void *)hook_instantNSURLDataTask, &orig_instantNSURLDataTask);
-    }
-    if (!orig_instantNSURLUpload) {
-        NullHookMessageIfPresent([NSURLSession class], @selector(uploadTaskWithRequest:fromData:completionHandler:), (void *)hook_instantNSURLUpload, &orig_instantNSURLUpload);
-        Class local = NSClassFromString(@"__NSURLSessionLocal");
-        if (local && !orig_instantNSURLUpload)
-            NullHookMessageIfPresent(local, @selector(uploadTaskWithRequest:fromData:completionHandler:), (void *)hook_instantNSURLUpload, &orig_instantNSURLUpload);
-    }
-    if (!orig_instantSetHTTPBody)
-        NullHookMessageIfPresent([NSMutableURLRequest class], @selector(setHTTPBody:), (void *)hook_instantSetHTTPBody, &orig_instantSetHTTPBody);
-    if (!orig_instantSetHeader)
-        NullHookMessageIfPresent([NSMutableURLRequest class], @selector(setValue:forHTTPHeaderField:), (void *)hook_instantSetHeader, &orig_instantSetHeader);
-
-    if (!orig_instantTigonStartRequest)
-        NullHookMessageIfPresent(objc_getClass("IGTigonNetworkLayer"), @selector(startRequest:policy:callbacks:),
-                                 (void *)hook_instantTigonStartRequest, &orig_instantTigonStartRequest);
-
     if (!orig_instantDefaultsSetObject)
         NullHookMessageIfPresent([NSUserDefaults class], @selector(setObject:forKey:), (void *)hook_instantDefaultsSetObject, &orig_instantDefaultsSetObject);
-
 
     if (!orig_instantDidPanConsumption) {
         NullHookMessageIfPresent(ThetaFirstClass(@[
@@ -1296,7 +1162,7 @@ static id thetaInstantFindQuickSnapService(id viewController) {
 }
 
 static void thetaInstantClearGhostAllow(void) {
-    sThetaInstantGhostAllowMediaId = nil;
+    thetaInstantSetGhostAllowedId(nil);
 }
 
 static BOOL thetaInstantAddSeenIdToDefaults(id defaults, NSString *mediaId) {
@@ -1377,7 +1243,7 @@ static void thetaInstantMarkCurrentSeen(UIView *host, id viewController) {
             return;
         }
         id service = thetaInstantFindQuickSnapService(viewController);
-        sThetaInstantGhostAllowMediaId = [mediaId copy];
+        thetaInstantSetGhostAllowedId(mediaId);
         thetaInstantEnsureGhostHooks();
         BOOL started = thetaInstantCommitLocalSeen(viewController, mediaId);
         if (orig_instantSeenRequestData) {
