@@ -1230,6 +1230,8 @@ static void handleLocalSeenLongPress(IGStoryFullscreenCell *self, UILongPressGes
         thetaLocalSeenMarkAll(self);
 }
 
+void THStorySeenAllowItem(id item);
+
 static void seenButtonPressedAll(IGStoryFullscreenCell *self) {
     id viewer = thetaStoryViewerFromCell(self);
     id firstDelegate = thetaStoryPreferredSection(self, viewer);
@@ -1244,6 +1246,7 @@ static void seenButtonPressedAll(IGStoryFullscreenCell *self) {
     if (![items isKindOfClass:[NSArray class]]) return;
 
     for (id item in items) {
+        THStorySeenAllowItem(item);
         shouldBeSeen = true;
         s_thetaAllowStorySeenReceipts = YES;
         (void)thetaStoryMarkItemAsSeen(self, item);
@@ -1270,6 +1273,7 @@ static void markCurrentStorySeen(IGStoryFullscreenCell *self, BOOL skip) {
         return;
     }
 
+    THStorySeenAllowItem(currentItem);
     shouldBeSeen = true;
     s_thetaAllowStorySeenReceipts = YES;
     BOOL ok = thetaStoryMarkItemAsSeen(self, currentItem);

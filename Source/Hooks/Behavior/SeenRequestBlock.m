@@ -9,6 +9,7 @@
    earlier; this is the backstop. Installed from the constructor. */
 
 BOOL THStorySeenReceiptsBlocked(void);
+BOOL THStorySeenConsumeVerifiedUpload(void);
 BOOL THInstantsSeenBlocked(void);
 
 typedef NS_ENUM(NSInteger, THSeenKind) {
@@ -104,6 +105,8 @@ static BOOL THSeenShouldDrop(NSString *layer, NSURL *url, NSDictionary *headers,
     THSeenKind kind = THSeenClassify(layer, url, headers, body);
     if (kind == THSeenKindNone) return NO;
     BOOL drop = kind == THSeenKindStory ? THStorySeenReceiptsBlocked() : THInstantsSeenBlocked();
+    // An upload the networker gate checked (StorySeenLocalOnly.m) holds only the eye's receipts.
+    if (drop && kind == THSeenKindStory && THStorySeenConsumeVerifiedUpload()) drop = NO;
     THDebugLog(@"[Theta] seen request: %@ %@ %@%@ %@ (foreground hooks %s)", layer, kind == THSeenKindStory ? @"story" : @"instant",
                url.host ?: @"", url.path ?: @"", drop ? @"dropped" : @"sent", hooksInitialized ? "installed" : "pending");
     return drop;
