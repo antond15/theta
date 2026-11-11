@@ -1,18 +1,13 @@
-static BOOL (*orig_hideCreateGroupButton)(id self, SEL _cmd);
-static BOOL hook_hideCreateGroupButton(id self, SEL _cmd) {
-    if (!ENABLED(THDMHideCreateGroupButton)) {
-        return orig_hideCreateGroupButton(self, _cmd);
-    }
-    return NO;
+static void (*orig_hideCreateGroupButton)(id self, SEL _cmd, id button);
+static void hook_hideCreateGroupButton(id self, SEL _cmd, id button) {
+    if (ENABLED(THDMHideCreateGroupButton)) return;
+    orig_hideCreateGroupButton(self, _cmd, button);
 }
 
-static BOOL (*orig_hideCreateGroupButton2)(id self, SEL _cmd, BOOL animated);
-static BOOL hook_hideCreateGroupButton2(id self, SEL _cmd, BOOL animated) {
-    if (!ENABLED(THDMHideCreateGroupButton)) {
-        return orig_hideCreateGroupButton2(self, _cmd, animated);
-    }
-
-    return NO;
+static void (*orig_hideCreateGroupButton2)(id self, SEL _cmd, BOOL enabled, BOOL animated);
+static void hook_hideCreateGroupButton2(id self, SEL _cmd, BOOL enabled, BOOL animated) {
+    if (ENABLED(THDMHideCreateGroupButton)) return;
+    orig_hideCreateGroupButton2(self, _cmd, enabled, animated);
 }
 
 static void (*orig_hideCreateGroupButton3)(id self, SEL _cmd);
