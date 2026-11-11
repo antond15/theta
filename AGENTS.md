@@ -28,7 +28,8 @@ These rules are non-negotiable.
    needed (credit for a port, a fact the subject can't carry) keep it to a line or two. Credit
    ported code by author, repo and commit. Never mention device-test status in a commit; that goes
    in the backlog. Commit freely on `dev`; never push without approval: ask once, at the end of the
-   session's work, with a dialog (`close-step` step 8). Leave no uncommitted or untracked files.
+   session's work, in the end-of-session dialog (`close-step` step 7). Leave no uncommitted or
+   untracked files.
 5. **Private inputs.** The decrypted IPA, `input/`, `output/` and anything read from them (binary
    dumps, offsets of a specific build) are never uploaded, pasted into external services or
    committed outside the docs.
@@ -46,7 +47,8 @@ These rules are non-negotiable.
    test".
 9. **Sessions and models.** Features (a new setting, a port, a change across several files) use
    the planner/builder split: a planner (Opus) runs the decision round, writes the handoff under
-   "In progress" and stops; a builder (Sonnet, medium effort) builds it in a fresh session.
+   "In progress" and stops after close-step's end-of-session dialog; a builder (Sonnet, medium
+   effort) builds it in a fresh session.
    Diagnosing an Instagram break and small fixes stay in one session; hard diagnosis may use an
    Opus subagent. High-risk code stays with the planner, and builder work that touched it gets a
    planner `/code-review medium` before the next step. High-risk code here:
@@ -64,6 +66,12 @@ These rules are non-negotiable.
     `docs/DEVELOPMENT.md#settings`.
 11. **Instagram versions.** When a new Instagram build is unpacked into `input/`, follow the
     `ig-version-bump` skill.
+12. **Session end.** Every session or thread ends with the `close-step` skill, whatever its kind:
+    a build step, a review, a diagnosis, a small fix, a planner handoff, a version bump, a
+    question answered with changes. Its last act is the end-of-session dialog: one
+    AskUserQuestion with the launch, IPA and release questions that apply. Never end with a
+    plain-text question or with nothing. For each question left out, say which and why in one
+    line (e.g. nothing committed and `dev` level with `origin/dev`: no IPA or release question).
 
 ## Commands
 
@@ -77,7 +85,7 @@ Skills refer to these by name. Run with `THEOS` exported (default `~/theos`).
 | baseline | `./scripts/pre-push.sh --update-baseline` | accept the current misses (new IG version, or a miss judged fine) |
 | compat | `./scripts/compat.py input/Payload/Instagram.app` | hooks that won't install on this build |
 | ig-diff | `./scripts/compat.py <old.app> input/Payload/Instagram.app` | what broke since an older build |
-| ipa | `./build.sh` / `./build.sh debug` | `output/Instagram_patched.ipa`; only when the user will device-test |
+| ipa | `./build.sh` / `./build.sh debug` | `output/Instagram_patched.ipa`; only on a yes in the end-of-session dialog, or when asked |
 
 ## Tech stack
 
@@ -126,6 +134,7 @@ toasts, lock screen), `Source/Media`, `Source/ProfileAnalyzer`, `Source/Sideload
 
 ## Verification
 
-Before a step is complete, follow the `close-step` skill: the `check` command, the IPA only when
-the user will device-test, commits, the backlog (including "Awaiting device test"), summary, the
-launch dialog and the release dialog, then stop.
+Every session ends with the `close-step` skill (rule 12), not only finished steps: the `check`
+command, commits, the backlog (including "Awaiting device test"), summary, the next prompt, then
+the end-of-session dialog (launch the next thread, build the IPA, release) via AskUserQuestion,
+then stop. "Stop" in any skill or handoff means stop after that dialog.

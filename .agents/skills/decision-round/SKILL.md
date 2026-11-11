@@ -75,13 +75,11 @@ After the answers, stop building:
    a new question about which hook to use, privacy, stored settings or a visible behaviour means
    the planner missed it: the builder stops, records it under "In progress" and tells the user to
    take it to a planner session. Always show the prompt in a fenced block, so it survives a "no".
-3. When the host has the T3 tools, ask with AskUserQuestion: "Launch the builder session for
-   <step> (Sonnet, medium effort) as a new thread on `dev`?" Options: **Launch it
-   (Recommended):** `t3_thread_launch` with the prompt as its `message`, Sonnet at medium effort,
-   workspace strategy `root` (the backlog is local, so the thread must use this checkout), on
-   `dev`; the new session never pushes unasked; mention the thread by its `link`. **No:** the user
-   starts it from the fenced prompt. Without T3 tools, skip the dialog.
-   Then stop, even if the user's prompt listed build steps.
+3. Finish with the `close-step` skill: its summary and its end-of-session dialog (step 7), with
+   the builder prompt above as the next prompt. The launch question names the builder session
+   (Sonnet, medium effort); the release question still applies when `dev` is ahead of
+   `origin/dev`. Then stop, even if the user's prompt listed build steps. "Stop" always means
+   stop after that dialog, never before it.
 
 **Tiny steps:** when the decided work turns out tiny (a one-line fix plus a check), say how small
 it is and offer to build it in this session instead of handing off.

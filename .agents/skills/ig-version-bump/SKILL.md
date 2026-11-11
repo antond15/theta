@@ -39,4 +39,5 @@ names refer to the Commands table in AGENTS.md; `compat.py` itself is explained 
 8. **Docs.** Update the tested Instagram version in `README.md` and the section heading in
    `docs/CHANGES.md` only after the user confirms the build works on the device; until then, list
    the version check under "Awaiting device test".
-9. Finish with the `close-step` skill.
+9. Finish with the `close-step` skill, ending on its end-of-session dialog (step 7). A run that
+   only recorded findings still ends there.
