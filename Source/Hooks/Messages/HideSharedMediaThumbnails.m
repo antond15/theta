@@ -83,7 +83,7 @@ static void THUpdateSharedThumbnail(UIView *cell, NSString *modelKey, NSString *
                 objc_setAssociatedObject(imageView, &THSharedThumbnailOriginalKey, [imageView image], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 objc_setAssociatedObject(imageView, &THSharedThumbnailHiddenKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 [imageView setImage:THSharedThumbnailPlaceholder()];
-            } else if ([imageView image] != THSharedThumbnailPlaceholder()) {
+            } else if ([(UIImageView *)imageView image] != THSharedThumbnailPlaceholder()) {
                 // The image arrived through a path the hooks don't cover.
                 objc_setAssociatedObject(imageView, &THSharedThumbnailOriginalKey, [imageView image], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 objc_setAssociatedObject(imageView, &THSharedThumbnailFreshKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
