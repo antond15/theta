@@ -8,7 +8,9 @@
 #import <Foundation/Foundation.h>
 
 #if THETA_DEBUG
-#define THDebugLog(...) NSLog(__VA_ARGS__)
+#import <os/log.h>
+// One public string: NSLog would redact every %@ argument as <private> in the device log.
+#define THDebugLog(fmt, ...) os_log(OS_LOG_DEFAULT, "%{public}s", [NSString stringWithFormat:(fmt), ##__VA_ARGS__].UTF8String ?: "")
 #else
 #define THDebugLog(...) do { } while (0)
 #endif

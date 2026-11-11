@@ -36,7 +36,7 @@ The version number is `THETA_VERSION_NUMBER` in the Makefile.
 ./build.sh debug
 ```
 
-This compiles in diagnostic logging (`THETA_DEBUG=1`): hook-install misses, keychain and notification-extension traces, seen receipts (`seen request:` for each story or Instants receipt and whether it was dropped, `seen near-miss:` for an Instagram request that mentions "seen" but matched nothing, digits masked), and every `THDebugLog` call (`Include/ThetaDebug.h`). Normal builds contain none of it. `THDebugLog` uses `NSLog`, so the output shows up in Console.app; filter on `Theta`.
+This compiles in diagnostic logging (`THETA_DEBUG=1`): hook-install misses, keychain and notification-extension traces, seen receipts (`seen request:` for each story or Instants receipt and whether it was dropped, `seen near-miss:` for an Instagram request that mentions "seen" but matched nothing, digits masked), and every `THDebugLog` call (`Include/ThetaDebug.h`). Normal builds contain none of it. `THDebugLog` writes one public `os_log` string (NSLog would show its `%@` arguments as `<private>`), so the output shows up in full in Console.app and `idevicesyslog`; filter on `Theta`.
 
 ### FFmpeg
 
