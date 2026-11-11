@@ -1,7 +1,36 @@
-static BOOL videoPlayed = NO;
-
 @class IGVideo;
 static void downloadHDVideo(IGVideo *inputVideo);
+
+static void (*orig_visualmsgghostvideo)(id self, SEL _cmd, id arg1);
+
+static BOOL ThetaIsVisualMessageViewer(id object) {
+    Class viewer = objc_getClass("IGDirectVisualMessageViewerController");
+    return viewer && [object isKindOfClass:viewer];
+}
+
+// The view-once viewer configures its media view with itself or an
+// IGStoryPlayerMediaViewDelegateInterposer (which holds the viewer in `_delegate`) as the delegate.
+// The responder chain is the fallback for a view whose delegate is wired differently.
+static BOOL ThetaPhotoViewBelongsToVisualMessageViewer(UIView *photoView) {
+    id delegate = [photoView respondsToSelector:@selector(delegate)] ? [(id)photoView delegate] : nil;
+    if (ThetaIsVisualMessageViewer(delegate)) return YES;
+    Class interposer = objc_getClass("IGStoryPlayerMediaViewDelegateInterposer");
+    if (interposer && [delegate isKindOfClass:interposer]) {
+        Ivar ivar = class_getInstanceVariable(interposer, "_delegate");
+        __unsafe_unretained id inner = ivar ? object_getIvar(delegate, ivar) : nil;
+        if (ThetaIsVisualMessageViewer(inner)) return YES;
+    }
+    for (UIResponder *responder = photoView.nextResponder; responder; responder = responder.nextResponder) {
+        if (ThetaIsVisualMessageViewer(responder)) return YES;
+    }
+    return NO;
+}
+
+static BOOL ThetaIsStoryVideoView(UIView *view) {
+    Class video = objc_getClass("IGStoryVideoView");                 // 451
+    Class modernVideo = objc_getClass("IGStoryModernVideoView");     // older builds
+    return (video && [view isKindOfClass:video]) || (modernVideo && [view isKindOfClass:modernVideo]);
+}
 
 static void (*orig_visualmsgghostbuttons)(IGDirectVisualMessageViewerController *self, SEL _cmd);
 static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *self, SEL _cmd) {
@@ -9,7 +38,7 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
 
     UIView *containerView = [self valueForKey:@"view"];
     if (!containerView || ![containerView isKindOfClass:[UIView class]]) {
-        NSLog(@"Failed to get valid container view");
+        THDebugLog(@"[Theta] view-once: no container view");
         return;
     }
     
@@ -80,20 +109,29 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
         if (hideSeenState) {
             __weak typeof(self) weakSelf = self;
             [seenButton addAction:[UIAction actionWithHandler:^(UIAction *action) {
-                UIView *containView = [self valueForKey:@"_viewerContainerView"];
+                IGDirectVisualMessageViewerController *strongSelf = weakSelf;
+                if (!strongSelf) return;
+                UIView *containView = [strongSelf valueForKey:@"_viewerContainerView"];
                 UIView *medView = [containView valueForKey:@"mediaView"];
-                if ([medView isKindOfClass:NSClassFromString(@"IGStoryModernVideoView")]) {
-                    [self performSelector:@selector(storyPlayerMediaViewDidPlay:) withObject:medView];
-                    videoPlayed = YES;
+                Class photoClass = objc_getClass("IGStoryPhotoView");
+                BOOL marked = NO;
+                // Call past the ghost hooks directly: the video original, and the viewer's own
+                // photo-loaded callback (not hooked), so no state is left for the next media.
+                if (ThetaIsStoryVideoView(medView) && orig_visualmsgghostvideo) {
+                    orig_visualmsgghostvideo(strongSelf, @selector(storyPlayerMediaViewDidPlay:), medView);
+                    marked = YES;
+                } else if (photoClass && [medView isKindOfClass:photoClass]) {
+                    [strongSelf storyPlayerMediaViewDidLoad:medView loadSource:0 networkRequestSummary:0];
+                    marked = YES;
                 }
-
-                if ([medView isKindOfClass:NSClassFromString(@"IGStoryPhotoView")]) {
-                    [self storyPlayerMediaViewDidLoad:medView loadSource:0 networkRequestSummary:0];
-                    videoPlayed = YES;
-                }
+                THDebugLog(@"[Theta] view-once: mark seen media=%@ marked=%d", NSStringFromClass([medView class]), marked);
 
                 if (ENABLED(THAppShowBanners)) {
-                    [ThetaHelper showToastWithTitle:@"Marked as seen!" subtitle:@"They know we are here." icon:[ThetaHelper imageFromEmojiString:@"👀" width:60] autoHide:4 openURL:nil];
+                    if (marked) {
+                        [ThetaHelper showToastWithTitle:@"Marked as seen!" subtitle:@"They know we are here." icon:[ThetaHelper imageFromEmojiString:@"👀" width:60] autoHide:4 openURL:nil];
+                    } else {
+                        [ThetaHelper showToastWithTitle:@"Couldn't mark as seen" subtitle:@"Unknown media type, nothing was sent." icon:[UIImage systemImageNamed:@"exclamationmark.triangle.fill"] autoHide:4 openURL:nil];
+                    }
                 }
             }] forControlEvents:UIControlEventTouchUpInside];
         }
@@ -101,7 +139,9 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
         if (downloadVideos) {
             __weak typeof(self) weakSelf = self;
             [downloadButton addAction:[UIAction actionWithHandler:^(UIAction *action) {
-                id initialVisualMessage = [self valueForKey:@"_initialVisualMessage"];
+                IGDirectVisualMessageViewerController *strongSelf = weakSelf;
+                if (!strongSelf) return;
+                id initialVisualMessage = [strongSelf valueForKey:@"_initialVisualMessage"];
                 id visualMediaInfo = [initialVisualMessage valueForKey:@"_visualMediaInfo"];
                 id media = [visualMediaInfo valueForKey:@"media"];
                 if ([media valueForKey:@"_video_video"]) {
@@ -131,20 +171,15 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
             }] forControlEvents:UIControlEventTouchUpInside];
         }
     } @catch (NSException *exception) {
-        NSLog(@"Error adding buttons: %@", exception);
+        THDebugLog(@"[Theta] view-once: adding buttons failed: %@", exception);
     }
 }
 
-static void (*orig_visualmsgghostvideo)(id self, SEL _cmd, id arg1);
 static void hook_visualmsgghostvideo(id self, SEL _cmd, id arg1) {
     if (!ENABLED(THDMPrivateMediaGhost)) {
         return orig_visualmsgghostvideo(self, _cmd, arg1);
     }
-
-    if (videoPlayed) {
-        orig_visualmsgghostvideo(self, _cmd, arg1);
-        videoPlayed = NO;
-    }
+    THDebugLog(@"[Theta] view-once: video play held back");
 }
 
 static void (*orig_visualmsgghostphoto)(id self, SEL _cmd, id arg1, id arg2, id arg3, id arg4);
@@ -153,10 +188,11 @@ static void hook_visualmsgghostphoto(id self, SEL _cmd, id arg1, id arg2, id arg
         return orig_visualmsgghostphoto(self, _cmd, arg1, arg2, arg3, arg4);
     }
 
-    if (videoPlayed) {
-        orig_visualmsgghostphoto(self, _cmd, arg1, arg2, arg3, arg4);
-        videoPlayed = NO;
+    if (!ThetaPhotoViewBelongsToVisualMessageViewer(self)) {
+        THDebugLog(@"[Theta] view-once: photo load passed, owner not the viewer");
+        return orig_visualmsgghostphoto(self, _cmd, arg1, arg2, arg3, arg4);
     }
+    THDebugLog(@"[Theta] view-once: photo load held back");
 }
 
 void THRegisterPrivateVideoGhostHooks(void) {

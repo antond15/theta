@@ -31,6 +31,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 
 ## Privacy and data
 
+- **Disappearing Media Ghost.** The eye button marked the next disappearing photo or video as seen instead of the current one. It no longer leaves a "seen" flag behind for the next media. It calls Instagram's own seen callbacks directly, and finds the 451 video view (`IGStoryVideoView`), so videos are marked too. The "Marked as seen!" banner shows only when something was sent; an unknown media view shows "Couldn't mark as seen". The photo ghost now applies only to photos in the disappearing-media viewer, so ordinary story photos load normally with the setting on. The viewer and the media it holds are no longer leaked by the button actions.
 - **Diagnostic logging only in debug builds.** Notification-extension traces, hook-install misses, the keychain access group and trace logs are compiled in only by `./build.sh debug`. Normal builds don't write them to the device log.
 - **Profile Analyzer** fetches your avatar only when you open it, not on every app launch. Its fallback API request sends Instagram's own user agent instead of a hard-coded, outdated one.
 - **Media preview downloads** (Save Profile Posts, bulk save) no longer pretend to be Safari.
