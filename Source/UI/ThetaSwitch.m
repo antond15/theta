@@ -1,4 +1,5 @@
 #import "Include/ThetaSwitch.h"
+#import "Include/ThetaDebug.h"
 #import "Include/ThetaHelper.h"
 #import "Include/InstagramHeaders.h"
 
@@ -18,7 +19,7 @@
 				[(id)self.embeddedSwitch performSelector:@selector(setOnTintColor:) withObject:[ThetaHelper iotaPinkColor]];
 			}
 		} else {
-            NSLog(@"IGDSSwitchClass not found");
+            THDebugLog(@"IGDSSwitchClass not found");
 			self.embeddedSwitch = [[UISwitch alloc] initWithFrame:CGRectZero];
 			((UISwitch *)self.embeddedSwitch).onTintColor = [ThetaHelper iotaPinkColor];
 		}

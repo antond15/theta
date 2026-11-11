@@ -167,7 +167,7 @@
 
         NSArray *userFolderNames = [fileManager contentsOfDirectoryAtPath:self.audioNotesDirectory error:&error];
         if (error) {
-            NSLog(@"Error reading AudioNotes directory: %@", error.localizedDescription);
+            THDebugLog(@"Error reading AudioNotes directory: %@", error.localizedDescription);
             self.audioFiles = @[];
             self.userNames = @[];
             self.audioFilesByUser = @{};
@@ -180,7 +180,7 @@
             BOOL isUserDir = NO;
             if ([fileManager fileExistsAtPath:userFolderPath isDirectory:&isUserDir] && isUserDir) {
                 NSArray *fileNames = [fileManager contentsOfDirectoryAtPath:userFolderPath error:&error];
-                if (error) { NSLog(@"Error reading user folder %@: %@", userFolderName, error.localizedDescription); continue; }
+                if (error) { THDebugLog(@"Error reading user folder %@: %@", userFolderName, error.localizedDescription); continue; }
                 NSMutableArray *userItems = [NSMutableArray array];
                 for (NSString *filename in fileNames) {
                     NSString *ext = [[filename pathExtension] lowercaseString];
@@ -207,7 +207,7 @@
         NSError *rootError = nil;
         NSArray *rootEntries = [fileManager contentsOfDirectoryAtPath:self.audioNotesDirectory error:&rootError];
         if (rootError) {
-            NSLog(@"Error reading AudioNotes root: %@", rootError.localizedDescription);
+            THDebugLog(@"Error reading AudioNotes root: %@", rootError.localizedDescription);
         } else {
             NSMutableArray *rootItems = [NSMutableArray array];
             for (NSString *entry in rootEntries) {
@@ -234,7 +234,7 @@
     } else {
         // Saved media (flat in Documents) + include videos from Documents/AudioNotes
         NSArray *fileNames = [fileManager contentsOfDirectoryAtPath:self.savedMediaDirectory error:&error];
-        if (error) { NSLog(@"Error reading Documents: %@", error.localizedDescription); fileNames = @[]; }
+        if (error) { THDebugLog(@"Error reading Documents: %@", error.localizedDescription); fileNames = @[]; }
         NSMutableArray *mediaItems = [NSMutableArray array];
         NSMutableSet *addedPaths = [NSMutableSet set];
         
@@ -261,7 +261,7 @@
             NSError *notesError = nil;
             NSArray *notesFiles = [fileManager contentsOfDirectoryAtPath:self.audioNotesDirectory error:&notesError];
             if (notesError) {
-                NSLog(@"Error reading AudioNotes folder for media: %@", notesError.localizedDescription);
+                THDebugLog(@"Error reading AudioNotes folder for media: %@", notesError.localizedDescription);
             } else {
                 for (NSString *filename in notesFiles) {
                     NSString *ext = [[filename pathExtension] lowercaseString];
@@ -453,7 +453,7 @@
                 NSString *tempPath = [tempDir stringByAppendingPathComponent:uniqueName];
                 NSError *copyError = nil;
                 if (![[NSFileManager defaultManager] copyItemAtPath:audioFile.filePath toPath:tempPath error:&copyError]) {
-                    NSLog(@"Error copying video to temp: %@", copyError);
+                    THDebugLog(@"Error copying video to temp: %@", copyError);
                     [ThetaHelper showToastWithTitle:@"Playback Error" subtitle:@"Unable to prepare video for playback" icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
                     return;
                 }
@@ -535,7 +535,7 @@
                     [ThetaHelper showToastWithTitle:@"Audio File Deleted" subtitle:[NSString stringWithFormat:@"\"%@\" has been deleted", audioFile.filename] icon:[UIImage systemImageNamed:@"trash"] autoHide:2 openURL:nil];
                     [self loadContent]; // Refresh the list
                 } else {
-                    NSLog(@"Error deleting file: %@", error.localizedDescription);
+                    THDebugLog(@"Error deleting file: %@", error.localizedDescription);
                     [ThetaHelper showToastWithTitle:@"Delete Failed" subtitle:@"Unable to delete the audio file" icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
                 }
             }
@@ -602,7 +602,7 @@
             [ThetaHelper showToastWithTitle:@"File Renamed" subtitle:[NSString stringWithFormat:@"Renamed to \"%@\"", newFullFilename] icon:[UIImage systemImageNamed:@"checkmark.circle"] autoHide:2 openURL:nil];
             [self loadContent]; // Refresh the list
         } else {
-            NSLog(@"Error renaming file: %@", error.localizedDescription);
+            THDebugLog(@"Error renaming file: %@", error.localizedDescription);
             [ThetaHelper showToastWithTitle:@"Rename Failed" subtitle:@"Unable to rename the audio file" icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
         }
     }];
@@ -635,7 +635,7 @@
                         deletedCount++;
                     } else {
                         failedCount++;
-                        NSLog(@"Error deleting file %@: %@", audioFile.filename, error.localizedDescription);
+                        THDebugLog(@"Error deleting file %@: %@", audioFile.filename, error.localizedDescription);
                     }
                 }
                 
@@ -702,17 +702,17 @@
     AVAudioSession *audioSession = [AVAudioSession sharedInstance];
     [audioSession setCategory:AVAudioSessionCategoryPlayback withOptions:0 error:&error];
     if (error) {
-        NSLog(@"Error setting audio session category: %@", error.localizedDescription);
+        THDebugLog(@"Error setting audio session category: %@", error.localizedDescription);
     }
     [audioSession setActive:YES error:&error];
     if (error) {
-        NSLog(@"Error activating audio session: %@", error.localizedDescription);
+        THDebugLog(@"Error activating audio session: %@", error.localizedDescription);
     }
     
     // Create and configure audio player
     self.audioPlayer = [[AVAudioPlayer alloc] initWithContentsOfURL:fileURL error:&error];
     if (error) {
-        NSLog(@"Error creating audio player: %@ (OSStatus: %ld)", error.localizedDescription, (long)error.code);
+        THDebugLog(@"Error creating audio player: %@ (OSStatus: %ld)", error.localizedDescription, (long)error.code);
         
         NSString *errorMessage;
         if (error.code == 1937337955) { // kAudioFileUnsupportedFileTypeError
@@ -767,7 +767,7 @@
     NSError *error;
     [[AVAudioSession sharedInstance] setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error];
     if (error) {
-        NSLog(@"Error deactivating audio session: %@", error.localizedDescription);
+        THDebugLog(@"Error deactivating audio session: %@", error.localizedDescription);
     }
 }
 
@@ -825,12 +825,12 @@
     NSError *error;
     [[AVAudioSession sharedInstance] setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error];
     if (error) {
-        NSLog(@"Error deactivating audio session: %@", error.localizedDescription);
+        THDebugLog(@"Error deactivating audio session: %@", error.localizedDescription);
     }
 }
 
 - (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player error:(NSError *)error {
-    NSLog(@"Audio player decode error: %@", error.localizedDescription);
+    THDebugLog(@"Audio player decode error: %@", error.localizedDescription);
     [ThetaHelper showToastWithTitle:@"Playback Error" subtitle:@"Audio decode error occurred" icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
     
     // Clean up
@@ -1032,7 +1032,7 @@
             NSError *deactErr;
             [[AVAudioSession sharedInstance] setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&deactErr];
             if (deactErr) {
-                NSLog(@"Error deactivating audio session (pause): %@", deactErr.localizedDescription);
+                THDebugLog(@"Error deactivating audio session (pause): %@", deactErr.localizedDescription);
             }
         } else {
             BOOL ok = [self.audioPlayer play];
@@ -1045,11 +1045,11 @@
                 AVAudioSession *audioSession = [AVAudioSession sharedInstance];
                 [audioSession setCategory:AVAudioSessionCategoryPlayback withOptions:0 error:&actErr];
                 if (actErr) {
-                    NSLog(@"Error setting category on resume: %@", actErr.localizedDescription);
+                    THDebugLog(@"Error setting category on resume: %@", actErr.localizedDescription);
                 }
                 [audioSession setActive:YES error:&actErr];
                 if (actErr) {
-                    NSLog(@"Error activating on resume: %@", actErr.localizedDescription);
+                    THDebugLog(@"Error activating on resume: %@", actErr.localizedDescription);
                 }
             }
         }

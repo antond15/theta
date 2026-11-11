@@ -406,7 +406,7 @@ static BOOL thetaStoryInvokeSeenSelector(id target, SEL sel, id section, id item
             orig_storyGhost2(target, sel, section, item);
             return YES;
         } @catch (NSException *e) {
-            NSLog(@"[Theta] StoryGhost: orig2 %@ threw %@", NSStringFromSelector(sel), e);
+            THDebugLog(@"[Theta] StoryGhost: orig2 %@ threw %@", NSStringFromSelector(sel), e);
             return NO;
         }
     }
@@ -415,7 +415,7 @@ static BOOL thetaStoryInvokeSeenSelector(id target, SEL sel, id section, id item
             orig_storyGhost3(target, sel, section, item, 0);
             return YES;
         } @catch (NSException *e) {
-            NSLog(@"[Theta] StoryGhost: orig3 %@ threw %@", NSStringFromSelector(sel), e);
+            THDebugLog(@"[Theta] StoryGhost: orig3 %@ threw %@", NSStringFromSelector(sel), e);
             return NO;
         }
     }
@@ -424,7 +424,7 @@ static BOOL thetaStoryInvokeSeenSelector(id target, SEL sel, id section, id item
             orig_sectionMarkCurrent(target, sel);
             return YES;
         } @catch (NSException *e) {
-            NSLog(@"[Theta] StoryGhost: orig markCurrent %@ threw %@", NSStringFromSelector(sel), e);
+            THDebugLog(@"[Theta] StoryGhost: orig markCurrent %@ threw %@", NSStringFromSelector(sel), e);
             return NO;
         }
     }
@@ -433,7 +433,7 @@ static BOOL thetaStoryInvokeSeenSelector(id target, SEL sel, id section, id item
             orig_sectionMarkItem(target, sel, item);
             return YES;
         } @catch (NSException *e) {
-            NSLog(@"[Theta] StoryGhost: orig markItem %@ threw %@", NSStringFromSelector(sel), e);
+            THDebugLog(@"[Theta] StoryGhost: orig markItem %@ threw %@", NSStringFromSelector(sel), e);
             return NO;
         }
     }
@@ -494,7 +494,7 @@ static BOOL thetaStoryInvokeSeenSelector(id target, SEL sel, id section, id item
         [inv invoke];
         return YES;
     } @catch (NSException *e) {
-        NSLog(@"[Theta] StoryGhost: %@ on %@ threw %@", name, NSStringFromClass([target class]), e);
+        THDebugLog(@"[Theta] StoryGhost: %@ on %@ threw %@", name, NSStringFromClass([target class]), e);
         return NO;
     }
 }
@@ -537,11 +537,11 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
     }
 
     if (targets.count == 0) {
-        NSLog(@"[Theta] StoryGhost: no viewer/section for mark-seen");
+        THDebugLog(@"[Theta] StoryGhost: no viewer/section for mark-seen");
         return NO;
     }
     if (!section) {
-        NSLog(@"[Theta] StoryGhost: fullscreen section missing (viewer=%@ cellDel=%@)",
+        THDebugLog(@"[Theta] StoryGhost: fullscreen section missing (viewer=%@ cellDel=%@)",
               NSStringFromClass([viewer class]),
               NSStringFromClass([ThetaValueForKey(cell, @"delegate") class]));
         return NO;
@@ -583,7 +583,7 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
             orig_storyGhost2(viewer, @selector(fullscreenSectionController:didMarkItemAsSeen:), section, item);
             invoked = YES;
         } @catch (NSException *e) {
-            NSLog(@"[Theta] StoryGhost: orig didMarkItemAsSeen threw %@", e);
+            THDebugLog(@"[Theta] StoryGhost: orig didMarkItemAsSeen threw %@", e);
         }
     }
     if (orig_storyGhost3 && viewer) {
@@ -591,7 +591,7 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
             orig_storyGhost3(viewer, NSSelectorFromString(@"fullscreenSectionController:didMarkItemAsSeen:entryPoint:"), section, item, 0);
             invoked = YES;
         } @catch (NSException *e) {
-            NSLog(@"[Theta] StoryGhost: orig didMarkItemAsSeen:entryPoint: threw %@", e);
+            THDebugLog(@"[Theta] StoryGhost: orig didMarkItemAsSeen:entryPoint: threw %@", e);
         }
     }
     if (orig_sectionMarkCurrent) {
@@ -599,7 +599,7 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
             orig_sectionMarkCurrent(section, NSSelectorFromString(@"markCurrentItemAsSeen"));
             invoked = YES;
         } @catch (NSException *e) {
-            NSLog(@"[Theta] StoryGhost: orig markCurrentItemAsSeen threw %@", e);
+            THDebugLog(@"[Theta] StoryGhost: orig markCurrentItemAsSeen threw %@", e);
         }
     }
     if (orig_sectionMarkItem) {
@@ -607,7 +607,7 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
             orig_sectionMarkItem(section, NSSelectorFromString(@"markItemAsSeen:"), item);
             invoked = YES;
         } @catch (NSException *e) {
-            NSLog(@"[Theta] StoryGhost: orig markItemAsSeen: threw %@", e);
+            THDebugLog(@"[Theta] StoryGhost: orig markItemAsSeen: threw %@", e);
         }
     }
 
@@ -646,7 +646,7 @@ static BOOL thetaStoryMarkItemAsSeen(IGStoryFullscreenCell *cell, id item) {
             if (sels.count)
                 THDebugLog(@"[Theta] StoryGhost: %@ mark-sels=%@", cn, [sels componentsJoinedByString:@","]);
         }
-        NSLog(@"[Theta] StoryGhost: no mark-seen IMP targets=%@", [clsNames componentsJoinedByString:@","]);
+        THDebugLog(@"[Theta] StoryGhost: no mark-seen IMP targets=%@", [clsNames componentsJoinedByString:@","]);
     }
     return invoked;
 }
@@ -857,7 +857,7 @@ static void downloadButtonTapped(IGStoryFullscreenCell *self) {
 			downloadHDVideo(video);
 			return;
 		} @catch (NSException *exception) {
-			NSLog(@"Error downloading video: %@", exception);
+			THDebugLog(@"Error downloading video: %@", exception);
 		}
 	}
 
@@ -957,7 +957,7 @@ static void downloadAllMedia(IGStoryFullscreenCell *self) {
 							}
 						}
 					} @catch (NSException *exception) {
-						NSLog(@"Error downloading image: %@", exception);
+						THDebugLog(@"Error downloading image: %@", exception);
 					}
 				} else {
 					@try {
@@ -969,7 +969,7 @@ static void downloadAllMedia(IGStoryFullscreenCell *self) {
 							[igvideos addObject:video];
 						}
 					} @catch (NSException *exception) {
-						NSLog(@"Error downloading video: %@", exception);
+						THDebugLog(@"Error downloading video: %@", exception);
 					}
 				}
 			}
@@ -1967,7 +1967,7 @@ static id hook_storyGhost(id self, SEL _cmd) {
     @try {
         setupButtons(self);
     } @catch (NSException *exception) {
-        NSLog(@"[Theta] StoryGhost setupButtons: %@", exception);
+        THDebugLog(@"[Theta] StoryGhost setupButtons: %@", exception);
     }
     return media;
 }
@@ -1978,7 +1978,7 @@ static void hook_storyGhostLayout(id self, SEL _cmd) {
     @try {
         setupButtons(self);
     } @catch (NSException *exception) {
-        NSLog(@"[Theta] StoryGhost layout setupButtons: %@", exception);
+        THDebugLog(@"[Theta] StoryGhost layout setupButtons: %@", exception);
     }
 }
 
@@ -2081,21 +2081,21 @@ static void downloadStoryMedia(id self) {
             }
         } @catch (__unused NSException *e) {}
         if (!firstDelegate) {
-            NSLog(@"No delegate found for story download");
+            THDebugLog(@"No delegate found for story download");
             return;
         }
         
         IGPhoto *photo = nil;
         @try { photo = [firstDelegate valueForKey:@"_photo"]; } @catch (__unused NSException *e) {}
         if (!photo) {
-            NSLog(@"No photo found for story download");
+            THDebugLog(@"No photo found for story download");
             return;
         }
         
         NSArray *originalImageVersions = nil;
         @try { originalImageVersions = [photo valueForKey:@"_originalImageVersions"]; } @catch (__unused NSException *e) {}
         if (!originalImageVersions || originalImageVersions.count == 0) {
-            NSLog(@"No image versions found for story download");
+            THDebugLog(@"No image versions found for story download");
             return;
         }
         
@@ -2103,7 +2103,7 @@ static void downloadStoryMedia(id self) {
         NSURL *url = nil;
         @try { url = [photoURL valueForKey:@"url"]; } @catch (__unused NSException *e) {}
         if (!url) {
-            NSLog(@"No URL found for story download");
+            THDebugLog(@"No URL found for story download");
             return;
         }
 
@@ -2137,7 +2137,7 @@ static void downloadStoryMedia(id self) {
             performStoryDownloadWithURL(url);
         }
     } @catch (NSException *exception) {
-        NSLog(@"Error downloading image: %@", exception);
+        THDebugLog(@"Error downloading image: %@", exception);
     }
 }
 
@@ -2146,7 +2146,7 @@ static void performStoryDownloadWithURL(NSURL *url) {
         NSURLSession *session = [NSURLSession sharedSession];
         NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:url completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
             if (error) {
-                NSLog(@"Error downloading file: %@", error);
+                THDebugLog(@"Error downloading file: %@", error);
                 return;
             }
 
@@ -2157,7 +2157,7 @@ static void performStoryDownloadWithURL(NSURL *url) {
             
             [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:permanentFilePath] error:&moveError];
             if (moveError) {
-                NSLog(@"Error moving downloaded file: %@", moveError);
+                THDebugLog(@"Error moving downloaded file: %@", moveError);
                 return;
             }
 
@@ -2168,14 +2168,14 @@ static void performStoryDownloadWithURL(NSURL *url) {
                         [PHAssetChangeRequest creationRequestForAssetFromImageAtFileURL:[NSURL fileURLWithPath:permanentFilePath]];
                     } completionHandler:^(BOOL success, NSError *error) {
                         if (!success) {
-                            NSLog(@"Error saving image to camera roll: %@", error);
+                            THDebugLog(@"Error saving image to camera roll: %@", error);
                         }
 
                         // Clean up temporary file after saving to Photos
                         NSError *deleteError;
                         [[NSFileManager defaultManager] removeItemAtPath:permanentFilePath error:&deleteError];
                         if (deleteError) {
-                            NSLog(@"Error deleting temporary file: %@", deleteError);
+                            THDebugLog(@"Error deleting temporary file: %@", deleteError);
                         }
 
                         if (success && ENABLED(THAppShowBanners)) {
@@ -2257,9 +2257,9 @@ void THRegisterStoryGhostHooks(void) {
     }
 
     if (!orig_storyGhost && !orig_storyGhostLayout && !orig_storyGhostDidMoveToWindow) {
-        NSLog(@"[Theta] StoryGhost: no cell overlay hook installed — story buttons may be unavailable");
+        THDebugLog(@"[Theta] StoryGhost: no cell overlay hook installed — story buttons may be unavailable");
     }
     if (!orig_storyGhost2 && !orig_storyGhost3) {
-        NSLog(@"[Theta] StoryGhost: didMarkItemAsSeen hook missing orig — will try live msgSend + section mark APIs");
+        THDebugLog(@"[Theta] StoryGhost: didMarkItemAsSeen hook missing orig — will try live msgSend + section mark APIs");
     }
 }

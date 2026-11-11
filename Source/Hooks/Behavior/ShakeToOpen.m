@@ -22,27 +22,27 @@ static void hook_shakeToOpen(id self, SEL _cmd, int arg1) {
             // Present settings
             SettingsViewController *vc = [[SettingsViewController alloc] init];
             if (!vc) {
-                NSLog(@"Failed to create SettingsViewController");
+                THDebugLog(@"Failed to create SettingsViewController");
                 return;
             }
             
             UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:vc];
             if (!navController) {
-                NSLog(@"Failed to create NavigationController");
+                THDebugLog(@"Failed to create NavigationController");
                 return;
             }
             
             navController.modalPresentationStyle = UIModalPresentationPageSheet;
             UIViewController *rootViewController = [UIApplication sharedApplication].keyWindow.rootViewController;
             if (!rootViewController) {
-                NSLog(@"No root view controller found");
+                THDebugLog(@"No root view controller found");
                 return;
             }
             
             [rootViewController presentViewController:navController animated:YES completion:nil];
         }
     } @catch (NSException *exception) {
-        NSLog(@"Error in shake to open: %@", exception);
+        THDebugLog(@"Error in shake to open: %@", exception);
         // Fallback to original behavior
         orig_shakeToOpen(self, _cmd, arg1);
     }

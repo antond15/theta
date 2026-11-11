@@ -4,11 +4,10 @@ Assemble the main tweak translation unit for Theos.
 
 Order (single TU so hook implementations can stay file-local `static`):
   1. Source/Runtime/THGlobalsAndHooking.m
-  2. Source/Runtime/THNativeToast.m
-  3. Source/SideloadNSE/ThetaHPKEKeyFile.m
-  4. Source/Runtime/THSideloadFishhook.m
-  5. Source/Hooks/**/*.m  (GIFNameOverlay.m first)
-  6. Source/Runtime/THTweak.m
+  2. Source/SideloadNSE/ThetaHPKEKeyFile.m
+  3. Source/Runtime/THSideloadFishhook.m
+  4. Source/Hooks/**/*.m  (GIFNameOverlay.m first)
+  5. Source/Runtime/THTweak.m
 
 Output: TweakCOMPILE.xm
 """
@@ -22,7 +21,6 @@ OUTPUT = ROOT / "TweakCOMPILE.xm"
 
 PRE = [
     ROOT / "Source/Runtime/THGlobalsAndHooking.m",
-    ROOT / "Source/Runtime/THNativeToast.m",
     ROOT / "Source/SideloadNSE/ThetaHPKEKeyFile.m",
     ROOT / "Source/Runtime/THSideloadFishhook.m",
 ]

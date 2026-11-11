@@ -62,13 +62,13 @@ static void hook_settingButtonInFeedView(id self, SEL _cmd) {
 				navController.modalPresentationStyle = UIModalPresentationPageSheet;
 				[[ThetaHelper topViewController] presentViewController:navController animated:YES completion:nil];
 			} @catch (NSException *exception) {
-				NSLog(@"Error presenting settings: %@", exception);
+				THDebugLog(@"Error presenting settings: %@", exception);
 			}
 		}] forControlEvents:UIControlEventTouchUpInside];
 
 		objc_setAssociatedObject(self, &kThetaSettingsButtonOnceKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 	} @catch (NSException *exception) {
-		NSLog(@"[Theta] SettingsButton layout hook: %@", exception);
+		THDebugLog(@"[Theta] SettingsButton layout hook: %@", exception);
 	}
 }
 

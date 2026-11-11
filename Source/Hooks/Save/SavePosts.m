@@ -39,7 +39,7 @@ static BOOL theta_moveReplace(NSString *src, NSString *dst) {
         theta_removePath(src);
         return YES;
     }
-    NSLog(@"theta_moveReplace failed %@ -> %@: %@", src, dst, err);
+    THDebugLog(@"theta_moveReplace failed %@ -> %@: %@", src, dst, err);
     return NO;
 }
 
@@ -167,7 +167,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
     dispatch_group_enter(downloadGroup);
     NSURLSessionDownloadTask *videoTask = [session downloadTaskWithURL:[NSURL URLWithString:videoURLString] completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         if (error) {
-            NSLog(@"Error downloading video: %@", error);
+            THDebugLog(@"Error downloading video: %@", error);
             dispatch_async(dispatch_get_main_queue(), ^{
                 [progressToast completeProgressWithTitle:@"Error" subtitle:@"Failed to download video" icon:nil url:nil];
             });
@@ -186,7 +186,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         dispatch_group_enter(downloadGroup);
         NSURLSessionDownloadTask *audioTask = [session downloadTaskWithURL:[NSURL URLWithString:audioURLString] completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
             if (error) {
-                NSLog(@"Error downloading audio: %@", error);
+                THDebugLog(@"Error downloading audio: %@", error);
             } else if (location) {
                 theta_moveReplace(location.path, audioPath);
             }
@@ -205,7 +205,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
     // verify both files exist and are non-empty
         NSDictionary *downloadedVideoAttrs = [fm attributesOfItemAtPath:videoPath error:nil];
         if (![fm fileExistsAtPath:videoPath] || !downloadedVideoAttrs || [downloadedVideoAttrs fileSize] == 0) {
-            NSLog(@"Video file missing or empty: %@", videoPath);
+            THDebugLog(@"Video file missing or empty: %@", videoPath);
             dispatch_async(dispatch_get_main_queue(), ^{
                 showCompletionToast(progressToast, NO, @"Error", @"Failed to download video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
             });
@@ -217,7 +217,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
             if (preparedAudio.length) {
                 audioPath = preparedAudio;
             } else {
-                NSLog(@"Audio file missing, empty, or undecodable; continuing with video only: %@", audioPath);
+                THDebugLog(@"Audio file missing, empty, or undecodable; continuing with video only: %@", audioPath);
                 hasAudio = NO;
             }
         }
@@ -254,7 +254,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
             BOOL success = ThetaTranscodeWithAssetReaderWriter(videoPath, hasAudio ? audioPath : nil, hasAudio, h264OutputPath);
             NSError *transcodeError = nil;
             if (!success) {
-                NSLog(@"Reader/Writer transcode failed; trying FFmpeg");
+                THDebugLog(@"Reader/Writer transcode failed; trying FFmpeg");
                 success = [AV1Transcoder transcodeAV1ToH264:videoPath
                                                 outputPath:h264OutputPath
                                                  audioPath:hasAudio ? audioPath : nil
@@ -276,7 +276,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                    in folder mode it lands as a "saved" video that nothing can play. Fail
                    honestly instead, and name the reason: without a console there is no other
                    way to tell "ffmpeg didn't load" from "ffmpeg loaded and the encode failed". */
-                NSLog(@"AV1 conversion failed (%@); refusing to save the raw DASH segment", transcodeError);
+                THDebugLog(@"AV1 conversion failed (%@); refusing to save the raw DASH segment", transcodeError);
                 NSString *reason = transcodeError.localizedDescription.length
                     ? [NSString stringWithFormat:@"AV1 conversion failed: %@", transcodeError.localizedDescription]
                     : @"This reel is AV1 and couldn't be converted.";
@@ -303,7 +303,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 });
                 NSDictionary *fileAttrs = [fm attributesOfItemAtPath:fileToSave error:nil];
                 if (!fileAttrs || [fileAttrs fileSize] == 0) {
-                    NSLog(@"Video file is empty");
+                    THDebugLog(@"Video file is empty");
                     dispatch_async(dispatch_get_main_queue(), ^{
                         showCompletionToast(progressToast, NO, @"Error", @"Video file is invalid", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                     });
@@ -319,7 +319,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                 showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
                             });
                         } else {
-                            NSLog(@"Failed to save video: %@", error);
+                            THDebugLog(@"Failed to save video: %@", error);
                             dispatch_async(dispatch_get_main_queue(), ^{
                                 showCompletionToast(progressToast, NO, @"Error", @"Photos couldn't import this video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                             });
@@ -353,7 +353,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                         showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
                     });
                 } else {
-                    NSLog(@"Error moving video to AudioNotes: %@", moveError);
+                    THDebugLog(@"Error moving video to AudioNotes: %@", moveError);
                     dispatch_async(dispatch_get_main_queue(), ^{
                         showCompletionToast(progressToast, NO, @"Error", @"Could not move video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                     });
@@ -424,7 +424,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
            videoDur would survive the check and reach insertTimeRange:, which raises rather than
            reporting through its error out-param. */
         if (!CMTIME_IS_NUMERIC(videoDur) || CMTIME_COMPARE_INLINE(videoDur, <=, kCMTimeZero)) {
-            NSLog(@"ThetaSave: unusable video duration for %@", videoPath);
+            THDebugLog(@"ThetaSave: unusable video duration for %@", videoPath);
             dispatch_async(dispatch_get_main_queue(), ^{
                 showCompletionToast(progressToast, NO, @"Error", @"Video file is unreadable", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
             });
@@ -445,7 +445,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         if (videoTrackForMerge) {
             [compositionVideoTrack insertTimeRange:mergeRange ofTrack:videoTrackForMerge atTime:kCMTimeZero error:&videoInsertError];
             if (videoInsertError) {
-                NSLog(@"Error adding video track: %@", videoInsertError);
+                THDebugLog(@"Error adding video track: %@", videoInsertError);
                 dispatch_async(dispatch_get_main_queue(), ^{
                     showCompletionToast(progressToast, NO, @"Error", @"Could not process video track", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                 });
@@ -459,7 +459,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
             NSError *audioInsertError = nil;
             [compositionAudioTrack insertTimeRange:mergeRange ofTrack:audioTrackForMerge atTime:kCMTimeZero error:&audioInsertError];
             if (audioInsertError) {
-                NSLog(@"Error adding audio track: %@", audioInsertError);
+                THDebugLog(@"Error adding audio track: %@", audioInsertError);
                 dispatch_async(dispatch_get_main_queue(), ^{
                     showCompletionToast(progressToast, NO, @"Error", @"Could not merge audio", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                 });
@@ -467,13 +467,13 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 return;
             }
         } else if (hasAudio) {
-            NSLog(@"Warning: No decodable audio track in downloaded audio file");
+            THDebugLog(@"Warning: No decodable audio track in downloaded audio file");
         }
         
         AVAssetExportSession *exportSession = [[AVAssetExportSession alloc] initWithAsset:composition presetName:AVAssetExportPresetHighestQuality];
         exportSession.outputURL = outputURL;
         if (!ThetaExportSessionSetFileType(exportSession, AVFileTypeMPEG4)) {
-            NSLog(@"ThetaSave: export session cannot write MPEG-4");
+            THDebugLog(@"ThetaSave: export session cannot write MPEG-4");
             dispatch_async(dispatch_get_main_queue(), ^{
                 showCompletionToast(progressToast, NO, @"Error", @"Could not prepare video for saving", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
             });
@@ -492,7 +492,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 AVAsset *mergedAsset = [AVAsset assetWithURL:outputURL];
                 NSArray<AVAssetTrack *> *mergedAudioTracks = [mergedAsset tracksWithMediaType:AVMediaTypeAudio];
                 if (hasAudio && mergedAudioTracks.count <= 0) {
-                    NSLog(@"ThetaSave: export completed without an audio track (DASH audio may be unsupported)");
+                    THDebugLog(@"ThetaSave: export completed without an audio track (DASH audio may be unsupported)");
                 }
                 
                 // Check and request photo library authorization
@@ -503,7 +503,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                     NSError *fileError = nil;
                     NSDictionary *fileAttrs = [fm attributesOfItemAtPath:outputPath error:&fileError];
                     if (fileError) {
-                        NSLog(@"Error reading output file attributes: %@", fileError);
+                        THDebugLog(@"Error reading output file attributes: %@", fileError);
                     }
                     
                     BOOL fileExists = [fm fileExistsAtPath:outputPath];
@@ -568,7 +568,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                         unsigned long long fileSize = [fileAttrs fileSize];
                                         
                                         if (fileSize == 0 || !fileAttrs) {
-                                            NSLog(@"Transcoded file is empty or doesn't exist");
+                                            THDebugLog(@"Transcoded file is empty or doesn't exist");
                                             dispatch_async(dispatch_get_main_queue(), ^{
                                                 showCompletionToast(progressToast, NO, @"Error", @"Transcoded video file is invalid", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                                             });
@@ -606,8 +606,8 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                                         [fm removeItemAtPath:h264OutputPath error:nil];
                                                         [fm removeItemAtPath:cacheVideoPath error:nil];
                                                     } else {
-                                                        NSLog(@"Failed to save video using ALAssetsLibrary: %@", error);
-                                                        NSLog(@"Error domain: %@, code: %ld", error.domain, (long)error.code);
+                                                        THDebugLog(@"Failed to save video using ALAssetsLibrary: %@", error);
+                                                        THDebugLog(@"Error domain: %@, code: %ld", error.domain, (long)error.code);
                                                         dispatch_async(dispatch_get_main_queue(), ^{
                                                             NSString *errorMsg = error.localizedDescription ?: @"Unknown error";
                                                             showCompletionToast(progressToast, NO, @"Error", [NSString stringWithFormat:@"Save failed: %@", errorMsg], [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
@@ -619,7 +619,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                                 }];
                                                 #pragma clang diagnostic pop
                                             } else {
-                                                NSLog(@"Failed to copy video to Caches: %@", copyError);
+                                                THDebugLog(@"Failed to copy video to Caches: %@", copyError);
                                                 dispatch_async(dispatch_get_main_queue(), ^{
                                                     showCompletionToast(progressToast, NO, @"Error", @"Failed to prepare video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                                                 });
@@ -662,7 +662,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                         [fm removeItemAtPath:outputPath error:nil];
                                         // Don't remove h264OutputPath - we moved it to AudioNotes
                                     } else {
-                                        NSLog(@"Error moving video to AudioNotes: %@", moveError);
+                                        THDebugLog(@"Error moving video to AudioNotes: %@", moveError);
                                         dispatch_async(dispatch_get_main_queue(), ^{
                                             showCompletionToast(progressToast, NO, @"Error", @"Could not move video to AudioNotes.", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                                         });
@@ -671,7 +671,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 dispatch_semaphore_signal(semaphore);
                                 }
                                 } else {
-                                    NSLog(@"Transcoding failed (%@); trying native export", transcodeError);
+                                    THDebugLog(@"Transcoding failed (%@); trying native export", transcodeError);
                                     dispatch_async(dispatch_get_main_queue(), ^{
                                         [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Converting video..."];
                                     });
@@ -704,7 +704,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                         }
                         [fm removeItemAtPath:outputPath error:nil];
                     } else {
-                        NSLog(@"Failed to save video to camera roll: %@", error);
+                        THDebugLog(@"Failed to save video to camera roll: %@", error);
                         dispatch_async(dispatch_get_main_queue(), ^{
                             [progressToast completeProgressWithTitle:@"Error" subtitle:@"Failed to save to camera roll" icon:nil url:nil];
                         });
@@ -727,24 +727,24 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                                     }
                                     [fm removeItemAtPath:outputPath error:nil];
                                 } else {
-                                    NSLog(@"Failed to save video to camera roll: %@", error);
+                                    THDebugLog(@"Failed to save video to camera roll: %@", error);
                                 }
                                                         finishJob();
                 dispatch_semaphore_signal(semaphore);
                             });
                         } else {
-                            NSLog(@"Photo library access denied by user");
+                            THDebugLog(@"Photo library access denied by user");
                                                     finishJob();
                 dispatch_semaphore_signal(semaphore);
                         }
                     }];
                 } else {
-                    NSLog(@"Photo library access denied or restricted. Status: %ld", (long)status);
+                    THDebugLog(@"Photo library access denied or restricted. Status: %ld", (long)status);
                                             finishJob();
                 dispatch_semaphore_signal(semaphore);
                 }
             } else {
-                NSLog(@"Export failed with status: %ld, error: %@", (long)exportSession.status, exportSession.error);
+                THDebugLog(@"Export failed with status: %ld, error: %@", (long)exportSession.status, exportSession.error);
                 NSString *fallbackPath = [workDir stringByAppendingPathComponent:@"output_h264.mp4"];
                 if ([fm fileExistsAtPath:fallbackPath]) {
                     [fm removeItemAtPath:fallbackPath error:nil];
@@ -765,7 +765,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                     });
                 }];
                 if (!fallbackOK) {
-                    NSLog(@"FFmpeg fallback after export failure failed (%@)", transcodeError);
+                    THDebugLog(@"FFmpeg fallback after export failure failed (%@)", transcodeError);
                     fallbackOK = ThetaExportPhotosCompatibleMP4(videoPath, audioPath, hasAudio, fallbackPath);
                 }
                 NSDictionary *fallbackAttrs = [fm attributesOfItemAtPath:fallbackPath error:nil];
@@ -780,7 +780,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                             [fm removeItemAtPath:outputPath error:nil];
                             [fm removeItemAtPath:fallbackPath error:nil];
                         } else {
-                            NSLog(@"Fallback save failed: %@", saveError);
+                            THDebugLog(@"Fallback save failed: %@", saveError);
                             dispatch_async(dispatch_get_main_queue(), ^{
                                 showCompletionToast(progressToast, NO, @"Error", @"Could not prepare video for saving", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                             });
@@ -798,7 +798,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
             }
         }];
       } @catch (NSException *exception) {
-        NSLog(@"[Theta] reel save failed with exception: %@ — %@", exception.name, exception.reason);
+        THDebugLog(@"[Theta] reel save failed with exception: %@ — %@", exception.name, exception.reason);
         dispatch_async(dispatch_get_main_queue(), ^{
             showCompletionToast(progressToast, NO, @"Error", @"Could not save this video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
         });
@@ -969,7 +969,7 @@ static void downloadMedia(id self) {
             }
         });
     } @catch (NSException *exception) {
-        NSLog(@"Error: %@", exception);
+        THDebugLog(@"Error: %@", exception);
     }
 }
 
@@ -1024,7 +1024,7 @@ static void fullscreenMediaItem(id self) {
         mediaVC.modalPresentationStyle = UIModalPresentationFullScreen;
         [[ThetaHelper topViewController] presentViewController:mediaVC animated:YES completion:nil];
     } @catch (NSException *exception) {
-        NSLog(@"Error: %@", exception);
+        THDebugLog(@"Error: %@", exception);
     }
 }
 
@@ -1145,13 +1145,13 @@ static void downloadSundialMedia(id self) {
         @try {
             media = delegate.media;
         } @catch (NSException *exception) {
-            NSLog(@"Error: %@", exception);
+            THDebugLog(@"Error: %@", exception);
             return; // Early return if we can't get media
         }
     }
     
     if (!media) {
-        NSLog(@"Error: No media found");
+        THDebugLog(@"Error: No media found");
         return;
     }
     
@@ -1162,7 +1162,7 @@ static void downloadSundialMedia(id self) {
 
     NSArray *mediaItems = [media valueForKey:@"items"];
     if (!mediaItems || mediaItems.count == 0) {
-        NSLog(@"Error: No media items found");
+        THDebugLog(@"Error: No media items found");
         return;
     }
     
@@ -1681,7 +1681,7 @@ static void hook_sundialViewerVerticalUFI(IGSundialViewerVerticalUFI *self, SEL 
                     theta_sundialHideRepostControls(again);
                 });
             } @catch (NSException *exception) {
-                NSLog(@"Error hiding repost button: %@", exception);
+                THDebugLog(@"Error hiding repost button: %@", exception);
             }
         });
     }
@@ -1727,7 +1727,7 @@ static void hook_sundialViewerVerticalUFI(IGSundialViewerVerticalUFI *self, SEL 
 			}
         }
     } @catch (NSException *exception) {
-        NSLog(@"Error: %@", exception);
+        THDebugLog(@"Error: %@", exception);
     }
 }
 

@@ -231,7 +231,7 @@ static void hook_directComposer2(id self, SEL _cmd) {
 
         theta_applyComposerCharacterLimitBypass(self);
     } @catch (NSException *exception) {
-        NSLog(@"Error in character limit bypass: %@", exception);
+        THDebugLog(@"Error in character limit bypass: %@", exception);
     }
 }
 

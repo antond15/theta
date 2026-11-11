@@ -583,7 +583,7 @@ static void hook_bypassReelPassword(id self, SEL _cmd) {
                 objc_setAssociatedObject(bypassButton, &kThetaBypassObserversKey, observers, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
         } @catch (NSException *e) {
-            NSLog(@"Error in bypassReelPassword: %@", e);
+            THDebugLog(@"Error in bypassReelPassword: %@", e);
         }
     }
 }

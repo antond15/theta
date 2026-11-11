@@ -26,7 +26,7 @@ static const void *kThetaMessengerSettingsLPKey = &kThetaMessengerSettingsLPKey;
             [rootViewController presentViewController:navController animated:YES completion:nil];
         }
     } @catch (NSException *exception) {
-        NSLog(@"MessengerMode tabbar settings: %@", exception);
+        THDebugLog(@"MessengerMode tabbar settings: %@", exception);
     }
 }
 
@@ -102,7 +102,7 @@ static void hook_tabbar(id self, SEL _cmd) {
             [rootViewController presentViewController:navController animated:YES completion:nil];
         }
     } @catch (NSException *exception) {
-        NSLog(@"Error presenting settings: %@", exception);
+        THDebugLog(@"Error presenting settings: %@", exception);
     }
 }
 

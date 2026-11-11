@@ -34,7 +34,7 @@ static id ThetaBuildWaveformFromAudioURL(NSURL *audioURL, CGFloat intervalSec) {
 		NSError *error = nil;
 		AVAssetReader *reader = [[AVAssetReader alloc] initWithAsset:asset error:&error];
 		if (error || !reader) {
-			NSLog(@"[Theta] Waveform reader init failed: %@", error);
+			THDebugLog(@"[Theta] Waveform reader init failed: %@", error);
 			return nil;
 		}
 		
@@ -116,12 +116,12 @@ static id ThetaBuildWaveformFromAudioURL(NSURL *audioURL, CGFloat intervalSec) {
 		}
 		
 		if (reader.status == AVAssetReaderStatusFailed) {
-			NSLog(@"[Theta] Waveform reader failed: %@", reader.error);
+			THDebugLog(@"[Theta] Waveform reader failed: %@", reader.error);
 		}
 		
 		Class Waveform = NSClassFromString(@"IGDirectAudioWaveform");
 		if (!Waveform) {
-			NSLog(@"[Theta] Waveform class not found");
+			THDebugLog(@"[Theta] Waveform class not found");
 			return nil;
 		}
 		
@@ -182,7 +182,7 @@ static void hook_voiceMessageButton(id self, SEL _cmd, NSInteger entryPoint) {
 					if (topVC) {
 						[topVC presentViewController:picker animated:YES completion:nil];
 					} else {
-						NSLog(@"[Theta] Failed to present picker: topViewController is nil");
+						THDebugLog(@"[Theta] Failed to present picker: topViewController is nil");
 					}
 				});
             }
@@ -204,7 +204,7 @@ static void hook_voiceMessageButton(id self, SEL _cmd, NSInteger entryPoint) {
 					if (topVC) {
 						[topVC presentViewController:picker animated:YES completion:nil];
 					} else {
-						NSLog(@"[Theta] Failed to present document picker: topViewController is nil");
+						THDebugLog(@"[Theta] Failed to present document picker: topViewController is nil");
 					}
 				});
 			}
@@ -262,7 +262,7 @@ static void ThetaDirectSendOnController(id target, NSInteger entryPoint, NSURL *
 		}
 
 		if (!sent) {
-			NSLog(@"[Theta] No voice-note upload selector on %@", [target class]);
+			THDebugLog(@"[Theta] No voice-note upload selector on %@", [target class]);
 			[ThetaHelper showToastWithTitle:@"Couldn't send"
 								  subtitle:@"Instagram's voice upload API changed."
 									  icon:[ThetaHelper imageFromEmojiString:@"⚠️" width:300]
@@ -350,7 +350,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 		AVAssetExportSession *exporter = [[AVAssetExportSession alloc] initWithAsset:(composition ? composition : asset) presetName:AVAssetExportPresetPassthrough];
 		exporter.outputURL = mp4URL;
 		if (!ThetaExportSessionSetFileType(exporter, AVFileTypeMPEG4)) {
-			NSLog(@"[Theta] audio upload: exporter cannot write MPEG-4; aborting");
+			THDebugLog(@"[Theta] audio upload: exporter cannot write MPEG-4; aborting");
 			gThetaExportInProgress = NO;
 			return;
 		}
@@ -373,7 +373,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 					gThetaExportInProgress = NO;
 				});
 			} else {
-				NSLog(@"[Theta] MP4 export failed: status=%ld error=%@ — falling back to M4A", (long)exporter.status, exporter.error);
+				THDebugLog(@"[Theta] MP4 export failed: status=%ld error=%@ — falling back to M4A", (long)exporter.status, exporter.error);
 				// Fallback to M4A
 				NSString *m4aName = [NSString stringWithFormat:@"theta_upload_%@.m4a", [[NSUUID UUID] UUIDString]];
 				NSURL *m4aURL = [tempDirURL URLByAppendingPathComponent:m4aName];
@@ -381,7 +381,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 				AVAssetExportSession *fallback = [[AVAssetExportSession alloc] initWithAsset:asset presetName:AVAssetExportPresetAppleM4A];
 				fallback.outputURL = m4aURL;
 				if (!ThetaExportSessionSetFileType(fallback, AVFileTypeAppleM4A)) {
-					NSLog(@"[Theta] audio upload: fallback exporter cannot write M4A; aborting");
+					THDebugLog(@"[Theta] audio upload: fallback exporter cannot write M4A; aborting");
 					gThetaExportInProgress = NO;
 					return;
 				}
@@ -403,7 +403,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 							gThetaExportInProgress = NO;
 						});
 					} else {
-						NSLog(@"[Theta] Audio export fallback failed: status=%ld error=%@", (long)fallback.status, fallback.error);
+						THDebugLog(@"[Theta] Audio export fallback failed: status=%ld error=%@", (long)fallback.status, fallback.error);
 						gThetaExportInProgress = NO;
 					}
 				}];
@@ -449,7 +449,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 	if ([ext isEqualToString:@"m4a"]) {
 		NSError *copyErr = nil;
 		if (![[NSFileManager defaultManager] copyItemAtURL:docURL toURL:m4aURL error:&copyErr]) {
-			NSLog(@"[Theta] Failed to copy m4a from Files: %@", copyErr);
+			THDebugLog(@"[Theta] Failed to copy m4a from Files: %@", copyErr);
 		}
 	}
 	
@@ -481,7 +481,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 	AVAssetExportSession *exporter = [[AVAssetExportSession alloc] initWithAsset:asset presetName:AVAssetExportPresetAppleM4A];
 	exporter.outputURL = m4aURL;
 	if (!ThetaExportSessionSetFileType(exporter, AVFileTypeAppleM4A)) {
-		NSLog(@"[Theta] Files audio: exporter cannot write M4A; using the original file");
+		THDebugLog(@"[Theta] Files audio: exporter cannot write M4A; using the original file");
 		finishWithURL(docURL);
 		return;
 	}
@@ -490,7 +490,7 @@ static void hook_uploadAudioMessage3(id self, SEL _cmd, id viewController, id au
 		if (exporter.status == AVAssetExportSessionStatusCompleted) {
 			finishWithURL(m4aURL);
 		} else {
-			NSLog(@"[Theta] Files audio export to M4A failed: status=%ld error=%@", (long)exporter.status, exporter.error);
+			THDebugLog(@"[Theta] Files audio export to M4A failed: status=%ld error=%@", (long)exporter.status, exporter.error);
 			// As a last resort, try to use original URL directly
 			finishWithURL(docURL);
 		}

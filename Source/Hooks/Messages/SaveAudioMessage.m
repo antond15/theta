@@ -28,7 +28,7 @@ static void hook_audioMessage(id self, SEL _cmd, id audio, CGFloat progress, id 
             });
         }
     } @catch (NSException *exception) {
-        NSLog(@"Error saving audio message: %@", exception);
+        THDebugLog(@"Error saving audio message: %@", exception);
     }
 }
 
@@ -65,7 +65,7 @@ static void hook_audioPlayerDidPlayToEnd(id self, SEL _cmd, id arg1) {
                                         // clear theta_audio_url_key
                                         objc_setAssociatedObject(self, &theta_audio_url_key, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                                     } else {
-                                        NSLog(@"MP3 convert error: %@", error);
+                                        THDebugLog(@"MP3 convert error: %@", error);
                                         [ThetaHelper showToastWithTitle:@"Audio Conversion Failed" subtitle:@"Could not convert to MP3." icon:[UIImage systemImageNamed:@"xmark.circle.fill"] autoHide:2 openURL:nil];
                                     }
                                 }];

@@ -247,20 +247,7 @@ static BOOL hook_markMessagesAsSeen(id self, SEL _cmd) {
 		return orig_markMessagesAsSeen(self, _cmd);
 	}
 
-	// If all settings are on, return NO
-	if (markAsSeen && seenOnTyping && seenOnReact && seenOnSend) {
-		return NO;
-	}
-
-	// If exactly one setting is on and the other two are off, return NO
-	if ((markAsSeen && !seenOnTyping && !seenOnReact) ||
-		(!markAsSeen && seenOnTyping && !seenOnReact && !seenOnSend) ||
-		(!markAsSeen && !seenOnTyping && seenOnReact && !seenOnSend) ||
-		(!markAsSeen && !seenOnTyping && !seenOnReact && seenOnSend)) {
-		return NO;
-	}
-
-	// For any other combination (2 on, 1 off), return NO
+	// Any combination of the features: keep marking as seen blocked.
 	return NO;
 }
 
@@ -1066,7 +1053,7 @@ static void seenButtonHandler(id self) {
 		theta_performMarkLastMessageAsSeen(threadVC, nil);
 		[ThetaHelper showToastWithTitle:@"Marked as seen!" subtitle:@"They know we are here." icon:[ThetaHelper imageFromEmojiString:@"👀" width:60] autoHide:4 openURL:nil];
 	} @catch (NSException *exception) {
-		NSLog(@"Error: %@", exception);
+		THDebugLog(@"Error: %@", exception);
 	}
 }
 
@@ -1174,7 +1161,7 @@ static void hook_seenOnSend(id self, SEL _cmd, id arg1) {
 				}
 			}
 		} @catch (NSException *exception) {
-			NSLog(@"Error: %@", exception);
+			THDebugLog(@"Error: %@", exception);
 		}
 	}
 }
@@ -1201,7 +1188,7 @@ static void hook_seenOnSend2(id self, SEL _cmd) {
 		theta_performMarkLastMessageAsSeen(threadViewController, nil);
 		theta_showMarkedAsSeenToastDeferred();
 	} @catch (NSException *exception) {
-		NSLog(@"Error: %@", exception);
+		THDebugLog(@"Error: %@", exception);
 	}
 }
 
@@ -1221,7 +1208,7 @@ static void hook_messageReactionSelection2(id self, SEL _cmd, id arg1, id arg2, 
 		theta_performMarkLastMessageAsSeen(threadViewController, listViewController);
 		theta_showMarkedAsSeenToastDeferred();
 	} @catch (NSException *exception) {
-		NSLog(@"Error: %@", exception);
+		THDebugLog(@"Error: %@", exception);
 	}
 }
 
@@ -1239,7 +1226,7 @@ static void hook_messageReactionSelection3(id self, SEL _cmd, id arg1, id arg2, 
         theta_performMarkLastMessageAsSeen(threadViewController, listViewController);
         theta_showMarkedAsSeenToastDeferred();
     } @catch (NSException *exception) {
-        NSLog(@"Error: %@", exception);
+        THDebugLog(@"Error: %@", exception);
     }
 }
 
@@ -1257,7 +1244,7 @@ static void hook_messageReactionSelection5(id self, SEL _cmd, id arg1, id arg2, 
         theta_performMarkLastMessageAsSeen(threadViewController, listViewController);
         theta_showMarkedAsSeenToastDeferred();
     } @catch (NSException *exception) {
-        NSLog(@"Error: %@", exception);
+        THDebugLog(@"Error: %@", exception);
     }
 }
 
@@ -1276,7 +1263,7 @@ static void hook_messageReactionSelection4(id self, SEL _cmd, id arg1, id arg2, 
 		theta_performMarkLastMessageAsSeen(threadViewController, listViewController);
 		theta_showMarkedAsSeenToastDeferred();
 	} @catch (NSException *exception) {
-		NSLog(@"Error: %@", exception);
+		THDebugLog(@"Error: %@", exception);
 	}
 }
 
@@ -1292,7 +1279,7 @@ static void hook_doubleTapTwoArg(id self, SEL _cmd, id arg1, id arg2) {
 		theta_performMarkLastMessageAsSeen(threadViewController, nil);
 		theta_showMarkedAsSeenToastDeferred();
 	} @catch (NSException *exception) {
-		NSLog(@"Error: %@", exception);
+		THDebugLog(@"Error: %@", exception);
 	}
 }
 
@@ -1307,7 +1294,7 @@ static void hook_threadViewDidAppear(id self, SEL _cmd, BOOL animated) {
 		theta_performMarkLastMessageAsSeen(self, nil);
 		theta_showMarkedAsSeenToastDeferred();
 	} @catch (NSException *exception) {
-		NSLog(@"[Theta] MarkAsSeen viewDidAppear: %@", exception);
+		THDebugLog(@"[Theta] MarkAsSeen viewDidAppear: %@", exception);
 	}
 }
 
@@ -1342,7 +1329,7 @@ static void hook_listVC_viewDidAppear(id self, SEL _cmd, BOOL animated) {
 		theta_performMarkLastMessageAsSeen(threadVC, self);
 		theta_showMarkedAsSeenToastDeferred();
 	} @catch (NSException *exception) {
-		NSLog(@"[Theta] MarkAsSeen listVC viewDidAppear: %@", exception);
+		THDebugLog(@"[Theta] MarkAsSeen listVC viewDidAppear: %@", exception);
 	}
 }
 

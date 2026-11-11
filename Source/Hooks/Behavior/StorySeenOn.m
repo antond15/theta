@@ -14,7 +14,7 @@ static IGStoryFullscreenCell *theta_storyFullscreenCellFromViewer(UIViewControll
     @try {
         contentViewForAnimation = [viewController valueForKey:@"contentViewForAnimation"];
     } @catch (NSException *e) {
-        NSLog(@"[Theta] contentViewForAnimation: %@", e);
+        THDebugLog(@"[Theta] contentViewForAnimation: %@", e);
         return nil;
     }
     if (!contentViewForAnimation || ![contentViewForAnimation isKindOfClass:cellClass]) {
@@ -38,7 +38,7 @@ static void hook_seenStoryOnReply(id self, SEL _cmd, id inputView, id text, id q
             seenButtonPressedCurrent(cell);
         }
     } @catch (NSException *exception) {
-        NSLog(@"[Theta] hook_seenStoryOnReply: %@", exception);
+        THDebugLog(@"[Theta] hook_seenStoryOnReply: %@", exception);
     }
 }
 

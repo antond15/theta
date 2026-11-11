@@ -74,7 +74,7 @@ static void thetaShowProfilePictureMenu(id self) {
 				}
 			}
 		} @catch (NSException *exception) {
-			NSLog(@"Failed to resolve profile image URL: %@", exception);
+			THDebugLog(@"Failed to resolve profile image URL: %@", exception);
 		}
         
         NSMutableArray *actions = [NSMutableArray array];
@@ -115,7 +115,7 @@ static void thetaShowProfilePictureMenu(id self) {
 							[ThetaHelper showCustomAlertWithActions:@"Profile Picture" description:@"Couldn't find the profile image URL." actions:@[@{ @"title": @"OK", @"handler": ^{ /* no-op */ } }]];
 						}
 					} @catch (NSException *exception) {
-						NSLog(@"Error downloading profile picture: %@", exception);
+						THDebugLog(@"Error downloading profile picture: %@", exception);
 					}
 				}
             }];
@@ -136,7 +136,7 @@ static void thetaShowProfilePictureMenu(id self) {
 							[ThetaHelper showCustomAlertWithActions:@"Profile Picture" description:@"Couldn't find the profile image URL." actions:@[@{ @"title": @"OK", @"handler": ^{ /* no-op */ } }]];
 						}
 					} @catch (NSException *exception) {
-						NSLog(@"Error presenting fullscreen profile picture: %@", exception);
+						THDebugLog(@"Error presenting fullscreen profile picture: %@", exception);
 					}
 				}
             }];
@@ -155,7 +155,7 @@ static void performProfilePictureDownloadWithURL(NSURL *imageURL) {
         NSURLSession *session = [NSURLSession sharedSession];
         NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:imageURL completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
             if (error) {
-                NSLog(@"Error downloading profile picture: %@", error);
+                THDebugLog(@"Error downloading profile picture: %@", error);
                 return;
             }
 
@@ -166,7 +166,7 @@ static void performProfilePictureDownloadWithURL(NSURL *imageURL) {
             
             [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:permanentFilePath] error:&moveError];
             if (moveError) {
-                NSLog(@"Error moving downloaded file: %@", moveError);
+                THDebugLog(@"Error moving downloaded file: %@", moveError);
                 return;
             }
 
@@ -177,14 +177,14 @@ static void performProfilePictureDownloadWithURL(NSURL *imageURL) {
                         [PHAssetChangeRequest creationRequestForAssetFromImageAtFileURL:[NSURL fileURLWithPath:permanentFilePath]];
                     } completionHandler:^(BOOL success, NSError *error) {
                         if (!success) {
-                            NSLog(@"Error saving profile picture: %@", error);
+                            THDebugLog(@"Error saving profile picture: %@", error);
                         }
 
                         // Clean up temporary file after photo library save
                         NSError *deleteError;
                         [[NSFileManager defaultManager] removeItemAtPath:permanentFilePath error:&deleteError];
                         if (deleteError) {
-                            NSLog(@"Error deleting temporary file: %@", deleteError);
+                            THDebugLog(@"Error deleting temporary file: %@", deleteError);
                         }
 
                         if (success && ENABLED(THAppShowBanners)) {

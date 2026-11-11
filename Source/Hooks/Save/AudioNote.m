@@ -108,7 +108,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                                                             completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
                                                             dispatch_async(dispatch_get_main_queue(), ^{
                                                                 if (error) {
-                                                                    NSLog(@"Download failed: %@", error.localizedDescription);
+                                                                    THDebugLog(@"Download failed: %@", error.localizedDescription);
                                                                     [progressToast completeProgressWithTitle:@"Download Failed" 
                                                                                                     subtitle:error.localizedDescription 
                                                                                                         icon:[UIImage systemImageNamed:@"xmark.circle.fill"] 
@@ -118,7 +118,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                 }
                                                                 
                                                                 if (!location) {
-                                                                    NSLog(@"No download location provided");
+                                                                    THDebugLog(@"No download location provided");
                                                                     [progressToast completeProgressWithTitle:@"Download Failed" 
                                                                                                     subtitle:@"No data received" 
                                                                                                         icon:[UIImage systemImageNamed:@"xmark.circle.fill"] 
@@ -130,7 +130,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                 // Read downloaded data
                                                                 NSData *data = [NSData dataWithContentsOfURL:location];
                                                                 if (!data) {
-                                                                    NSLog(@"Failed to read downloaded data");
+                                                                    THDebugLog(@"Failed to read downloaded data");
                                                                     [progressToast completeProgressWithTitle:@"Download Failed" 
                                                                                                     subtitle:@"Failed to read downloaded data" 
                                                                                                         icon:[UIImage systemImageNamed:@"xmark.circle.fill"] 
@@ -185,7 +185,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                             }
                                                                         }
                                                                     } @catch (NSException *exception) {
-                                                                        NSLog(@"Exception getting user name: %@", exception.reason);
+                                                                        THDebugLog(@"Exception getting user name: %@", exception.reason);
                                                                         // Keep default "Unknown User" folder name
                                                                     }
                                                                 }
@@ -208,7 +208,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                                                             attributes:nil 
                                                                                                                     error:&createDirError];
                                                                     if (!dirCreated) {
-                                                                        NSLog(@"Failed to create AudioNotes directory: %@", createDirError.localizedDescription);
+                                                                        THDebugLog(@"Failed to create AudioNotes directory: %@", createDirError.localizedDescription);
                                                                         [progressToast completeProgressWithTitle:@"Save Failed" 
                                                                                                         subtitle:@"Failed to create AudioNotes folder" 
                                                                                                             icon:[UIImage systemImageNamed:@"xmark.circle.fill"] 
@@ -228,7 +228,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                                                             attributes:nil 
                                                                                                                     error:&createUserDirError];
                                                                     if (!userDirCreated) {
-                                                                        NSLog(@"Failed to create user directory: %@", createUserDirError.localizedDescription);
+                                                                        THDebugLog(@"Failed to create user directory: %@", createUserDirError.localizedDescription);
                                                                         [progressToast completeProgressWithTitle:@"Save Failed" 
                                                                                                         subtitle:@"Failed to create user folder" 
                                                                                                             icon:[UIImage systemImageNamed:@"xmark.circle.fill"] 
@@ -252,7 +252,7 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                                                         url:nil];
                                                                     [progressToast hideAfter:3.0];
                                                                 } else {
-                                                                    NSLog(@"Failed to save audio file to: %@", filePath);
+                                                                    THDebugLog(@"Failed to save audio file to: %@", filePath);
                                                                     [progressToast completeProgressWithTitle:@"Save Failed" 
                                                                                                     subtitle:@"Failed to save audio file" 
                                                                                                         icon:[UIImage systemImageNamed:@"xmark.circle.fill"] 
@@ -270,42 +270,42 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                             description:@"Would you like to save this audio note to your device?"
                                                                                 actions:actions];
                                             } else {
-                                                NSLog(@"No audio URL found in manifest");
+                                                THDebugLog(@"No audio URL found in manifest");
                                                 NSArray *actions = @[@{ @"title": @"OK", @"handler": ^{ /* do nothing */ }}];
                                                 [ThetaHelper showCustomAlertWithActions:@"Audio Note" 
                                                                             description:@"No audio URL found in manifest"
                                                                                 actions:actions];
                                             }
                                         } else {
-                                            NSLog(@"No dash manifest found");
+                                            THDebugLog(@"No dash manifest found");
                                             NSArray *actions = @[@{ @"title": @"OK", @"handler": ^{ /* do nothing */ }}];
                                             [ThetaHelper showCustomAlertWithActions:@"Audio Note" 
                                                                         description:@"No dash manifest found"
                                                                             actions:actions];
                                         }
                                     } else {
-                                        NSLog(@"No music assets found");
+                                        THDebugLog(@"No music assets found");
                                         NSArray *actions = @[@{ @"title": @"OK", @"handler": ^{ /* do nothing */ }}];
                                         [ThetaHelper showCustomAlertWithActions:@"Audio Note" 
                                                                     description:@"No music assets found"
                                                                         actions:actions];
                                     }
                                 } else {
-                                    NSLog(@"No music info value found");
+                                    THDebugLog(@"No music info value found");
                                     NSArray *actions = @[@{ @"title": @"OK", @"handler": ^{ /* do nothing */ }}];
                                     [ThetaHelper showCustomAlertWithActions:@"Audio Note" 
                                                                 description:@"No music info value found"
                                                                     actions:actions];
                                 }
                             } else {
-                                NSLog(@"No music info ivar found");
+                                THDebugLog(@"No music info ivar found");
                                 NSArray *actions = @[@{ @"title": @"OK", @"handler": ^{ /* do nothing */ }}];
                                 [ThetaHelper showCustomAlertWithActions:@"Audio Note" 
                                                             description:@"No music info ivar found"
                                                                 actions:actions];
                             }
                         } @catch (NSException *exception) {
-                            NSLog(@"Exception in long press handler: %@", exception.reason);
+                            THDebugLog(@"Exception in long press handler: %@", exception.reason);
                             NSArray *actions = @[@{ @"title": @"OK", @"handler": ^{ /* do nothing */ }}];
                             [ThetaHelper showCustomAlertWithActions:@"Audio Note Error" 
                                                         description:[NSString stringWithFormat:@"Exception: %@", exception.reason]

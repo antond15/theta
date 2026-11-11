@@ -568,7 +568,7 @@ static void saveMedia(id hostView) {
                 @try {
                     theta_appendMediaFromMedia(media, thumbnail, urlItems, hdVideos);
                 } @catch (NSException *exception) {
-                    NSLog(@"[Theta] Save Profile Posts item error: %@", exception);
+                    THDebugLog(@"[Theta] Save Profile Posts item error: %@", exception);
                 }
             }
 
@@ -623,7 +623,7 @@ static void saveMedia(id hostView) {
                                                          extensions:[NSMutableArray arrayWithObject:fileExtension]];
                         }];
                     } @catch (NSException *exception) {
-                        NSLog(@"[Theta] Save Profile Posts single: %@", exception);
+                        THDebugLog(@"[Theta] Save Profile Posts single: %@", exception);
                     }
                     return;
                 }
@@ -636,7 +636,7 @@ static void saveMedia(id hostView) {
                     UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:mediaSelectionVC];
                     [[ThetaHelper topViewController] presentViewController:navController animated:YES completion:nil];
                 } @catch (NSException *exception) {
-                    NSLog(@"[Theta] Save Profile Posts multi: %@", exception);
+                    THDebugLog(@"[Theta] Save Profile Posts multi: %@", exception);
                     [ThetaHelper showToastWithTitle:@"Save failed" subtitle:exception.reason ?: @"Couldn't open media picker." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:4 openURL:nil];
                 }
             };
@@ -654,7 +654,7 @@ static void saveMedia(id hostView) {
             });
         });
     } @catch (NSException *exception) {
-        NSLog(@"[Theta] Save Profile Posts: %@", exception);
+        THDebugLog(@"[Theta] Save Profile Posts: %@", exception);
         if (ENABLED(THAppShowBanners)) {
             [ThetaHelper showToastWithTitle:@"Save failed" subtitle:exception.reason ?: @"Unexpected error." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
         }
@@ -662,8 +662,15 @@ static void saveMedia(id hostView) {
 }
 
 static void (*orig_followStatusIndicator)(UIView *self, SEL _cmd);
+static const void *kThetaFollowTouchedKey = &kThetaFollowTouchedKey;
 static void hook_followStatusIndicator(UIView *self, SEL _cmd) {
     if (orig_followStatusIndicator) orig_followStatusIndicator(self, _cmd);
+
+    // Both settings off and Theta never touched this view: nothing to add or strip.
+    BOOL touched = [objc_getAssociatedObject(self, kThetaFollowTouchedKey) boolValue];
+    if (!touched && !ENABLED(THProfileFollowStatusIndicator) && !ENABLED(THSaveProfilePosts)) {
+        return;
+    }
 
     UIViewController *profileVC = theta_profileViewControllerFromView(self);
     if (!profileVC) {
@@ -698,6 +705,9 @@ static void hook_followStatusIndicator(UIView *self, SEL _cmd) {
 
     BOOL showFollowIndicator = ENABLED(THProfileFollowStatusIndicator);
     BOOL showSaveButton = ENABLED(THSaveProfilePosts);
+
+    // Remember that Theta touched this view so turning both settings off still cleans it once.
+    objc_setAssociatedObject(self, kThetaFollowTouchedKey, (showFollowIndicator || showSaveButton) ? @YES : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     for (UIView *view in [self subviews]) {
         if (![view isKindOfClass:NSClassFromString(@"IGCoreTextView")]) {
@@ -815,7 +825,7 @@ static void hook_followStatusIndicator(UIView *self, SEL _cmd) {
             [view setNeedsLayout];
             [view setNeedsDisplay];
         } @catch (NSException *exception) {
-            NSLog(@"[Theta] FollowStatusIndicator: %@", exception);
+            THDebugLog(@"[Theta] FollowStatusIndicator: %@", exception);
         }
     }
 }

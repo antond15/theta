@@ -57,7 +57,7 @@ static NSArray *hook_hideAds(id self, SEL _cmd, id arg1) {
         }
         return ThetaApplyHideFeedFiltering(result ?: @[], YES);
     } @catch (NSException *exception) {
-        NSLog(@"Error in hideAds hook: %@", exception);
+        THDebugLog(@"Error in hideAds hook: %@", exception);
         return orig_hideAds(self, _cmd, arg1);
     }
 }
@@ -79,7 +79,7 @@ static id hook_hideAds2(id self, SEL _cmd, id arg1) {
         }
         return nil;
     } @catch (NSException *exception) {
-        NSLog(@"Error in hideAds2 hook: %@", exception);
+        THDebugLog(@"Error in hideAds2 hook: %@", exception);
         return orig_hideAds2(self, _cmd, arg1);
     }
 }
@@ -105,7 +105,7 @@ static id hook_hideAds3(id self, SEL _cmd) {
                     @try {
                         [originalList removeObjectAtIndex:idx];
                     } @catch (NSException *exception) {
-                        NSLog(@"Error removing ad item at index %lu: %@", (unsigned long)idx, exception);
+                        THDebugLog(@"Error removing ad item at index %lu: %@", (unsigned long)idx, exception);
                     }
                 }
             }];
@@ -118,7 +118,7 @@ static id hook_hideAds3(id self, SEL _cmd) {
                     @try {
                         [originalList removeObjectAtIndex:idx];
                     } @catch (NSException *exception) {
-                        NSLog(@"Error removing ad item at index %lu: %@", (unsigned long)idx, exception);
+                        THDebugLog(@"Error removing ad item at index %lu: %@", (unsigned long)idx, exception);
                     }
                 }
             }];
@@ -126,7 +126,7 @@ static id hook_hideAds3(id self, SEL _cmd) {
 
         return originalList;
     } @catch (NSException *exception) {
-        NSLog(@"Error in hideAds3 hook: %@", exception);
+        THDebugLog(@"Error in hideAds3 hook: %@", exception);
         return orig_hideAds3(self, _cmd);
     }
 }
@@ -148,7 +148,7 @@ static id hook_hideAds4(id self, SEL _cmd, id arg1) {
         }
         return nil;
     } @catch (NSException *exception) {
-        NSLog(@"Error in hideAds4 hook: %@", exception);
+        THDebugLog(@"Error in hideAds4 hook: %@", exception);
         return orig_hideAds4(self, _cmd, arg1);
     }
 }

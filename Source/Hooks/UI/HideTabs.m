@@ -651,7 +651,7 @@ static void THApplyTabHidingNow(id tabBarController) {
             theta_syncSwipeCoordinatorAndTabSelection(tabBarController);
         }
     } @catch (NSException *exception) {
-        NSLog(@"HideTabs: %@", exception);
+        THDebugLog(@"HideTabs: %@", exception);
     }
 }
 
