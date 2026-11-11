@@ -5,7 +5,7 @@ description: Check Theta against a new Instagram version. Diff the hooks old→n
 
 # Instagram version bump
 
-The decrypted app and everything read from it stay on this machine (AGENTS.md rule 5). Command
+The decrypted app and everything read from it stay on this machine (AGENTS.md, Theta rules: Private inputs). Command
 names refer to the Commands table in AGENTS.md; `compat.py` itself is explained in
 `docs/DEVELOPMENT.md#checking-a-new-instagram-version`.
 
@@ -23,7 +23,7 @@ names refer to the Commands table in AGENTS.md; `compat.py` itself is explained 
      diagnosis: find the new path in the binary (`scripts/objcdump.py`), and check whether the
      replacement is reached through `objc_msgSend` at all.
    - **Resolves but suspect:** hooks that still resolve but whose callers may have turned
-     Swift-direct; flag ones in high-risk areas (AGENTS.md rule 9) for a device test.
+     Swift-direct; flag ones in high-risk areas (AGENTS.md, Theta rules: Sessions, high-risk code) for a device test.
 4. **Ask before fixing.** Present the sorted list to the user with what each break affects
    (feature, setting key, user-visible effect) and ask with AskUserQuestion which to fix now and
    in what order. Renames are mechanical; real breaks are diagnosis (stay in one session, Opus;

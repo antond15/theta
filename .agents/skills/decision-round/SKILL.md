@@ -1,90 +1,97 @@
 ---
 name: decision-round
-description: Ask the user for a decision before changing anything not already decided. Use before any decision, major change, or whenever unsure; as the planner model, before handing a feature step to the builder model, to ask every core decision of the step first.
+description: Planner only. Before handing a step to the builder, walk the build, ask the user every core decision, write the handoff in the backlog and give the builder prompt. Builders never run this; a builder that meets a core question stops and records it.
 ---
 
-# Decision round
+# Decision round (planner)
 
-Never decide silently, even on small things the backlog doesn't cover.
+The planner (see the Models table in AGENTS.md) asks as many of the step's decisions as it can;
+the builder builds and should meet only the small questions that appear while writing code. A
+builder session that opens with a list of core questions means this round failed. How to ask is
+in AGENTS.md, Working rules, Decisions. Terse questions were rejected ("I have no idea what …
+means"), so explain fully.
 
-1. **Explain in the message** in plain language: what the thing is in Theta or Instagram, a
-   concrete example, the effect with and without it, and the cost or risk (launch crash, privacy
-   leak, lost settings). Concise pros and cons per option.
-2. **Ask with the interactive question tool** (AskUserQuestion). Put the recommended option first,
-   labelled "(Recommended)". Keep the long explanation in the message, but make each question
-   stand on its own, since the dialog may hide the message. Up to four questions per call, as many
-   calls as needed.
-3. **Wait** for the answers. If the user asks a clarifying question inside an answer, answer it
-   fully in chat and re-ask only that question. Read answers typed into "Other" literally; they
-   often change the option.
+## Walk the build
 
-## When running as the planner
+Walk through the build as the builder will, in order, and write down every choice it meets:
 
-Features (a new setting, a port from another fork, a change across several files) are planned by
-the planner (Opus) and built by the builder (Sonnet) in a fresh session (AGENTS.md rule 9). The
-builder should meet only the small questions that appear while writing code. A builder session
-that opens with a list of core questions means the planner's round failed.
+- **Inputs.** Every input the step consumes (files, rows, fields, API responses, formats, units,
+  signs, zero and empty values, records the code cannot handle). For an import, the mapping of
+  every record type to the data model, including the odd ones.
+- **Data model.** Tables, columns, enums, migrations, identity and dedup keys, what is stored
+  versus computed, what remembers a choice for next time.
+- **Math, units and dates.** The unit or currency of each value, conversions, rounding, time
+  zones, how the result must match an external source of truth.
+- **Flows.** Where the feature lives (route, navigation), preview, commit, edit, delete, undo,
+  and how they interact with existing data and features.
+- **States.** Empty, invalid, duplicate, partial and error states; what blocks versus warns.
+- **Process.** New dependencies, design flow (new surface or extension), tests, docs to update.
 
-### Before asking: walk the build
+Then draft the first reply a builder would send after reading the handoff. Every question in
+that draft is asked now. Ask in as many calls as needed: many questions now beat a builder
+discovering them. Do not write "ask before deciding X" in a handoff or prompt: a question you can
+name is a question to ask now.
 
-Walk through the build as the builder will, in order, and write down every choice it meets.
-Cover at least:
+**Missing input** (a sample file, an API response, an account detail): the step is not ready.
+Record what is missing and stop; a planner session runs this round once the input exists. Never
+pass an input-dependent decision to the builder.
 
-- **Targets.** Every class and selector the step hooks or calls: does it exist on the current
-  Instagram build (`compat` command), under which Swift mangled name, and which fallback covers
-  older builds? Is it reached through `objc_msgSend` at all, or only Swift-direct / `objc_direct`
-  (then which ObjC call on the path can be hooked instead)?
-- **Install timing.** Is the surface built before the normal hook pass (needs the constructor)?
-- **Behaviour.** What Instagram does with and without the hook, what the user sees, what is sent
-  over the network, what happens when Instagram changes the path again.
-- **Settings.** New keys (`<area>.<name>`), type, default, page and section, parent, restart
-  required, minimum Instagram version. Any rename or meaning change of a stored key or choice id
-  is a migration and a `kSettingsVersion` bump.
-- **States.** Toggle off, toggle changed while the screen is open, missing class on an older
-  build, failure (toast or silent).
-- **Process.** High-risk areas touched (AGENTS.md rule 9), new files and where they go, docs to
-  update (`docs/CHANGES.md`, `docs/DEVELOPMENT.md`, `README.md`), credit for ported code, what
-  the user must try on the device.
+**High-risk code** (auth, encryption, keys, money math, migrations) is not handed off; the
+planner builds it. Name the one fact the change is safe because of and prove it with a small
+script or test that runs the real code; write "unproven" if it could not be proven.
 
-Then draft the first reply a builder session would send after reading the handoff. Every question
-in that draft must be answered before the handoff.
+**Tiny steps** (a one-line fix plus a small check): say how small it is and offer to build it in
+this session, since a fresh session would spend more re-reading than building.
 
-### Asking
+When a question comes back from a builder, answer it in a round and add the missed area to the
+walk above if it is not covered.
 
-- Ask the user about each choice with a visible effect, a privacy or data consequence or a real
-  trade-off. Many questions are better than a builder session discovering them.
-- Settle purely technical internals yourself and write each in the handoff with a one-line
-  reason, so the user can object there.
-- When a choice depends on input that isn't available yet (a newer Instagram build in `input/`,
-  a device log, a crash report), the step is not ready. Record what is missing in the backlog and
-  stop. Never hand an input-dependent decision to the builder.
-- Never write "ask before deciding X" or "especially X" in a handoff or prompt: a question you
-  can name is a question to ask now.
+## Handing off
 
-### Handing off
+The planner stops after the handoff, even if the user's prompt listed build steps: the planner
+answered the questions and then built everything itself before, and the user asked for a
+handoff every time (long sessions also resend their whole history).
 
-After the answers, stop building:
+1. Write the handoff under "In progress" in `docs/backlog.md`, 300 to 600 words:
 
-1. Write the handoff in `docs/backlog.md` under "In progress" (the template is in the comment
-   there): what the step changes, decisions asked, decisions settled by the planner (each with its
-   reason), and what the step must not do. "Open questions" must be empty. The backlog is
-   gitignored: do not commit it.
-2. Write the prompt for a fresh builder session: the step, the docs and sections to read, what to
-   do, and when to stop. It states that the core decisions are in the "In progress" handoff in
-   `docs/backlog.md`. The builder may ask the user small questions that only appear while coding;
-   a new question about which hook to use, privacy, stored settings or a visible behaviour means
-   the planner missed it: the builder stops, records it under "In progress" and tells the user to
-   take it to a planner session. Always show the prompt in a fenced block, so it survives a "no".
-3. Finish with the `close-step` skill: its summary and its end-of-session dialog (step 7), with
-   the builder prompt above as the next prompt. The launch question names the builder session
-   (Sonnet, medium effort); the release question still applies when `dev` is ahead of
-   `origin/dev`. Then stop, even if the user's prompt listed build steps. "Stop" always means
-   stop after that dialog, never before it.
+```markdown
+**<Step title>** (decided <date>, base <short sha>, not started). One paragraph: what the step
+changes and where.
 
-**Tiny steps:** when the decided work turns out tiny (a one-line fix plus a check), say how small
-it is and offer to build it in this session instead of handing off.
+Next session: <role: builder | planner review>.
 
-When a builder's question comes back to the planner, answer it in a decision round and add the
-missed area to the walk above if it is not covered.
+Touch points:
+- <path:line>: <what to change or read there>
 
-High-risk code (AGENTS.md rule 9) stays with the planner: do not hand it off.
+Decisions asked:
+- <each answer the user gave, stated as a fact>
+
+Settled by the planner (object here if wrong):
+- <technical choice>. Reason: <one line>.
+- UI process (UI projects): <new surface | extension>, then `verify-ui`.
+
+Must not: <what the step must not do>.
+
+Done when:
+- `<exact command>` <expected result>
+
+Open questions: none.
+```
+
+   "Open questions" must be empty. Name the next session by role only; the model comes from the
+   Models table.
+2. Commit it alone as `docs(backlog): hand off <step>`.
+3. Write the prompt for a fresh builder session and show it in a fenced block:
+
+```
+Build <step>. Read AGENTS.md and the "In progress" handoff in docs/backlog.md (grep the heading,
+read that range only); the core decisions are there. <Docs and sections to read.> <What to do.>
+Work on `dev`. For a bug with a cheap local test target, write the failing test first; skip that
+when the test would be expensive, flaky or need heavy setup. UI (UI projects): <new surface |
+extension>; check it in the in-app browser with the verify-ui skill. If a core question comes up
+(data model, math, input mapping, security, a visible flow), stop, record it under
+"In progress" and tell me to take it to a planner session. Finish with the close-step skill.
+```
+
+4. Finish with the `close-step` skill, with that prompt as the next prompt. Then stop, even if
+   the user's prompt listed build steps.

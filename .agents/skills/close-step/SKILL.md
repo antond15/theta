@@ -1,73 +1,106 @@
 ---
 name: close-step
-description: End a Theta session. Run the checks, commit, update the backlog and the device-test list, summarize, write the next prompt, then ask in one dialog what comes next (launch the next thread, build the IPA, release). Use at the end of every session or thread, whatever its kind (build step, review, diagnosis, fix, planner handoff, version bump, a question answered with changes), not only when a step is done.
+description: End a session that changed something or has a next step. Run the checks, clean up what the session started, update the backlog, commit, summarize, write the next prompt, then ask in one dialog what comes next (release, launch the next thread). Use at the end of every session, whatever its kind (build step, review, diagnosis, fix, planner handoff). Not for subagents, and not when nothing changed and nothing comes next (AGENTS.md, Verification).
 ---
 
 # Close a session
 
-Every session ends here, not only finished build steps. Command names (check, build, ipa,
-baseline) refer to the Commands table in AGENTS.md. Steps 1–4 apply when the session changed
-something; skip them otherwise.
+This skill owns every session-end and release rule. Command names (format, check, lint, test,
+build) refer to the Commands table in AGENTS.md. **Verify**, **Backlog** and **Commit** apply
+when the session changed something; **Clean up** whenever it started a server or tab.
 
-1. **Verify.** Run `check` (`./scripts/pre-push.sh`): it must report no new `compat.py` misses
-   and compile. Compare the warnings with the six known ones (`docs/DEVELOPMENT.md#building`); a
-   new warning is a failure to fix. A failure caused by an unrelated existing issue is reported,
-   not hidden. Update the compat baseline only when the user agreed a new miss is fine or the
-   Instagram version changed.
-2. **Commit** every change with a Conventional Commit subject, `type(scope): lowercase summary`,
-   usually without a body (AGENTS.md rule 4). Docs changes go in the related commit. Never mention
-   device-test status in a commit. Leave no uncommitted or untracked files.
-3. **Backlog** (`docs/backlog.md`, local, never committed): update it for any state change, tick
-   off finished items, remove the step's handoff from "In progress", and add every change not yet
-   tried on the phone to "Awaiting device test": the commit, what to try, and what "works" looks
-   like (including the off state of a toggle).
-4. **Do not push or build the IPA yet.** Both are questions of step 7, unless the user already
-   asked for the IPA in this session.
-5. **Summarize** what changed, the decisions made, the verification performed, what awaits a
-   device test, any gaps, and what's next.
-6. **Next prompt.** Write the prompt for the next session and always show it in a fenced block,
-   so it survives a "no". A new feature starts with a planner session that runs the
-   `decision-round` skill; a builder prompt is only for a step whose handoff already holds all its
-   decisions. When a builder session touched high-risk code (AGENTS.md rule 9), the next session
-   is a planner review: `/code-review medium` on the step's commits, fixing what it confirms,
-   before the next step. When nothing obvious comes next, say so and write no prompt.
-7. **End-of-session dialog.** Always, as the last thing in the session: one AskUserQuestion call
-   holding each question below whose condition holds, each standing on its own (the dialog may
-   hide the message). Never ask any of them as a plain-text question. Note the head as `<sha>`
-   (`git rev-parse HEAD`) before asking. For each question left out, say in one line which and
-   why (e.g. "No release question: `dev` is level with `origin/dev`"); when none holds, say so
-   and stop.
-   - **Launch**, when step 6 wrote a prompt and the host has the T3 tools: "Launch the next
-     session (<what it does>, <model>, <effort>) as a new thread on `dev`?" Options:
-     **Launch it (Recommended):** `t3_thread_launch` with the prompt as its `message`, the model
-     and effort the handoff names (Opus for a decision round, diagnosis or review; Sonnet at
-     medium effort for a build), workspace strategy `root` (the backlog is local to this
-     checkout), on `dev`; the new session never pushes unasked; mention the thread by its
-     `link`. **No:** the user starts it from the fenced prompt.
-   - **IPA**, when this session committed changes that ship in the dylibs (`Source/`,
-     `Include/`, `Makefile`, `build.sh`, `vendor/`) and that wait in "Awaiting device test":
-     "Build the IPA to device-test <what>?" Options: **Build it (Recommended):** `ipa`, then give
-     the path `output/Instagram_patched.ipa`; **Debug build:** `./build.sh debug`
-     (`THETA_DEBUG=1` logging); **Not now:** the changes wait in the backlog for the next batch.
-   - **Release**, when `dev` is ahead of `origin/dev` (`git rev-list --count origin/dev..dev`),
-     whoever made the commits: "Release the <n> unpushed commits on `dev`?" Options in step 8.
-   Act on the answers in this order: IPA, release, launch, so a new thread never builds or
-   commits in this checkout while the IPA builds or the push runs.
-8. **Release** options, as answered in step 7:
-   - **Push dev and fast-forward main (Recommended):** `git push origin dev`; the pre-push hook
-     runs the check. If the hook is not installed (`.git/hooks/pre-push`), run
-     `./scripts/pre-push.sh` first.
-     - **Passed** (the push went through): fast-forward `main` to `<sha>` without leaving `dev`:
-       `git fetch . <sha>:main` (git refuses anything but a fast-forward), then
-       `git push origin main`. Never `git switch main` and never fast-forward to the current
-       `dev`: a launched session may share this checkout and may have committed since.
-     - **Failed** (the hook rejected the push): don't touch `main`. Summarize the cause from the
-       hook output, then ask with a second AskUserQuestion: "The pre-push check failed. What
-       now?" Options: **Fix it (Recommended):** fix the cause, commit only the fix's files by path
-       (`git commit <paths>`), and ask the release question again; **Accept the new misses:**
-       only when every new entry is a dead fallback or a judged-fine miss: run `baseline`, then
-       push again; **Leave it:** record the failure in the backlog and push nothing. Never use
-       `--no-verify` unless the user asks for it.
-   - **Push dev only:** push `dev` (the hook still runs); `main` stays.
-   - **Not now:** push nothing.
-   The answer covers this one release, not later pushes. Then stop.
+1. **Verify.** Run only the commands the Commands table defines: `format` once, then `check`
+   and `lint`; the tests when the affected area has tests; a production `build` when changing
+   build configuration, routing, server/client boundaries or environment handling. Skip a
+   command the table does not define and say which were skipped. When the project has the
+   `verify-ui` skill, UI changes also go through it. Report a failure caused by an unrelated
+   existing issue instead of hiding it. Keep local dev data: never wipe a dev database volume
+   at the end of a step.
+2. **Clean up** only what this session started: its dev servers (stop the background command or
+   preview) and the browser tabs it opened. Leave other servers and tabs alone; they may belong
+   to another session. Database containers keep running.
+3. **Backlog.** Update `docs/backlog.md` for every state change and remove finished items. Remove
+   the handoff under "In progress" only when its step is implemented, never a handoff this
+   session created. Do this before the final commit so the backlog is part of it.
+4. **Commit** with Conventional Commit subjects, `type(scope): lowercase summary`. Commit only
+   this session's files, by path. Changes that were already in the worktree at session start
+   are not yours: leave them and name them in the summary. Leave no leftovers of your own.
+5. **Summary.** What changed, the decisions made, the verification performed, gaps, and what
+   comes next. Each verification claim states its level: claimed, pointed at `file:line`,
+   reasoned through, ran it (command and result) or reproduced in the app. A check this session
+   did not run is labelled "claimed" or listed under gaps, never presented as done.
+6. **Next prompt.** Write the prompt for the next session and show it in a fenced block, so it
+   survives a "no". A new step starts with a planner session running `decision-round`; a builder
+   prompt is only for a step whose handoff holds all its decisions. Name the next session by
+   role (planner, builder, mechanical); model and effort come from the Models table in
+   AGENTS.md. When a builder session touched high-risk code (auth, encryption, keys, money math,
+   migrations), the next session is a planner review: `/code-review medium` on the `dev` branch
+   while it is ahead of `main`, fixing what it confirms. Name the one fact the change is safe
+   because of and prove it with a small script or test that runs the real code; write
+   "unproven" if it could not be proven. When nothing obvious comes next, say so
+   and write no prompt.
+7. **Dialog.** Always last: one `AskUserQuestion` call holding each question below whose
+   condition holds, each standing on its own (the dialog may hide the message). For each
+   question left out, say in one line which and why (e.g. "No release question: `dev` is level
+   with `main`"); when none holds, say so. A project may add its own questions. Never end with
+   a plain-text question or with nothing. "Stop" anywhere means stop after this dialog.
+   - **Release**, when `dev` has commits that `origin/dev` or `origin/main` lacks
+     (`git rev-list --count origin/dev..dev`, `git rev-list --count origin/main..dev`; a missing
+     remote branch counts as all of `dev`), whoever made them, also when `dev` is level with
+     `origin/dev` but ahead of `main` (e.g. after a clean planner review that followed "push
+     dev only"): "Release `dev` (<n> commits not on `origin/dev`, <m> not on `main`)?" Options:
+     **Push, watch CI, move main (Recommended):** see **Release**; **Push dev only:** no CI
+     watch, `main` stays; **Not now:** push nothing. When this session's builder work touched
+     high-risk code, or the backlog names a pending planner review of commits on `dev`,
+     recommend **Push dev only** instead and say why: `main` moves at the end of the planner
+     review. A project without `.github/workflows/ci.yml` has no CI result to
+     wait for: replace the first option with **Push dev, move main without CI**, which is the
+     user's explicit order. When the user ordered a move without CI in this session, the
+     question reads "Move main to <sha> without CI, as you asked?" Approval covers this one
+     release. The user can always push from their own terminal; the agent's push guard only
+     covers the agent.
+   - **Launch**, when there is a next prompt and the host has the T3 tools: "Launch the next
+     session (<what it does>, <model>, <effort>) as a new thread?" Options: **Launch it
+     (Recommended):** `t3_thread_launch` with the prompt as its `message`, model and effort from
+     the Models table for that role, workspace strategy `root`, and `instanceId` (the provider
+     instance that lists the model in `orchestrator_capabilities`, usually `claudeAgent` for
+     Claude models; without it the launch fails with "Expected string at
+     modelSelection.instanceId"), and mention the thread by its `link`; **No:** the user starts
+     it from the fenced prompt. A launch is not given `dev` as a parameter, so the prompt text
+     must say "Work on `dev`".
+8. **Release.** Act on the answers in this order, then **Launch**; never launch before the
+   release result is final, because a launched session may commit to the same checkout.
+   - Capture `sha=$(git rev-parse HEAD)` before pushing. Run
+     `bash .agents/skills/close-step/release.sh [--dev-only] <sha>` once, as a background
+     command, and wait for it (`t3_background_wait` or the host's equivalent; never poll).
+     The script pushes `dev`, waits for the CI run of that commit, watches it, and moves `main`
+     to exactly that commit only when it passed (no branch switch, no merge commit). It prints
+     the failed-log tail on red and a one-line summary at the end. Use `--dev-only` for
+     **Push dev only**.
+     `--skip-ci` moves `main` to the commit without a CI result; use it only for the explicit
+     order described under the Release question, and record it in the summary ("main moved
+     without CI, as the user ordered").
+   - **Exit 0:** report it. **Exit 2** (a precondition failed, e.g. no `ci.yml`): report the
+     script's message and offer the no-CI release only as the Release question describes.
+     **Exit 1 (red) or 4 (no run appeared):** do not
+     touch `main`; summarize the cause from the script's output and ask with a second dialog,
+     "CI failed on `dev`. What now?" Options: **Fix it (Recommended):** fix the cause, commit
+     only the fix's files by path, and release again; **Re-run the failed jobs:** for a flaky or
+     infrastructure failure, `gh run rerun <id> --failed`, then run `release.sh` again with
+     the same commit as one background command (it watches that run, moves `main` on green and
+     returns to this dialog on red); **Leave it:** record the failure in
+     `docs/backlog.md`, commit only that file as `docs(backlog): note ci failure on <sha>`, and
+     do not push. Never move `main` past a failed run, whatever the answer.
+     **Exit 3 (a push was rejected by a local pre-push hook or the remote):** `main` stays
+     where it was; show the script's message and ask with its own dialog, "The push was
+     rejected (hook or remote). What now?" Options: **Fix it (Recommended):** fix the cause
+     (the hook's complaint, or the remote's reason) and release again; **Leave it:** record
+     the rejection in `docs/backlog.md` (a backlog commit follows the Backlog rule of
+     AGENTS.md) and do not push. There is no re-run option.
+   - Then, if the user chose to launch, launch: after the release result is final, including a
+     re-run or fix that came out of the failure dialog. Then stop.
+
+A commit pushed without approval was rejected before, and so was a question after every commit:
+commit freely on `dev` and ask once, here.
+
+If `/code-review` is missing, review the diff yourself. Without T3 tools, show the fenced prompt and stop.
