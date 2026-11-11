@@ -1253,10 +1253,16 @@ static NSArray<UIMenuElement *> *theta_reelQualityMenuElements(id ufi) {
     return actions;
 }
 
+/* iOS 15+, not in the 14.5 SDK. A cached deferred menu keeps the reel it was first opened on, and
+   Instagram reuses the UFI for other reels. */
+@interface UIDeferredMenuElement (ThetaUncached)
++ (instancetype)elementWithUncachedProvider:(void (^)(void (^completion)(NSArray<UIMenuElement *> *elements)))elementProvider;
+@end
+
 static void theta_configureReelDownloadMenu(UIButton *downloadButton, id ufi) {
     if (!downloadButton) return;
     __weak typeof(ufi) weakUFI = ufi;
-    UIDeferredMenuElement *deferred = [UIDeferredMenuElement elementWithProvider:^(void (^completion)(NSArray<UIMenuElement *> *elements)) {
+    void (^provider)(void (^)(NSArray<UIMenuElement *> *)) = ^(void (^completion)(NSArray<UIMenuElement *> *elements)) {
         NSArray<UIMenuElement *> *actions = nil;
         @try {
             actions = theta_reelQualityMenuElements(weakUFI);
@@ -1275,7 +1281,10 @@ static void theta_configureReelDownloadMenu(UIButton *downloadButton, id ufi) {
         }
         UIMenu *qualityMenu = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:actions];
         completion(@[qualityMenu]);
-    }];
+    };
+    UIDeferredMenuElement *deferred = [UIDeferredMenuElement respondsToSelector:@selector(elementWithUncachedProvider:)]
+        ? [UIDeferredMenuElement elementWithUncachedProvider:provider]
+        : [UIDeferredMenuElement elementWithProvider:provider];
     UIMenu *menu = [UIMenu menuWithTitle:@"" children:@[deferred]];
     downloadButton.menu = menu;
     downloadButton.showsMenuAsPrimaryAction = YES;
@@ -1310,7 +1319,10 @@ static void hook_sundialViewerVerticalUFI(IGSundialViewerVerticalUFI *self, SEL 
 
     @try {
         if (ENABLED(THSaveMediaButton)) {
-            if ([self viewWithTag:999] != nil) {
+            UIView *existing = [self viewWithTag:999];
+            if ([existing isKindOfClass:[UIButton class]]) {
+				// A reused UFI gets a new reel: a fresh menu (needed where the uncached provider is missing)
+				theta_configureReelDownloadMenu((UIButton *)existing, self);
 				return;
 			}
 

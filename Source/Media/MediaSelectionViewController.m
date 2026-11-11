@@ -1313,6 +1313,8 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
             completedVideos++;
             NSInteger completedNow = completedVideos, failedNow = failedVideos;
             dispatch_async(dispatch_get_main_queue(), ^{
+                // Done items are skipped by formatProgressDisplay, so fill the bar here or it stays at its last value
+                if (!failed) [progressToast updatePerItemProgressAtIndex:videoIndex title:nil progress:1.0f];
                 [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
                 if (completedNow >= totalVideos) {
                     [self showCompletionToast:progressToast completed:completedNow total:totalVideos failed:failedNow toPhotos:toPhotos];
