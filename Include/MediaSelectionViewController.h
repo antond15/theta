@@ -22,17 +22,17 @@
 
 -(instancetype)initWithMediaItems:(NSArray<NSDictionary *> *)mediaItems withCount:(NSInteger)count;
 -(instancetype)initWithMediaItems:(NSArray<NSDictionary *> *)mediaItems hdVideos:(NSArray<IGVideo *> *)hdVideos withCount:(NSInteger)count;
--(void)downloadMediaToTemp:(NSURL *)url completion:(void (^)(NSString *filePath, NSString *fileExtension))completion;
-- (void)saveFilesToCameraRoll:(NSArray<NSString *> *)filePaths extensions:(NSArray<NSString *> *)fileExtensions;
-- (void)performDownloadWithURL:(NSURL *)url completion:(void(^)(NSString *filePath, NSString *fileExtension))completion;
+/** Downloads one photo (or an Instant video) and saves it where Save To says, read once per call. `filePath` is nil and
+    `error` (domain `ThetaSaveErrorDomain`) set on any failure; no toast is shown. Never takes the download lock. */
+-(void)downloadMediaToTemp:(NSURL *)url completion:(void (^)(NSString *filePath, NSString *fileExtension, NSError *error))completion;
 // Force-save directly to Documents/AudioNotes, ignoring Save Method
 - (void)performDownloadToAudioNotesWithURL:(NSURL *)url completion:(void(^)(NSString *filePath, NSString *fileExtension))completion;
 // Convert a media file to MP3 (libmp3lame -q:a 0). On success, returns new path.
 - (void)convertFileToMP3:(NSString *)inputPath completion:(void(^)(NSString *outputPath, NSError *error))completion;
 
 // New methods for HD video support
-- (void)downloadHDVideosBulk:(NSArray<IGVideo *> *)videos progressToast:(CustomToastView *)progressToast completed:(NSInteger)completedItems total:(NSInteger)totalItems failed:(NSInteger)failedItems;
-- (void)showCompletionToast:(CustomToastView *)progressToast completed:(NSInteger)completed total:(NSInteger)total failed:(NSInteger)failed;
+- (void)downloadHDVideosBulk:(NSArray<IGVideo *> *)videos progressToast:(CustomToastView *)progressToast completed:(NSInteger)completedItems total:(NSInteger)totalItems failed:(NSInteger)failedItems toPhotos:(BOOL)toPhotos;
+- (void)showCompletionToast:(CustomToastView *)progressToast completed:(NSInteger)completed total:(NSInteger)total failed:(NSInteger)failed toPhotos:(BOOL)toPhotos;
 
 // Class methods for preloading
 + (void)preloadHDVideoThumbnails:(NSArray<IGVideo *> *)hdVideos completion:(void(^)(void))completion;

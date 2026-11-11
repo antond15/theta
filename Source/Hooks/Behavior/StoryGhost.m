@@ -1001,11 +1001,11 @@ static void downloadAllMedia(IGStoryFullscreenCell *self) {
 				NSDictionary *mediaDict = mediaItems.firstObject;
 				NSURL *url = [NSURL URLWithString:mediaDict[@"url"]];
 				if (url) {
+					if (![ThetaHelper tryBeginGlobalDownloadOrNotify]) return;
 					MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] init];
-					[mediaSelectionVC downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension){
-						if (ENABLED(THAppShowBanners)) {
-                            [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
-                        }
+					[mediaSelectionVC downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension, NSError *error){
+						[ThetaHelper endGlobalDownload];
+						[ThetaHelper showSaveResultForPath:filePath error:error];
 					}];
 				}
 				return;

@@ -43,31 +43,6 @@ static BOOL theta_moveReplace(NSString *src, NSString *dst) {
     return NO;
 }
 
-static void theta_sweepStaleReelSaveFiles(void) {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSMutableArray<NSString *> *roots = [NSMutableArray array];
-    NSString *docs = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    NSString *caches = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
-    if (docs.length) [roots addObject:docs];
-    if (caches.length) [roots addObject:caches];
-    [roots addObject:NSTemporaryDirectory()];
-    NSArray<NSString *> *staleNames = @[
-        @"video.mp4", @"audio.m4a", @"audio.aac", @"audio_lc.m4a",
-        @"output.mp4", @"output_h264.mp4"
-    ];
-    for (NSString *root in roots) {
-        for (NSString *name in staleNames) {
-            theta_removePath([root stringByAppendingPathComponent:name]);
-        }
-        NSArray<NSString *> *items = [fm contentsOfDirectoryAtPath:root error:nil];
-        for (NSString *item in items) {
-            if ([item hasPrefix:@"theta_save_"] || [item hasPrefix:@"theta-save"] || [item hasPrefix:@"theta_bulk_"]) {
-                theta_removePath([root stringByAppendingPathComponent:item]);
-            }
-        }
-    }
-}
-
 static NSString *theta_makeReelSaveWorkDir(void) {
     NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"theta-save-%@", [[NSUUID UUID] UUIDString]]];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
@@ -100,6 +75,64 @@ static void showCompletionToast(CustomToastView *progressToast, BOOL success, NS
     }
 }
 
+/// The one delivery of a finished single-save video: Photos or Saved Media as `toPhotos` (read once when the save
+/// started). Always ends the progress toast and calls `finishJob` exactly once.
+static void theta_deliverSavedVideo(NSString *path, BOOL toPhotos, CustomToastView *progressToast, void (^finishJob)(void)) {
+    UIImage *failIcon = [UIImage systemImageNamed:@"exclamationmark.triangle"];
+    UIImage *okIcon = [UIImage systemImageNamed:@"checkmark.circle.fill"];
+    void (^fail)(NSString *, NSString *, NSURL *) = ^(NSString *title, NSString *subtitle, NSURL *url) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            showCompletionToast(progressToast, NO, title, subtitle, failIcon, url);
+        });
+        finishJob();
+    };
+    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+    if (!attrs || [attrs fileSize] == 0) {
+        THDebugLog(@"Video file is empty or missing");
+        fail(@"Error", @"Video file is invalid", nil);
+        return;
+    }
+    if (toPhotos) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Adding to camera roll..."];
+        });
+        [ThetaHelper ensurePhotosAccess:^(BOOL granted) {
+            if (!granted) {
+                fail(@"Photos access is off", @"Tap here to open Settings.", [NSURL URLWithString:UIApplicationOpenSettingsURLString]);
+                return;
+            }
+            ThetaPhotoLibraryImportVideoFromURL([NSURL fileURLWithPath:path], ^(BOOL ok, NSError *error) {
+                if (!ok) {
+                    THDebugLog(@"Failed to save video to Photos: %@", error);
+                    fail(@"Error", @"Photos couldn't import this video", nil);
+                    return;
+                }
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    showCompletionToast(progressToast, YES, @"Saved to camera roll!", @"Tap here to go to camera roll.", okIcon, [NSURL URLWithString:@"photos-redirect://"]);
+                });
+                finishJob();
+            });
+        }];
+        return;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Moving to Saved Media..."];
+    });
+    NSDateFormatter *formatter = [NSDateFormatter new];
+    [formatter setDateFormat:@"yyyyMMdd-HHmmss"];
+    NSError *moveError = nil;
+    NSString *dest = [ThetaHelper moveIntoSavedMedia:path name:[NSString stringWithFormat:@"Video-%@.mp4", [formatter stringFromDate:[NSDate date]]] error:&moveError];
+    if (!dest) {
+        THDebugLog(@"Error moving video to Saved Media: %@", moveError);
+        fail(@"Error", @"Could not move video", nil);
+        return;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        showCompletionToast(progressToast, YES, @"Saved!", @"Saved to Saved Media.", okIcon, nil);
+    });
+    finishJob();
+}
+
 static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedVideoURL);
 
 static void downloadHDVideo(IGVideo *inputVideo) {
@@ -114,6 +147,9 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
     if (!theta_tryBeginSaveJob()) {
         return;
     }
+    
+    // Save To is read once here; the result is passed down to the delivery.
+    BOOL toPhotos = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
     
     // Show initial progress toast
     CustomToastView *progressToast = [CustomToastView showProgressToastWithTitle:@"Saving video" subtitle:@"Preparing..."];
@@ -140,8 +176,6 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         NSURL *audioTestURL = audioURLString.length > 0 ? [NSURL URLWithString:audioURLString] : nil;
         __block BOOL hasAudio = (audioURLString != nil && audioURLString.length > 0 && audioTestURL != nil);
 
-        NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-        theta_sweepStaleReelSaveFiles();
         NSString *workDir = theta_makeReelSaveWorkDir();
         __block BOOL jobFinished = NO;
         finishJob = ^{
@@ -164,13 +198,14 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         [progressToast updateProgressWithTitle:@"Downloading video" subtitle:@"Fetching video stream..."];
     });
     
+    // Written by the completion handlers, read after the group wait
+    __block NSError *videoDownloadError = nil;
+    __block NSError *audioDownloadError = nil;
     dispatch_group_enter(downloadGroup);
     NSURLSessionDownloadTask *videoTask = [session downloadTaskWithURL:[NSURL URLWithString:videoURLString] completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-        if (error) {
-            THDebugLog(@"Error downloading video: %@", error);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [progressToast completeProgressWithTitle:@"Error" subtitle:@"Failed to download video" icon:nil url:nil];
-            });
+        videoDownloadError = [ThetaHelper downloadFailureForResponse:response error:error];
+        if (videoDownloadError) {
+            THDebugLog(@"Video download failed (%@ %ld)", videoDownloadError.domain, (long)videoDownloadError.code);
         } else if (location) {
             theta_moveReplace(location.path, videoPath);
         }
@@ -185,8 +220,9 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         
         dispatch_group_enter(downloadGroup);
         NSURLSessionDownloadTask *audioTask = [session downloadTaskWithURL:[NSURL URLWithString:audioURLString] completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-            if (error) {
-                THDebugLog(@"Error downloading audio: %@", error);
+            audioDownloadError = [ThetaHelper downloadFailureForResponse:response error:error];
+            if (audioDownloadError) {
+                THDebugLog(@"Audio download failed (%@ %ld)", audioDownloadError.domain, (long)audioDownloadError.code);
             } else if (location) {
                 theta_moveReplace(location.path, audioPath);
             }
@@ -204,10 +240,14 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
 
     // verify both files exist and are non-empty
         NSDictionary *downloadedVideoAttrs = [fm attributesOfItemAtPath:videoPath error:nil];
-        if (![fm fileExistsAtPath:videoPath] || !downloadedVideoAttrs || [downloadedVideoAttrs fileSize] == 0) {
-            THDebugLog(@"Video file missing or empty: %@", videoPath);
+        /* One failure toast per save: a video that failed, or an audio track that failed to download
+           (an audio-less manifest or audio that merely doesn't decode still saves video-only). */
+        NSError *downloadError = videoDownloadError ?: (hasAudio ? audioDownloadError : nil);
+        if (downloadError || ![fm fileExistsAtPath:videoPath] || !downloadedVideoAttrs || [downloadedVideoAttrs fileSize] == 0) {
+            THDebugLog(@"Video file missing or empty, or a download failed");
+            NSString *reason = downloadError.localizedDescription ?: @"Failed to download video";
             dispatch_async(dispatch_get_main_queue(), ^{
-                showCompletionToast(progressToast, NO, @"Error", @"Failed to download video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
+                showCompletionToast(progressToast, NO, @"Error", reason, [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
             });
             finishJob();
             return;
@@ -288,78 +328,11 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 return;
             }
             
-            // Save the transcoded file
+            // Deliver the transcoded file (Photos or Saved Media)
             dispatch_async(dispatch_get_main_queue(), ^{
                 [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Preparing to save..."];
             });
-            
-            // Check save method preference
-            BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-            
-            if (saveToCameraRoll) {
-                // Save to camera roll
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Adding to camera roll..."];
-                });
-                NSDictionary *fileAttrs = [fm attributesOfItemAtPath:fileToSave error:nil];
-                if (!fileAttrs || [fileAttrs fileSize] == 0) {
-                    THDebugLog(@"Video file is empty");
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        showCompletionToast(progressToast, NO, @"Error", @"Video file is invalid", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                    });
-                    finishJob();
-                } else {
-                    ThetaPhotoLibraryImportVideoFromURL([NSURL fileURLWithPath:fileToSave], ^(BOOL ok, NSError *error) {
-                        if (ok) {
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                                NSString *finalTitle = saveToCameraRoll ? @"Saved to camera roll!" : @"Saved to local folder!";
-                                NSString *finalSubtitle = saveToCameraRoll ? @"Tap here to go to camera roll." : @"";
-                                NSURL *finalURL = saveToCameraRoll ? [NSURL URLWithString:@"photos-redirect://"] : nil;
-                                showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
-                            });
-                        } else {
-                            THDebugLog(@"Failed to save video: %@", error);
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                showCompletionToast(progressToast, NO, @"Error", @"Photos couldn't import this video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                            });
-                        }
-                        finishJob();
-                    });
-                }
-            } else {
-                // Save to AudioNotes folder
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Moving to AudioNotes folder..."];
-                });
-                
-                NSString *audioNotesDir = [documentsPath stringByAppendingPathComponent:@"AudioNotes"];
-                if (![fm fileExistsAtPath:audioNotesDir]) {
-                    [fm createDirectoryAtPath:audioNotesDir withIntermediateDirectories:YES attributes:nil error:nil];
-                }
-                
-                NSDateFormatter *formatter = [NSDateFormatter new];
-                [formatter setDateFormat:@"yyyyMMdd-HHmmss"];
-                NSString *destName = [NSString stringWithFormat:@"Video-%@.mp4", [formatter stringFromDate:[NSDate date]]];
-                NSString *destPath = [audioNotesDir stringByAppendingPathComponent:destName];
-                
-                NSError *moveError = nil;
-                if ([fm moveItemAtPath:fileToSave toPath:destPath error:&moveError]) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                        NSString *finalTitle = saveToCameraRoll ? @"Saved to camera roll!" : @"Saved to local folder!";
-                        NSString *finalSubtitle = saveToCameraRoll ? @"Tap here to go to camera roll." : @"Saved to AudioNotes folder.";
-                        NSURL *finalURL = saveToCameraRoll ? [NSURL URLWithString:@"photos-redirect://"] : nil;
-                        showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
-                    });
-                } else {
-                    THDebugLog(@"Error moving video to AudioNotes: %@", moveError);
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        showCompletionToast(progressToast, NO, @"Error", @"Could not move video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                    });
-                }
-                finishJob();
-            }
+            theta_deliverSavedVideo(fileToSave, toPhotos, progressToast, finishJob);
             
             // Exit early - don't continue with AVAsset merge path
             return;
@@ -385,8 +358,8 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         }
         
         // Merge and export to a camera-roll-friendly MP4 (interleaved, AAC, moov placement suited for Photos)
-        __block NSString *outputPath = [workDir stringByAppendingPathComponent:@"output.mp4"];
-        __block NSURL *outputURL = [NSURL fileURLWithPath:outputPath];
+        NSString *outputPath = [workDir stringByAppendingPathComponent:@"output.mp4"];
+        NSURL *outputURL = [NSURL fileURLWithPath:outputPath];
         
         // Remove output file if it exists
         if ([fm fileExistsAtPath:outputPath]) {
@@ -484,8 +457,6 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
             exportSession.shouldOptimizeForNetworkUse = YES;
         }
         
-        dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
-        
         [exportSession exportAsynchronouslyWithCompletionHandler:^{
             if (exportSession.status == AVAssetExportSessionStatusCompleted) {
                 // Verify the merged output actually contains audio
@@ -494,255 +465,7 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 if (hasAudio && mergedAudioTracks.count <= 0) {
                     THDebugLog(@"ThetaSave: export completed without an audio track (DASH audio may be unsupported)");
                 }
-                
-                // Check and request photo library authorization
-                PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
-                
-                if (status == PHAuthorizationStatusAuthorized || status == PHAuthorizationStatusLimited) {
-                    // Verify file exists and get file info
-                    NSError *fileError = nil;
-                    NSDictionary *fileAttrs = [fm attributesOfItemAtPath:outputPath error:&fileError];
-                    if (fileError) {
-                        THDebugLog(@"Error reading output file attributes: %@", fileError);
-                    }
-                    
-                    BOOL fileExists = [fm fileExistsAtPath:outputPath];
-                    
-                    // Check if file is compatible with Photos library
-                    // AV1 video may not be supported by Photos, need to re-encode to H.264
-                    AVAsset *checkAsset = [AVAsset assetWithURL:outputURL];
-                    NSArray<AVAssetTrack *> *checkVideoTracks = [checkAsset tracksWithMediaType:AVMediaTypeVideo];
-                    if (checkVideoTracks.count > 0) {
-                        AVAssetTrack *checkVideoTrack = checkVideoTracks[0];
-                        NSArray *checkFormatDescriptions = [checkVideoTrack formatDescriptions];
-                        if (checkFormatDescriptions.count > 0) {
-                            CMFormatDescriptionRef formatDesc = (__bridge CMFormatDescriptionRef)checkFormatDescriptions[0];
-                            FourCharCode codec = CMFormatDescriptionGetMediaSubType(formatDesc);
-                            
-                            if (ThetaVideoFourCCNeedsFFmpegTranscode(codec)) {
-                                NSString *h264OutputPath = [workDir stringByAppendingPathComponent:@"output_h264.mp4"];
-                                
-                                // Remove if exists
-                                if ([fm fileExistsAtPath:h264OutputPath]) {
-                                    [fm removeItemAtPath:h264OutputPath error:nil];
-                                }
-                                
-                            // Transcode using our AV1Transcoder (uses dlopen for ffmpeg)
-                            // Pass separate audio file if available (AVAsset can't read xHE-AAC from DASH)
-                            NSError *transcodeError = nil;
-                            BOOL success = [AV1Transcoder transcodeAV1ToH264:outputPath 
-                                                                   outputPath:h264OutputPath 
-                                                                    audioPath:hasAudio ? audioPath : nil
-                                                                        error:&transcodeError 
-                                                                progressBlock:^(NSString *status, float progress) {
-                                dispatch_async(dispatch_get_main_queue(), ^{
-                                    [progressToast updateProgressWithTitle:@"Downloading video..."
-                                                                  subtitle:@""
-                                                                  progress:progress];
-                                });
-                            }];
-                            
-                            if (success) {
-                                // Warn user if audio was expected but not present
-                                if (hasAudio) {
-                                    dispatch_async(dispatch_get_main_queue(), ^{
-                                        [progressToast updateProgressWithTitle:@"Note" subtitle:@"Video saved, but audio from DASH may be incompatible"];
-                                    });
-                                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                                        [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Preparing to save..."];
-                                    });
-                                }
-                                
-                                // Check save method preference
-                                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                                
-                                if (saveToCameraRoll) {
-                                    // Save to camera roll
-                                    dispatch_async(dispatch_get_main_queue(), ^{
-                                        [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Adding to camera roll..."];
-                                    });
-                                    
-                                        // For sideload builds, must load video into memory (file URLs don't work in sandbox)
-                                        // Verify file exists and has content
-                                        NSDictionary *fileAttrs = [fm attributesOfItemAtPath:h264OutputPath error:nil];
-                                        unsigned long long fileSize = [fileAttrs fileSize];
-                                        
-                                        if (fileSize == 0 || !fileAttrs) {
-                                            THDebugLog(@"Transcoded file is empty or doesn't exist");
-                                            dispatch_async(dispatch_get_main_queue(), ^{
-                                                showCompletionToast(progressToast, NO, @"Error", @"Transcoded video file is invalid", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                                            });
-                                                                    finishJob();
-                dispatch_semaphore_signal(semaphore);
-                                        } else {
-                                            // Load video data into memory (required for sandboxed apps)
-                                            // Copy video to app's Library/Caches which is more accessible
-                                            NSString *cacheVideoPath = [workDir stringByAppendingPathComponent:@"import.mp4"];
-                                            
-                                            NSError *copyError = nil;
-                                            if ([fm copyItemAtPath:h264OutputPath toPath:cacheVideoPath error:&copyError]) {
-                                                
-                                                // Use legacy ALAssetsLibrary with file URL from Caches
-                                                #pragma clang diagnostic push
-                                                #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                                                ALAssetsLibrary *library = [[ALAssetsLibrary alloc] init];
-                                                [library writeVideoAtPathToSavedPhotosAlbum:[NSURL fileURLWithPath:cacheVideoPath] completionBlock:^(NSURL *assetURL, NSError *error) {
-                                                    if (assetURL && !error) {
-                                                        
-                                                        dispatch_async(dispatch_get_main_queue(), ^{
-                                                            BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                                                            NSString *finalTitle = saveToCameraRoll ? @"Saved to camera roll!" : @"Saved to local folder!";
-                                                            NSString *finalSubtitle = saveToCameraRoll ? @"Tap here to go to camera roll." : @"";
-                                                            NSURL *finalURL = saveToCameraRoll ? [NSURL URLWithString:@"photos-redirect://"] : nil;
-                                                            showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
-                                                        });
-                                                        
-                                                        // Clean up all temporary files
-                                                        [fm removeItemAtPath:videoPath error:nil];
-                                                        if (hasAudio) {
-                                                            [fm removeItemAtPath:audioPath error:nil];
-                                                        }
-                                                        [fm removeItemAtPath:outputPath error:nil];
-                                                        [fm removeItemAtPath:h264OutputPath error:nil];
-                                                        [fm removeItemAtPath:cacheVideoPath error:nil];
-                                                    } else {
-                                                        THDebugLog(@"Failed to save video using ALAssetsLibrary: %@", error);
-                                                        THDebugLog(@"Error domain: %@, code: %ld", error.domain, (long)error.code);
-                                                        dispatch_async(dispatch_get_main_queue(), ^{
-                                                            NSString *errorMsg = error.localizedDescription ?: @"Unknown error";
-                                                            showCompletionToast(progressToast, NO, @"Error", [NSString stringWithFormat:@"Save failed: %@", errorMsg], [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                                                        });
-                                                        // Don't clean up so user can debug
-                                                    }
-                                                                            finishJob();
-                dispatch_semaphore_signal(semaphore);
-                                                }];
-                                                #pragma clang diagnostic pop
-                                            } else {
-                                                THDebugLog(@"Failed to copy video to Caches: %@", copyError);
-                                                dispatch_async(dispatch_get_main_queue(), ^{
-                                                    showCompletionToast(progressToast, NO, @"Error", @"Failed to prepare video", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                                                });
-                                                                        finishJob();
-                dispatch_semaphore_signal(semaphore);
-                                            }
-                                        }
-                                } else {
-                                    // Save to AudioNotes folder
-                                    dispatch_async(dispatch_get_main_queue(), ^{
-                                        [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Moving to AudioNotes folder..."];
-                                    });
-                                    
-                                    NSString *audioNotesDir = [documentsPath stringByAppendingPathComponent:@"AudioNotes"];
-                                    if (![fm fileExistsAtPath:audioNotesDir]) {
-                                        [fm createDirectoryAtPath:audioNotesDir withIntermediateDirectories:YES attributes:nil error:nil];
-                                    }
-                                    
-                                    NSDateFormatter *formatter = [NSDateFormatter new];
-                                    [formatter setDateFormat:@"yyyyMMdd-HHmmss"];
-                                    NSString *destName = [NSString stringWithFormat:@"Video-%@.mp4", [formatter stringFromDate:[NSDate date]]];
-                                    NSString *destPath = [audioNotesDir stringByAppendingPathComponent:destName];
-                                    
-                                    NSError *moveError = nil;
-                                    if ([fm moveItemAtPath:h264OutputPath toPath:destPath error:&moveError]) {
-                                        
-                                        dispatch_async(dispatch_get_main_queue(), ^{
-                                            BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                                            NSString *finalTitle = saveToCameraRoll ? @"Saved to camera roll!" : @"Saved to local folder!";
-                                            NSString *finalSubtitle = saveToCameraRoll ? @"Tap here to go to camera roll." : @"Saved to local folder.";
-                                            NSURL *finalURL = saveToCameraRoll ? [NSURL URLWithString:@"photos-redirect://"] : nil;
-                                            showCompletionToast(progressToast, YES, finalTitle, finalSubtitle, [UIImage systemImageNamed:@"checkmark.circle.fill"], finalURL);
-                                        });
-                                        
-                                        // Clean up all temporary files except the final one
-                                        [fm removeItemAtPath:videoPath error:nil];
-                                        if (hasAudio) {
-                                            [fm removeItemAtPath:audioPath error:nil];
-                                        }
-                                        [fm removeItemAtPath:outputPath error:nil];
-                                        // Don't remove h264OutputPath - we moved it to AudioNotes
-                                    } else {
-                                        THDebugLog(@"Error moving video to AudioNotes: %@", moveError);
-                                        dispatch_async(dispatch_get_main_queue(), ^{
-                                            showCompletionToast(progressToast, NO, @"Error", @"Could not move video to AudioNotes.", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                                        });
-                                    }
-                                                            finishJob();
-                dispatch_semaphore_signal(semaphore);
-                                }
-                                } else {
-                                    THDebugLog(@"Transcoding failed (%@); trying native export", transcodeError);
-                                    dispatch_async(dispatch_get_main_queue(), ^{
-                                        [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Converting video..."];
-                                    });
-                                    if (ThetaExportPhotosCompatibleMP4(outputPath, audioPath, hasAudio, h264OutputPath)) {
-                                        outputPath = h264OutputPath;
-                                        outputURL = [NSURL fileURLWithPath:h264OutputPath];
-                                    }
-                                }
-                                if (success) return;
-                            }
-                        }
-                    }
-                    
-                // Try to save directly if not AV1
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [progressToast updateProgressWithTitle:@"Saving video" subtitle:@"Adding to camera roll..."];
-                });
-                
-                ThetaPhotoLibraryImportVideoFromURL(outputURL, ^(BOOL success, NSError * _Nullable error) {
-                    if (success) {
-                        
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            [progressToast completeProgressWithTitle:@"Success!" subtitle:@"Video saved to camera roll" icon:nil url:nil];
-                        });
-                        
-                        // Clean up temporary files after saving to camera roll
-                        [fm removeItemAtPath:videoPath error:nil];
-                        if (hasAudio) {
-                            [fm removeItemAtPath:audioPath error:nil];
-                        }
-                        [fm removeItemAtPath:outputPath error:nil];
-                    } else {
-                        THDebugLog(@"Failed to save video to camera roll: %@", error);
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            [progressToast completeProgressWithTitle:@"Error" subtitle:@"Failed to save to camera roll" icon:nil url:nil];
-                        });
-                    }
-                                            finishJob();
-                dispatch_semaphore_signal(semaphore);
-                });
-                } else if (status == PHAuthorizationStatusNotDetermined) {
-                    // Request authorization
-                    [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus newStatus) {
-                        THDebugLog(@"Photo library authorization status after request: %ld", (long)newStatus);
-                        if (newStatus == PHAuthorizationStatusAuthorized || newStatus == PHAuthorizationStatusLimited) {
-                            ThetaPhotoLibraryImportVideoFromURL(outputURL, ^(BOOL success, NSError * _Nullable error) {
-                                if (success) {
-                                    
-                                    // Clean up temporary files after saving to camera roll
-                                    [fm removeItemAtPath:videoPath error:nil];
-                                    if (hasAudio) {
-                                        [fm removeItemAtPath:audioPath error:nil];
-                                    }
-                                    [fm removeItemAtPath:outputPath error:nil];
-                                } else {
-                                    THDebugLog(@"Failed to save video to camera roll: %@", error);
-                                }
-                                                        finishJob();
-                dispatch_semaphore_signal(semaphore);
-                            });
-                        } else {
-                            THDebugLog(@"Photo library access denied by user");
-                                                    finishJob();
-                dispatch_semaphore_signal(semaphore);
-                        }
-                    }];
-                } else {
-                    THDebugLog(@"Photo library access denied or restricted. Status: %ld", (long)status);
-                                            finishJob();
-                dispatch_semaphore_signal(semaphore);
-                }
+                theta_deliverSavedVideo(outputPath, toPhotos, progressToast, finishJob);
             } else {
                 THDebugLog(@"Export failed with status: %ld, error: %@", (long)exportSession.status, exportSession.error);
                 NSString *fallbackPath = [workDir stringByAppendingPathComponent:@"output_h264.mp4"];
@@ -770,31 +493,13 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 }
                 NSDictionary *fallbackAttrs = [fm attributesOfItemAtPath:fallbackPath error:nil];
                 if (fallbackOK && fallbackAttrs && [fallbackAttrs fileSize] > 0) {
-                    ThetaPhotoLibraryImportVideoFromURL([NSURL fileURLWithPath:fallbackPath], ^(BOOL ok, NSError *saveError) {
-                        if (ok) {
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                showCompletionToast(progressToast, YES, @"Saved to camera roll!", @"Tap here to go to camera roll.", [UIImage systemImageNamed:@"checkmark.circle.fill"], [NSURL URLWithString:@"photos-redirect://"]);
-                            });
-                            [fm removeItemAtPath:videoPath error:nil];
-                            if (hasAudio) [fm removeItemAtPath:audioPath error:nil];
-                            [fm removeItemAtPath:outputPath error:nil];
-                            [fm removeItemAtPath:fallbackPath error:nil];
-                        } else {
-                            THDebugLog(@"Fallback save failed: %@", saveError);
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                showCompletionToast(progressToast, NO, @"Error", @"Could not prepare video for saving", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
-                            });
-                        }
-                        finishJob();
-                        dispatch_semaphore_signal(semaphore);
-                    });
+                    theta_deliverSavedVideo(fallbackPath, toPhotos, progressToast, finishJob);
                     return;
                 }
                 dispatch_async(dispatch_get_main_queue(), ^{
                     showCompletionToast(progressToast, NO, @"Error", @"Could not prepare video for saving", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                 });
-                                        finishJob();
-                dispatch_semaphore_signal(semaphore);
+                finishJob();
             }
         }];
       } @catch (NSException *exception) {
@@ -806,6 +511,17 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
         if (finishJob) finishJob(); else [ThetaHelper endGlobalDownload];
       }
     });
+}
+
+/// Single photo save (feed and reels): takes the download lock, shows the real result, releases the lock.
+static void theta_saveSinglePhoto(NSURL *url) {
+    if (![url isKindOfClass:[NSURL class]]) return;
+    if (![ThetaHelper tryBeginGlobalDownloadOrNotify]) return;
+    MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] init];
+    [mediaSelectionVC downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension, NSError *error) {
+        [ThetaHelper endGlobalDownload];
+        [ThetaHelper showSaveResultForPath:filePath error:error];
+    }];
 }
 
 static void downloadMedia(id self) {
@@ -925,25 +641,7 @@ static void downloadMedia(id self) {
                             downloadHDVideo(igvideos.firstObject);
                         } else if (regularItems.count == 1) {
                             NSDictionary *mediaDict = regularItems.firstObject;
-                            NSURL *url = [NSURL URLWithString:mediaDict[@"url"]];
-                            if (url) {
-                                MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] init];
-                                // Guard for camera roll save via mediaSelectionVC helper
-                                if (![ThetaHelper tryBeginGlobalDownloadOrNotify]) {
-                                    return;
-                                }
-                                [mediaSelectionVC downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension){
-                                    [ThetaHelper endGlobalDownload];
-                                    if (ENABLED(THAppShowBanners)) {
-                                        BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                                        if (saveToCameraRoll) {
-                                            [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
-                                        } else {
-                                            [ThetaHelper showToastWithTitle:@"Saved!" subtitle:@"Saved to Documents." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:nil];
-                                        }
-                                    }
-                                }];
-                            }
+                            theta_saveSinglePhoto([NSURL URLWithString:mediaDict[@"url"]]);
                         }
                         return;
                     }
@@ -1252,101 +950,35 @@ static void downloadSundialMedia(id self) {
                 finalNormalItems = [normalItems copy];
             });
 
-            // Handle single HD video
-            if (finalHDVideos.count == 1) {
-                IGVideo *video = finalHDVideos.firstObject;
-                if (video) {
-                    downloadHDVideo(video);
+            // Same rule as the feed menu: one item in total saves directly, more than one opens one picker.
+            NSInteger totalItems = finalHDVideos.count + finalNormalItems.count;
+            if (totalItems == 1) {
+                if (finalHDVideos.count == 1) {
+                    downloadHDVideo(finalHDVideos.firstObject);
+                } else {
+                    theta_saveSinglePhoto([NSURL URLWithString:finalNormalItems.firstObject[@"url"]]);
                 }
-            } 
-            // Handle multiple HD videos
-            else if (finalHDVideos.count > 1) {
-                [MediaSelectionViewController preloadHDVideoThumbnails:finalHDVideos completion:^{
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        if (!weakSelf) return;
-                        MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] initWithMediaItems:finalNormalItems hdVideos:finalHDVideos withCount:mediaItems.count];
-                        if (mediaSelectionVC) {
-                            UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:mediaSelectionVC];
-                            if (navController) {
-                                [[ThetaHelper topViewController] presentViewController:navController animated:YES completion:nil];
-                            }
-                        }
-                    });
-                }];
-            }
-            
-            // Handle single media item (non-HD)
-            if (mediaItems.count == 1 && finalHDVideos.count == 0) {
-                IGPostItem *mediaItem = mediaItems.firstObject;
-                if (!mediaItem) return;
-                
-                NSURL *url = nil;
-                // Extract URL from the actual media item, not from normalItems array
-                if ([mediaItem respondsToSelector:@selector(itemMediaType)]) {
-                    if (mediaItem.itemMediaType == 1) {
-                        IGPhoto *photo = mediaItem.photo;
-                        if (photo) {
-                            NSArray *originalImageVersions = [photo valueForKey:@"_originalImageVersions"];
-                            if (originalImageVersions.count > 1) {
-                                id photoURL = [originalImageVersions lastObject];
-                                url = [photoURL valueForKey:@"url"];
-                            }
-                        }
-                    }
-                } else if ([mediaItem respondsToSelector:@selector(mediaType)]) {
-                    if (mediaItem.mediaType == 1) {
-                        IGPhoto *photo = mediaItem.photo;
-                        if (photo) {
-                            NSArray *originalImageVersions = [photo valueForKey:@"_originalImageVersions"];
-                            if (originalImageVersions.count > 1) {
-                                id photoURL = [originalImageVersions lastObject];
-                                url = [photoURL valueForKey:@"url"];
-                            }
-                        }
-                    }
-                }
-                
-                if (url) {
-                    MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] init];
-                    if (mediaSelectionVC) {
-                        [mediaSelectionVC downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension){
-                            if (ENABLED(THAppShowBanners)) {
-                                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                                if (saveToCameraRoll) {
-                                    [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
-                                } else {
-                                    [ThetaHelper showToastWithTitle:@"Saved!" subtitle:@"Saved to Documents." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:nil];
-                                }
-                            }
-                        }];
-                    }
-                }
+                return;
             }
 
-            // Handle multiple media items
-            if (mediaItems.count > 1) {
+            if (totalItems > 1) {
+                void (^presentPicker)(void) = ^{
+                    MediaSelectionViewController *mediaSelectionVC = finalHDVideos.count > 0
+                        ? [[MediaSelectionViewController alloc] initWithMediaItems:finalNormalItems hdVideos:finalHDVideos withCount:totalItems]
+                        : [[MediaSelectionViewController alloc] initWithMediaItems:finalNormalItems withCount:totalItems];
+                    UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:mediaSelectionVC];
+                    [[ThetaHelper topViewController] presentViewController:navController animated:YES completion:nil];
+                };
                 // Preload HD video thumbnails before showing the view controller
                 if (finalHDVideos.count > 0) {
                     [MediaSelectionViewController preloadHDVideoThumbnails:finalHDVideos completion:^{
                         dispatch_async(dispatch_get_main_queue(), ^{
                             if (!weakSelf) return;
-                            MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] initWithMediaItems:finalNormalItems hdVideos:finalHDVideos withCount:mediaItems.count];
-                            if (mediaSelectionVC) {
-                                UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:mediaSelectionVC];
-                                if (navController) {
-                                    [[ThetaHelper topViewController] presentViewController:navController animated:YES completion:nil];
-                                }
-                            }
+                            presentPicker();
                         });
                     }];
-                } else if (finalNormalItems.count > 0) {
-                    MediaSelectionViewController *mediaSelectionVC = [[MediaSelectionViewController alloc] initWithMediaItems:finalNormalItems withCount:mediaItems.count];
-                    if (mediaSelectionVC) {
-                        UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:mediaSelectionVC];
-                        if (navController) {
-                            [[ThetaHelper topViewController] presentViewController:navController animated:YES completion:nil];
-                        }
-                    }
+                } else {
+                    presentPicker();
                 }
             }
         });

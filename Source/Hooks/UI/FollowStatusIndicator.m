@@ -615,12 +615,12 @@ static void saveMedia(id hostView) {
                 }
 
                 if (total == 1 && readyItems.count == 1) {
+                    if (![ThetaHelper tryBeginGlobalDownloadOrNotify]) return;
                     @try {
                         MediaSelectionViewController *mediaSelectionVC = [MediaSelectionViewController new];
-                        [mediaSelectionVC downloadMediaToTemp:[NSURL URLWithString:readyItems[0][@"url"]] completion:^(NSString *filePath, NSString *fileExtension) {
-                            if (!filePath || !fileExtension) return;
-                            [mediaSelectionVC saveFilesToCameraRoll:[NSMutableArray arrayWithObject:filePath]
-                                                         extensions:[NSMutableArray arrayWithObject:fileExtension]];
+                        [mediaSelectionVC downloadMediaToTemp:[NSURL URLWithString:readyItems[0][@"url"]] completion:^(NSString *filePath, NSString *fileExtension, NSError *error) {
+                            [ThetaHelper endGlobalDownload];
+                            [ThetaHelper showSaveResultForPath:filePath error:error];
                         }];
                     } @catch (NSException *exception) {
                         THDebugLog(@"[Theta] Save Profile Posts single: %@", exception);

@@ -13,9 +13,6 @@
 #import "Include/AV1Transcoder.h"
 #import "Include/ThetaDashManifest.h"
 
-// Global guard to prevent concurrent downloads
-static volatile BOOL sThetaDownloadInProgress = NO;
-
 // Helper functions for cleaner code
 static void cleanupTemporaryFiles(NSString *videoPath, NSString *audioPath, NSString *outputPath) {
     NSFileManager *fileManager = [NSFileManager defaultManager];
@@ -56,18 +53,6 @@ static void showCompletionToast(CustomToastView *progressToast, BOOL success, NS
     BOOL hasShownToast;
     CAGradientLayer *gradientLayer;
     CAEmitterLayer *emitterLayer;
-}
-
-+ (BOOL)isDownloadInProgress {
-    @synchronized(self) {
-        return sThetaDownloadInProgress;
-    }
-}
-
-+ (void)setDownloadInProgress:(BOOL)inProgress {
-    @synchronized(self) {
-        sThetaDownloadInProgress = inProgress;
-    }
 }
 
 - (instancetype)initWithMediaItems:(NSArray<NSDictionary *> *)mediaItems withCount:(NSInteger)count {
@@ -549,29 +534,26 @@ static void * const playerKey = &playerKey;
     return cell;
 }
 
-- (void)showCompletionToast:(CustomToastView *)progressToast completed:(NSInteger)completed total:(NSInteger)total failed:(NSInteger)failed {
+/** The one end point of a picker save: shows the result and releases ThetaHelper's download lock. */
+- (void)showCompletionToast:(CustomToastView *)progressToast completed:(NSInteger)completed total:(NSInteger)total failed:(NSInteger)failed toPhotos:(BOOL)toPhotos {
+    NSInteger saved = MAX(completed - failed, 0);
     if (progressToast) {
         NSString *title = @"Download Complete!";
-        NSString *subtitle = @"";
-        BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-        if (saveToCameraRoll) {
-            subtitle = [NSString stringWithFormat:@"%ld items saved to camera roll", (long)completed];
-        } else {
-            subtitle = [NSString stringWithFormat:@"%ld items saved to local folder", (long)completed];
-        }
+        NSString *subtitle = [NSString stringWithFormat:@"%ld items saved to %@", (long)saved, toPhotos ? @"camera roll" : @"Saved Media"];
         UIImage *icon = [UIImage systemImageNamed:@"checkmark.circle.fill"];
         
         if (failed > 0) {
-            title = @"Download Finished";
-            subtitle = [NSString stringWithFormat:@"%ld saved, %ld failed", (long)completed, (long)failed];
+            title = saved > 0 ? @"Download Finished" : @"Save failed";
+            subtitle = [NSString stringWithFormat:@"%ld saved, %ld failed", (long)saved, (long)failed];
             icon = [UIImage systemImageNamed:@"exclamationmark.triangle"];
         }
         
-        [progressToast completeProgressWithTitle:title subtitle:subtitle icon:icon url:[NSURL URLWithString:@"photos-redirect://"]];
+        NSURL *url = (toPhotos && saved > 0) ? [NSURL URLWithString:@"photos-redirect://"] : nil;
+        [progressToast completeProgressWithTitle:title subtitle:subtitle icon:icon url:url];
     }
 
     // Allow new downloads after completion
-    [MediaSelectionViewController setDownloadInProgress:NO];
+    [ThetaHelper endGlobalDownload];
 }
 
 
@@ -923,15 +905,25 @@ static void * const playerKey = &playerKey;
         return;
     }
 
-    // Enforce single active download
-    if ([MediaSelectionViewController isDownloadInProgress]) {
-        UIImage *hourglass = [UIImage systemImageNamed:@"hourglass"];
-        hourglass = [hourglass imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-        hourglass = [hourglass imageWithTintColor:[ThetaHelper iotaPinkColor]];
-        [self showToastWithTitle:@"Download in progress!" subtitle:@"Please wait for download to finish." icon:hourglass seconds:3 openURL:nil];
+    // Save To is read once here and passed down: a mid-save toggle can't split one save.
+    BOOL toPhotos = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+    if (!toPhotos) {
+        [self startDownloadingSelectedItemsToPhotos:NO];
         return;
     }
-    [MediaSelectionViewController setDownloadInProgress:YES];
+    // Photos access is checked before anything starts: on denial the picker stays open and nothing downloads.
+    [ThetaHelper ensurePhotosAccess:^(BOOL granted) {
+        if (!granted) {
+            [ThetaHelper showSaveFailure:[ThetaHelper saveErrorWithCode:ThetaSaveErrorPhotosAccess message:@"Photos access is off" underlying:nil]];
+            return;
+        }
+        [self startDownloadingSelectedItemsToPhotos:YES];
+    }];
+}
+
+- (void)startDownloadingSelectedItemsToPhotos:(BOOL)toPhotos {
+    // Enforce single active download (ThetaHelper's lock; showCompletionToast is the one place that releases it)
+    if (![ThetaHelper tryBeginGlobalDownloadOrNotify]) return;
 
     // dismiss view controller
     [self dismissViewControllerAnimated:YES completion:nil];
@@ -949,6 +941,8 @@ static void * const playerKey = &playerKey;
     }
     
     NSInteger totalItems = selectedRegularItems.count + selectedHDVideos.count;
+    // Photo results arrive on several queues: the counters are only touched on this serial queue.
+    dispatch_queue_t countQueue = dispatch_queue_create("com.theta.photocounts", DISPATCH_QUEUE_SERIAL);
     __block NSInteger completedItems = 0;
     __block NSInteger failedItems = 0;
     
@@ -959,9 +953,6 @@ static void * const playerKey = &playerKey;
     
     // Download regular media items first (photos)
     if (selectedRegularItems.count > 0) {
-        NSMutableArray<NSString *> *downloadedFilePaths = [NSMutableArray array];
-        NSMutableArray<NSString *> *fileExtensions = [NSMutableArray array];
-        
         dispatch_group_t group = dispatch_group_create();
         NSOperationQueue *queue = [[NSOperationQueue alloc] init];
         queue.maxConcurrentOperationCount = 15;
@@ -973,20 +964,17 @@ static void * const playerKey = &playerKey;
             
             dispatch_group_enter(group);
             [queue addOperationWithBlock:^{
-                [self downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension) {
-                    if (filePath) {
-                        @synchronized (downloadedFilePaths) {
-                            [downloadedFilePaths addObject:filePath];
-                            [fileExtensions addObject:fileExtension];
-                        }
-                    }
-                    
-                    completedItems++;
-                    float progress = (float)completedItems / (float)totalItems;
+                [self performDownloadWithURL:url toPhotos:toPhotos completion:^(NSString *filePath, NSString *fileExtension, NSError *error) {
+                    __block NSInteger done = 0;
+                    dispatch_sync(countQueue, ^{
+                        completedItems++;
+                        if (!filePath) failedItems++;
+                        done = completedItems;
+                    });
                     
                     // Update toast with photo progress
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        [progressToast updateProgressWithTitle:@"Downloading photos..." subtitle:[NSString stringWithFormat:@"%ld of %ld photos completed", (long)completedItems, (long)selectedRegularItems.count]];
+                        [progressToast updateProgressWithTitle:@"Downloading photos..." subtitle:[NSString stringWithFormat:@"%ld of %ld photos completed", (long)done, (long)selectedRegularItems.count]];
                     });
                     
                     dispatch_group_leave(group);
@@ -995,239 +983,138 @@ static void * const playerKey = &playerKey;
         }
 
         dispatch_group_notify(group, dispatch_get_main_queue(), ^{
-            [self saveFilesToCameraRoll:downloadedFilePaths extensions:fileExtensions suppressToast:YES];
+            __block NSInteger completed = 0, failed = 0;
+            dispatch_sync(countQueue, ^{
+                completed = completedItems;
+                failed = failedItems;
+            });
             
             // If all photos are done, start videos
             if (selectedHDVideos.count > 0) {
                 [progressToast updateProgressWithTitle:@"Downloading videos..." subtitle:[NSString stringWithFormat:@"Processing %ld videos", (long)selectedHDVideos.count]];
                 
                 // Start downloading videos
-                [self downloadHDVideosBulk:selectedHDVideos progressToast:progressToast completed:completedItems total:totalItems failed:failedItems];
+                [self downloadHDVideosBulk:selectedHDVideos progressToast:progressToast completed:completed total:totalItems failed:failed toPhotos:toPhotos];
             } else {
-                [self showCompletionToast:progressToast completed:completedItems total:totalItems failed:failedItems];
-                [self dismissViewControllerAnimated:YES completion:nil];
+                [self showCompletionToast:progressToast completed:completed total:totalItems failed:failed toPhotos:toPhotos];
             }
         });
     } else if (selectedHDVideos.count > 0) {
         // If no photos, start videos immediately
         [progressToast updateProgressWithTitle:@"Downloading videos..." subtitle:[NSString stringWithFormat:@"Processing %ld videos", (long)selectedHDVideos.count]];
-        [self downloadHDVideosBulk:selectedHDVideos progressToast:progressToast completed:completedItems total:totalItems failed:failedItems];
-    }
-}
-
-- (void)downloadMediaToTemp:(NSURL *)url completion:(void(^)(NSString *filePath, NSString *fileExtension))completion {
-    // Respect save method: 0 = camera roll, 1 = local folder
-    BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-    if (saveToCameraRoll) {
-        // Check photo library permission first
-        PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
-        if (status == PHAuthorizationStatusNotDetermined) {
-            [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus authorizationStatus) {
-                if (authorizationStatus == PHAuthorizationStatusAuthorized) {
-                    [self performDownloadWithURL:url completion:completion];
-                } else {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        if (ENABLED(THAppShowBanners)) {
-                            [self showToastWithTitle:@"Permission Denied" subtitle:@"Please enable photo library access in Settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] seconds:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
-                        }
-                    });
-                    if (completion) {
-                        completion(nil, nil);
-                    }
-                }
-            }];
-        } else if (status == PHAuthorizationStatusAuthorized) {
-            [self performDownloadWithURL:url completion:completion];
-        } else {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (ENABLED(THAppShowBanners)) {
-                    [self showToastWithTitle:@"Permission Denied" subtitle:@"Please enable photo library access in Settings." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] seconds:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
-                }
-            });
-            if (completion) {
-                completion(nil, nil);
-            }
-        }
+        [self downloadHDVideosBulk:selectedHDVideos progressToast:progressToast completed:0 total:totalItems failed:0 toPhotos:toPhotos];
     } else {
-        // Local folder mode doesn't require Photos permission
-        [self performDownloadWithURL:url completion:completion];
+        [self showCompletionToast:progressToast completed:0 total:0 failed:0 toPhotos:toPhotos];
     }
 }
 
-- (void)saveMediaToPhotoLibrary:(NSString *)filePath fileExtension:(NSString *)fileExtension completion:(void(^)(NSString *filePath, NSString *fileExtension))completion {
-    if ([fileExtension.lowercaseString isEqualToString:@"mp4"] || [fileExtension.lowercaseString isEqualToString:@"mov"]) {
-        // Save video
-        UISaveVideoAtPathToSavedPhotosAlbum(filePath, self, @selector(video:didFinishSavingWithError:contextInfo:), (__bridge_retained void *)(^{
-            // Clean up temporary file
-            NSError *deleteError;
-            [[NSFileManager defaultManager] removeItemAtPath:filePath error:&deleteError];
-            if (deleteError) {
-                NSLog(@"Error deleting temporary file: %@", deleteError);
-            }
-            
-            if (completion) {
-                completion(filePath, fileExtension);
-            }
-        }));
-    } else {
-        // Save image
-        UIImage *image = [UIImage imageWithContentsOfFile:filePath];
-        if (image) {
-            UIImageWriteToSavedPhotosAlbum(image, self, @selector(image:didFinishSavingWithError:contextInfo:), (__bridge_retained void *)(^{
-                // Clean up temporary file
-                NSError *deleteError;
-                [[NSFileManager defaultManager] removeItemAtPath:filePath error:&deleteError];
-                if (deleteError) {
-                    NSLog(@"Error deleting temporary file: %@", deleteError);
-                }
-                
-                if (completion) {
-                    completion(filePath, fileExtension);
-                }
-            }));
-        } else {
-            NSLog(@"Failed to create image from file: %@", filePath);
-            if (completion) {
-                completion(nil, fileExtension);
-            }
+/** Single download-and-save for feed/reels/story/view-once/profile/Instants photos. Save To is read once, here. */
+- (void)downloadMediaToTemp:(NSURL *)url completion:(void(^)(NSString *filePath, NSString *fileExtension, NSError *error))completion {
+    BOOL toPhotos = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
+    if (!toPhotos) {
+        [self performDownloadWithURL:url toPhotos:NO completion:completion];
+        return;
+    }
+    [ThetaHelper ensurePhotosAccess:^(BOOL granted) {
+        if (!granted) {
+            if (completion) completion(nil, nil, [ThetaHelper saveErrorWithCode:ThetaSaveErrorPhotosAccess message:@"Photos access is off" underlying:nil]);
+            return;
         }
-    }
+        [self performDownloadWithURL:url toPhotos:YES completion:completion];
+    }];
 }
 
-- (void)image:(UIImage *)image didFinishSavingWithError:(NSError *)error contextInfo:(void *)contextInfo {
-    if (error) {
-        NSLog(@"Error saving image: %@", error);
+/** File extension for a download: the URL's, else from the MIME type. */
+static NSString *ThetaDownloadExtension(NSURL *url, NSURLResponse *response) {
+    NSString *fileExtension = [[url pathExtension] lowercaseString];
+    if (fileExtension.length > 0) return fileExtension;
+    NSString *mime = [[response MIMEType] lowercaseString];
+    if ([mime hasPrefix:@"image/"]) {
+        if ([mime isEqualToString:@"image/png"]) return @"png";
+        if ([mime isEqualToString:@"image/heic"] || [mime isEqualToString:@"image/heif"]) return @"heic";
+        if ([mime isEqualToString:@"image/webp"]) return @"webp";
+        return @"jpg";
     }
-    
-    if (contextInfo) {
-        void (^completion)(void) = (__bridge_transfer void (^)(void))contextInfo;
-        completion();
+    if ([mime hasPrefix:@"video/"]) {
+        return [mime isEqualToString:@"video/quicktime"] ? @"mov" : @"mp4";
     }
+    if ([mime hasPrefix:@"audio/"]) {
+        if ([mime isEqualToString:@"audio/aac"]) return @"aac";
+        if ([mime isEqualToString:@"audio/mpeg"]) return @"mp3";
+        return @"m4a";
+    }
+    return @"mp4";
 }
 
-- (void)video:(NSString *)videoPath didFinishSavingWithError:(NSError *)error contextInfo:(void *)contextInfo {
-    if (error) {
-        NSLog(@"Error saving video: %@", error);
-    }
-    
-    if (contextInfo) {
-        void (^completion)(void) = (__bridge_transfer void (^)(void))contextInfo;
-        completion();
-    }
+/** Photos from the downloaded file: original bytes and metadata are kept. */
+static void ThetaImportPhotoFile(NSString *path, void (^completion)(NSError *error)) {
+    NSURL *fileURL = [NSURL fileURLWithPath:path];
+    [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+        PHAssetCreationRequest *request = [PHAssetCreationRequest creationRequestForAsset];
+        PHAssetResourceCreationOptions *options = [PHAssetResourceCreationOptions new];
+        options.shouldMoveFile = NO;
+        [request addResourceWithType:PHAssetResourceTypePhoto fileURL:fileURL options:options];
+    } completionHandler:^(BOOL success, NSError *error) {
+        completion(success ? nil : [ThetaHelper saveErrorWithCode:ThetaSaveErrorPhotosWrite message:error.localizedDescription ?: @"Photos couldn't save this photo" underlying:error]);
+    }];
 }
 
-- (void)performDownloadWithURL:(NSURL *)url completion:(void(^)(NSString *filePath, NSString *fileExtension))completion {
+/** Downloads `url` and saves it (Photos or Saved Media, as `toPhotos`). On failure `filePath` is nil and `error` set.
+    In Photos mode the staged file is deleted after the save and `filePath` is its old path. */
+- (void)performDownloadWithURL:(NSURL *)url toPhotos:(BOOL)toPhotos completion:(void(^)(NSString *filePath, NSString *fileExtension, NSError *error))completion {
+    void (^fail)(NSError *) = ^(NSError *error) {
+        THDebugLog(@"media save failed (%@ %ld)", error.domain, (long)error.code);
+        if (completion) completion(nil, nil, error);
+    };
     @try {
         NSURLSessionDownloadTask *downloadTask = [[NSURLSession sharedSession] downloadTaskWithURL:url completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
-            if (error) {
-                NSLog(@"Download error: %@", error);
-                if (completion) {
-                    completion(nil, nil);
-                }
+            NSError *failure = [ThetaHelper downloadFailureForResponse:response error:error];
+            if (!failure && !location) failure = [ThetaHelper saveErrorWithCode:ThetaSaveErrorDownload message:@"Download failed" underlying:nil];
+            if (failure) {
+                fail(failure);
                 return;
             }
 
-            NSError *moveError;
+            NSFileManager *fm = [NSFileManager defaultManager];
             NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-            NSString *fileExtension = [[url pathExtension] lowercaseString];
-            if (fileExtension.length == 0) {
-                NSString *mime = [[response MIMEType] lowercaseString];
-                if ([mime hasPrefix:@"image/"]) {
-                    if ([mime isEqualToString:@"image/jpeg"] || [mime isEqualToString:@"image/jpg"]) fileExtension = @"jpg";
-                    else if ([mime isEqualToString:@"image/png"]) fileExtension = @"png";
-                    else if ([mime isEqualToString:@"image/heic"] || [mime isEqualToString:@"image/heif"]) fileExtension = @"heic";
-                    else if ([mime isEqualToString:@"image/webp"]) fileExtension = @"webp";
-                    else fileExtension = @"jpg";
-                } else if ([mime hasPrefix:@"video/"]) {
-                    if ([mime isEqualToString:@"video/quicktime"]) fileExtension = @"mov";
-                    else if ([mime isEqualToString:@"video/mp4"]) fileExtension = @"mp4";
-                    else fileExtension = @"mp4";
-                } else if ([mime hasPrefix:@"audio/"]) {
-                    if ([mime isEqualToString:@"audio/aac"]) fileExtension = @"aac";
-                    else if ([mime isEqualToString:@"audio/m4a"] || [mime isEqualToString:@"audio/mp4"]) fileExtension = @"m4a";
-                    else if ([mime isEqualToString:@"audio/mpeg"]) fileExtension = @"mp3";
-                    else fileExtension = @"m4a";
-                } else {
-                    fileExtension = @"mp4";
-                }
-            }
-            NSString *uuidPart = [[NSUUID UUID] UUIDString];
-            NSString *newFilename = fileExtension.length > 0 ? [NSString stringWithFormat:@"media-%@.%@", uuidPart, fileExtension] : [NSString stringWithFormat:@"media-%@", uuidPart];
-            NSString *permanentFilePath = [documentsPath stringByAppendingPathComponent:newFilename];
-            
-            [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:permanentFilePath] error:&moveError];
-            if (moveError) {
-                NSLog(@"Error moving file: %@", moveError);
-                if (completion) {
-                    completion(nil, nil);
-                }
+            NSString *fileExtension = ThetaDownloadExtension(url, response);
+            NSString *stagedPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"media-%@.%@", [[NSUUID UUID] UUIDString], fileExtension]];
+
+            NSError *moveError = nil;
+            if (![fm moveItemAtURL:location toURL:[NSURL fileURLWithPath:stagedPath] error:&moveError]) {
+                fail([ThetaHelper saveErrorWithCode:ThetaSaveErrorFile message:@"Couldn't save the file" underlying:moveError]);
                 return;
             }
 
-            dispatch_async(dispatch_get_main_queue(), ^{
-                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                if (saveToCameraRoll) {
-                    PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
-                    if (status == PHAuthorizationStatusNotDetermined) {
-                        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus newStatus) {
-                            if (newStatus == PHAuthorizationStatusAuthorized) {
-                                [self saveMediaToPhotoLibrary:permanentFilePath fileExtension:fileExtension completion:completion];
-                            } else {
-                                NSLog(@"Photo library permission denied");
-                                if (completion) {
-                                    completion(nil, fileExtension);
-                                }
-                                // Clean up temporary file
-                                NSError *deleteError;
-                                [[NSFileManager defaultManager] removeItemAtPath:permanentFilePath error:&deleteError];
-                                if (deleteError) {
-                                    NSLog(@"Error deleting temporary file: %@", deleteError);
-                                }
-                            }
-                        }];
-                    } else if (status == PHAuthorizationStatusAuthorized) {
-                        [self saveMediaToPhotoLibrary:permanentFilePath fileExtension:fileExtension completion:completion];
-                    } else {
-                        NSLog(@"Photo library permission denied");
-                        if (completion) {
-                            completion(nil, fileExtension);
-                        }
-                        // Clean up temporary file
-                        NSError *deleteError;
-                        [[NSFileManager defaultManager] removeItemAtPath:permanentFilePath error:&deleteError];
-                        if (deleteError) {
-                            NSLog(@"Error deleting temporary file: %@", deleteError);
-                        }
-                    }
+            if (toPhotos) {
+                void (^finish)(NSError *) = ^(NSError *saveError) {
+                    [fm removeItemAtPath:stagedPath error:nil];
+                    if (saveError) fail(saveError);
+                    else if (completion) completion(stagedPath, fileExtension, nil);
+                };
+                if ([fileExtension isEqualToString:@"mp4"] || [fileExtension isEqualToString:@"mov"] || [fileExtension isEqualToString:@"m4v"]) {
+                    ThetaPhotoLibraryImportVideoFromURL([NSURL fileURLWithPath:stagedPath], ^(BOOL ok, NSError *importError) {
+                        finish(ok ? nil : [ThetaHelper saveErrorWithCode:ThetaSaveErrorPhotosWrite message:importError.localizedDescription ?: @"Photos couldn't import this video" underlying:importError]);
+                    });
                 } else {
-                    // Local folder mode: move file into Documents/AudioNotes
-                    NSString *audioNotesDir = [documentsPath stringByAppendingPathComponent:@"AudioNotes"];
-                    BOOL isDir = NO;
-                    if (![[NSFileManager defaultManager] fileExistsAtPath:audioNotesDir isDirectory:&isDir] || !isDir) {
-                        [[NSFileManager defaultManager] createDirectoryAtPath:audioNotesDir withIntermediateDirectories:YES attributes:nil error:nil];
-                    }
-                    NSString *destPath = [audioNotesDir stringByAppendingPathComponent:[permanentFilePath lastPathComponent]];
-                    NSError *moveErr = nil;
-                    if (![[NSFileManager defaultManager] moveItemAtPath:permanentFilePath toPath:destPath error:&moveErr]) {
-                        // Fallback to unique name
-                        NSString *base = [[permanentFilePath lastPathComponent] stringByDeletingPathExtension];
-                        NSString *ext = [permanentFilePath pathExtension];
-                        NSString *unique = [NSString stringWithFormat:@"%@-%@.%@", base, [[NSUUID UUID] UUIDString], ext];
-                        destPath = [audioNotesDir stringByAppendingPathComponent:unique];
-                        [[NSFileManager defaultManager] moveItemAtPath:permanentFilePath toPath:destPath error:nil];
-                    }
-                    if (completion) {
-                        completion(destPath, fileExtension);
-                    }
+                    ThetaImportPhotoFile(stagedPath, finish);
                 }
-            });
+            } else {
+                // Saved Media: one move, under the download's own unique name
+                NSError *folderError = nil;
+                NSString *destPath = [ThetaHelper moveIntoSavedMedia:stagedPath name:[stagedPath lastPathComponent] error:&folderError];
+                if (!destPath) {
+                    [fm removeItemAtPath:stagedPath error:nil];
+                    fail([ThetaHelper saveErrorWithCode:ThetaSaveErrorFile message:@"Couldn't save to Saved Media" underlying:folderError]);
+                    return;
+                }
+                if (completion) completion(destPath, fileExtension, nil);
+            }
         }];
         [downloadTask resume];
     } @catch (NSException *exception) {
-        NSLog(@"Error downloading media: %@", exception);
-        if (completion) {
-            completion(nil, nil);
-        }
+        THDebugLog(@"media download raised: %@", exception.name);
+        fail([ThetaHelper saveErrorWithCode:ThetaSaveErrorDownload message:@"Download failed" underlying:nil]);
     }
 }
 
@@ -1235,164 +1122,35 @@ static void * const playerKey = &playerKey;
 - (void)performDownloadToAudioNotesWithURL:(NSURL *)url completion:(void(^)(NSString *filePath, NSString *fileExtension))completion {
     @try {
         NSURLSessionDownloadTask *downloadTask = [[NSURLSession sharedSession] downloadTaskWithURL:url completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
-            if (error) {
-                NSLog(@"Download error: %@", error);
-                if (completion) {
-                    completion(nil, nil);
-                }
+            NSError *failure = [ThetaHelper downloadFailureForResponse:response error:error];
+            if (failure || !location) {
+                THDebugLog(@"audio download failed (%@ %ld)", failure.domain, (long)failure.code);
+                if (completion) completion(nil, nil);
                 return;
             }
 
-            NSError *moveError;
             NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-            NSString *fileExtension = [[url pathExtension] lowercaseString];
-            if (fileExtension.length == 0) {
-                NSString *mime = [[response MIMEType] lowercaseString];
-                if ([mime hasPrefix:@"image/"]) {
-                    if ([mime isEqualToString:@"image/jpeg"] || [mime isEqualToString:@"image/jpg"]) fileExtension = @"jpg";
-                    else if ([mime isEqualToString:@"image/png"]) fileExtension = @"png";
-                    else if ([mime isEqualToString:@"image/heic"] || [mime isEqualToString:@"image/heif"]) fileExtension = @"heic";
-                    else if ([mime isEqualToString:@"image/webp"]) fileExtension = @"webp";
-                    else fileExtension = @"jpg";
-                } else if ([mime hasPrefix:@"video/"]) {
-                    if ([mime isEqualToString:@"video/quicktime"]) fileExtension = @"mov";
-                    else if ([mime isEqualToString:@"video/mp4"]) fileExtension = @"mp4";
-                    else fileExtension = @"mp4";
-                } else if ([mime hasPrefix:@"audio/"]) {
-                    if ([mime isEqualToString:@"audio/aac"]) fileExtension = @"aac";
-                    else if ([mime isEqualToString:@"audio/m4a"] || [mime isEqualToString:@"audio/mp4"]) fileExtension = @"m4a";
-                    else if ([mime isEqualToString:@"audio/mpeg"]) fileExtension = @"mp3";
-                    else fileExtension = @"m4a";
-                } else {
-                    fileExtension = @"mp4";
-                }
-            }
-            NSString *uuidPart = [[NSUUID UUID] UUIDString];
-            NSString *newFilename = fileExtension.length > 0 ? [NSString stringWithFormat:@"media-%@.%@", uuidPart, fileExtension] : [NSString stringWithFormat:@"media-%@", uuidPart];
-            NSString *permanentFilePath = [documentsPath stringByAppendingPathComponent:newFilename];
+            NSString *fileExtension = ThetaDownloadExtension(url, response);
+            NSString *stagedPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"media-%@.%@", [[NSUUID UUID] UUIDString], fileExtension]];
 
-            [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:permanentFilePath] error:&moveError];
-            if (moveError) {
-                NSLog(@"Error moving file: %@", moveError);
-                if (completion) {
-                    completion(nil, nil);
-                }
+            NSError *moveError = nil;
+            if (![[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:stagedPath] error:&moveError]) {
+                THDebugLog(@"audio move failed: %@", moveError);
+                if (completion) completion(nil, nil);
                 return;
             }
 
-            // Move into Documents/AudioNotes (ensuring directory exists)
-            NSString *audioNotesDir = [documentsPath stringByAppendingPathComponent:@"AudioNotes"];
-            BOOL isDir = NO;
-            if (![[NSFileManager defaultManager] fileExistsAtPath:audioNotesDir isDirectory:&isDir] || !isDir) {
-                [[NSFileManager defaultManager] createDirectoryAtPath:audioNotesDir withIntermediateDirectories:YES attributes:nil error:nil];
-            }
-            NSString *destPath = [audioNotesDir stringByAppendingPathComponent:[permanentFilePath lastPathComponent]];
-            NSError *moveErr = nil;
-            if (![[NSFileManager defaultManager] moveItemAtPath:permanentFilePath toPath:destPath error:&moveErr]) {
-                // Fallback to unique name
-                NSString *base = [[permanentFilePath lastPathComponent] stringByDeletingPathExtension];
-                NSString *ext = [permanentFilePath pathExtension];
-                NSString *unique = [NSString stringWithFormat:@"%@-%@.%@", base, [[NSUUID UUID] UUIDString], ext];
-                destPath = [audioNotesDir stringByAppendingPathComponent:unique];
-                [[NSFileManager defaultManager] moveItemAtPath:permanentFilePath toPath:destPath error:nil];
-            }
+            NSString *destPath = [ThetaHelper moveIntoSavedMedia:stagedPath name:[stagedPath lastPathComponent] error:nil];
+            if (!destPath) [[NSFileManager defaultManager] removeItemAtPath:stagedPath error:nil];
 
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (completion) {
-                    completion(destPath, fileExtension);
-                }
+                if (completion) completion(destPath, destPath ? fileExtension : nil);
             });
         }];
         [downloadTask resume];
     } @catch (NSException *exception) {
-        NSLog(@"Error downloading media: %@", exception);
-        if (completion) {
-            completion(nil, nil);
-        }
-    }
-}
-
-// Batch save all files to camera roll in one transaction
-- (void)saveFilesToCameraRoll:(NSArray<NSString *> *)filePaths extensions:(NSArray<NSString *> *)fileExtensions {
-    [self saveFilesToCameraRoll:filePaths extensions:fileExtensions suppressToast:NO];
-}
-
-- (void)saveFilesToCameraRoll:(NSArray<NSString *> *)filePaths extensions:(NSArray<NSString *> *)fileExtensions suppressToast:(BOOL)suppressToast {
-    static dispatch_source_t toastTimer = nil;
-    static NSTimeInterval lastCallTime = 0;
-    static NSTimeInterval debounceInterval = 1.0; // seconds
-
-    if (filePaths.count == 0) return;
-    BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-    if (saveToCameraRoll) {
-        PHPhotoLibrary *photoLibrary = [PHPhotoLibrary sharedPhotoLibrary];
-        [photoLibrary performChanges:^{
-            for (NSInteger i = 0; i < filePaths.count; i++) {
-                NSString *filePath = filePaths[i];
-                NSString *fileExtension = fileExtensions[i];
-                if ([[fileExtension lowercaseString] isEqualToString:@"mp4"]) {
-                    [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:[NSURL fileURLWithPath:filePath]];
-                } else {
-                    UIImage *image = [UIImage imageWithContentsOfFile:filePath];
-                    if (image) {
-                        [PHAssetChangeRequest creationRequestForAssetFromImage:image];
-                    }
-                }
-            }
-        } completionHandler:^(BOOL success, NSError *error) {
-            for (NSString *filePath in filePaths) {
-                [[NSFileManager defaultManager] removeItemAtPath:filePath error:nil];
-            }
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (success) {
-                    if (!suppressToast) {
-                        lastCallTime = [[NSDate date] timeIntervalSince1970];
-                        if (toastTimer) {
-                            dispatch_source_cancel(toastTimer);
-                            toastTimer = nil;
-                        }
-                        toastTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-                        dispatch_source_set_timer(toastTimer,
-                            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(debounceInterval * NSEC_PER_SEC)),
-                            DISPATCH_TIME_FOREVER, 0);
-                        dispatch_source_set_event_handler(toastTimer, ^{
-                            NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-                            if (now - lastCallTime >= debounceInterval) {
-                                [self showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] seconds:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
-                                dispatch_source_cancel(toastTimer);
-                                toastTimer = nil;
-                            }
-                        });
-                        dispatch_resume(toastTimer);
-                    }
-                } else {
-                    NSLog(@"Error saving batch: %@", error);
-                }
-            });
-        }];
-    } else {
-        // Local folder mode: move files into Documents/AudioNotes
-        NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-        NSString *audioNotesDir = [documentsPath stringByAppendingPathComponent:@"AudioNotes"];
-        BOOL isDir = NO;
-        if (![[NSFileManager defaultManager] fileExistsAtPath:audioNotesDir isDirectory:&isDir] || !isDir) {
-            [[NSFileManager defaultManager] createDirectoryAtPath:audioNotesDir withIntermediateDirectories:YES attributes:nil error:nil];
-        }
-        for (NSString *filePath in filePaths) {
-            NSString *destPath = [audioNotesDir stringByAppendingPathComponent:[filePath lastPathComponent]];
-            NSError *moveErr = nil;
-            if (![[NSFileManager defaultManager] moveItemAtPath:filePath toPath:destPath error:&moveErr]) {
-                // Fallback to unique name
-                NSString *base = [[filePath lastPathComponent] stringByDeletingPathExtension];
-                NSString *ext = [filePath pathExtension];
-                NSString *unique = [NSString stringWithFormat:@"%@-%@.%@", base, [[NSUUID UUID] UUIDString], ext];
-                destPath = [audioNotesDir stringByAppendingPathComponent:unique];
-                [[NSFileManager defaultManager] moveItemAtPath:filePath toPath:destPath error:nil];
-            }
-        }
-        if (!suppressToast && ENABLED(THAppShowBanners)) {
-            [self showToastWithTitle:@"Saved!" subtitle:@"Saved to local folder." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] seconds:3 openURL:nil];
-        }
+        THDebugLog(@"audio download raised: %@", exception.name);
+        if (completion) completion(nil, nil);
     }
 }
 
@@ -1407,8 +1165,10 @@ static void * const playerKey = &playerKey;
 
 #pragma mark - HD Video Download Methods
 
-- (void)downloadHDVideosBulk:(NSArray<IGVideo *> *)videos progressToast:(CustomToastView *)progressToast completed:(NSInteger)completedItems total:(NSInteger)totalItems failed:(NSInteger)failedItems {
+- (void)downloadHDVideosBulk:(NSArray<IGVideo *> *)videos progressToast:(CustomToastView *)progressToast completed:(NSInteger)completedItems total:(NSInteger)totalItems failed:(NSInteger)failedItems toPhotos:(BOOL)toPhotos {
     if (!videos || videos.count == 0) {
+        // Nothing to run: still end the save (releases the lock).
+        [self showCompletionToast:progressToast completed:completedItems total:totalItems failed:failedItems toPhotos:toPhotos];
         return;
     }
     
@@ -1481,14 +1241,7 @@ static void * const playerKey = &playerKey;
                     }
                 }
                 
-                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                //NSString *summary = [NSString stringWithFormat:@"Completed: %ld/%ld%@", (long)completedVideos, (long)totalVideos, timeStr];
-                NSString *summary;
-                if (saveToCameraRoll) {
-                    summary = [NSString stringWithFormat:@"Saved %ld/%ld to camera roll%@", (long)completedVideos, (long)totalVideos, timeStr];
-                } else {
-                    summary = [NSString stringWithFormat:@"Saved %ld/%ld to local folder%@", (long)completedVideos, (long)totalVideos, timeStr];
-                }
+                NSString *summary = [NSString stringWithFormat:@"Saved %ld/%ld to %@%@", (long)(completedVideos - failedVideos), (long)totalVideos, toPhotos ? @"camera roll" : @"Saved Media", timeStr];
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [progressToast updateProgressWithTitle:@"Saved!"
                                                   subtitle:summary];
@@ -1512,6 +1265,24 @@ static void * const playerKey = &playerKey;
             int minutes = (int)(fmod(seconds, 3600) / 60);
             return [NSString stringWithFormat:@"%dh %dm left", hours, minutes];
         }
+    };
+    
+    /* The one way an item ends, on every path (early failures included): counts it, and when it was
+       the last one shows the result, which also releases the download lock. */
+    void (^finishItem)(BOOL, NSInteger, NSString *) = ^(BOOL failed, NSInteger videoIndex, NSString *status) {
+        dispatch_async(statsQueue, ^{
+            videoProgress[@(videoIndex)][@"state"] = @"done";
+            if (status) videoProgress[@(videoIndex)][@"status"] = status;
+            if (failed) failedVideos++;
+            completedVideos++;
+            NSInteger completedNow = completedVideos, failedNow = failedVideos;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
+                if (completedNow >= totalVideos) {
+                    [self showCompletionToast:progressToast completed:completedNow total:totalVideos failed:failedNow toPhotos:toPhotos];
+                }
+            });
+        });
     };
     
     NSFileManager *fm = [NSFileManager defaultManager];
@@ -1542,15 +1313,7 @@ static void * const playerKey = &playerKey;
                 NSData *videoData = [video valueForKey:@"dashManifestData"];
                 if (!videoData) {
                     dispatch_semaphore_signal(downloadSemaphore);
-                    dispatch_async(statsQueue, ^{
-                        videoProgress[@(videoIndex)][@"state"] = @"done";
-                        videoProgress[@(videoIndex)][@"status"] = @"Failed";
-                        failedVideos++;
-                        completedVideos++;
-                    });
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                    });
+                    finishItem(YES, videoIndex, @"Failed");
                     return;
                 }
                 
@@ -1560,15 +1323,7 @@ static void * const playerKey = &playerKey;
                 
                 if (!videoURLString.length || ![NSURL URLWithString:videoURLString]) {
                     dispatch_semaphore_signal(downloadSemaphore);
-                    dispatch_async(statsQueue, ^{
-                        videoProgress[@(videoIndex)][@"state"] = @"done";
-                        videoProgress[@(videoIndex)][@"status"] = @"Failed";
-                        failedVideos++;
-                        completedVideos++;
-                    });
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                    });
+                    finishItem(YES, videoIndex, @"Failed");
                     return;
                 }
                 
@@ -1586,6 +1341,7 @@ static void * const playerKey = &playerKey;
                 
                 NSURLSession *session = [NSURLSession sharedSession];
                 dispatch_group_t downloadGroup = dispatch_group_create();
+                __block BOOL audioFailed = NO; // a track that exists but didn't download fails the whole save
                 
                 __block NSTimeInterval downloadStartTime = [[NSDate date] timeIntervalSince1970];
                 
@@ -1597,9 +1353,11 @@ static void * const playerKey = &playerKey;
                 formatProgressDisplay(); // Updates toast internally with progress
                 
                 NSURLSessionDownloadTask *videoTask = [session downloadTaskWithURL:[NSURL URLWithString:videoURLString] completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-                    if (error || !location) {
-                        NSLog(@"Error downloading video %ld: %@", (long)videoIndex, error);
+                    NSError *failure = [ThetaHelper downloadFailureForResponse:response error:error];
+                    if (failure || !location) {
+                        THDebugLog(@"bulk video %ld download failed (%@ %ld)", (long)videoIndex, failure.domain, (long)failure.code);
                     } else {
+                        // Only a 2xx body is moved into place
                         [fm moveItemAtPath:location.path toPath:videoPath error:nil];
                     }
                     dispatch_group_leave(downloadGroup);
@@ -1614,8 +1372,10 @@ static void * const playerKey = &playerKey;
                     });
                     
                     NSURLSessionDownloadTask *audioTask = [session downloadTaskWithURL:[NSURL URLWithString:audioURLString] completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-                        if (error || !location) {
-                            NSLog(@"Error downloading audio %ld: %@", (long)videoIndex, error);
+                        NSError *failure = [ThetaHelper downloadFailureForResponse:response error:error];
+                        if (failure || !location) {
+                            audioFailed = YES;
+                            THDebugLog(@"bulk audio %ld download failed (%@ %ld)", (long)videoIndex, failure.domain, (long)failure.code);
                         } else {
                             [fm moveItemAtPath:location.path toPath:audioPath error:nil];
                         }
@@ -1632,21 +1392,10 @@ static void * const playerKey = &playerKey;
                 
                 // Verify downloads (non-empty video)
                 NSDictionary *downloadedVideoAttrs = [fm attributesOfItemAtPath:videoPath error:nil];
-                if (![fm fileExistsAtPath:videoPath] || !downloadedVideoAttrs || [downloadedVideoAttrs fileSize] == 0) {
-                    dispatch_async(statsQueue, ^{
-                        videoProgress[@(videoIndex)][@"state"] = @"done";
-                        videoProgress[@(videoIndex)][@"status"] = @"Download failed";
-                        failedVideos++;
-                        completedVideos++;
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                            
-                            if (completedVideos >= totalVideos) {
-                                [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                [MediaSelectionViewController setDownloadInProgress:NO];
-                            }
-                        });
-                    });
+                if (audioFailed || ![fm fileExistsAtPath:videoPath] || !downloadedVideoAttrs || [downloadedVideoAttrs fileSize] == 0) {
+                    [fm removeItemAtPath:videoPath error:nil];
+                    if (audioPath) [fm removeItemAtPath:audioPath error:nil];
+                    finishItem(YES, videoIndex, @"Download failed");
                     return;
                 }
                 if (hasAudio) {
@@ -1718,19 +1467,7 @@ static void * const playerKey = &playerKey;
                         if ([fm fileExistsAtPath:outputPath]) [fm removeItemAtPath:outputPath error:nil];
                         [fm removeItemAtPath:videoPath error:nil];
                         if (audioPath) [fm removeItemAtPath:audioPath error:nil];
-                        dispatch_async(statsQueue, ^{
-                            videoProgress[@(videoIndex)][@"state"] = @"done";
-                            videoProgress[@(videoIndex)][@"status"] = @"Transcoding failed";
-                            failedVideos++;
-                            completedVideos++;
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                                if (completedVideos >= totalVideos) {
-                                    [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                    [MediaSelectionViewController setDownloadInProgress:NO];
-                                }
-                            });
-                        });
+                        finishItem(YES, videoIndex, @"Transcoding failed");
                         return;
                     }
                     
@@ -1782,20 +1519,7 @@ static void * const playerKey = &playerKey;
                             [fm removeItemAtPath:videoPath error:nil];
                             if (audioPath) [fm removeItemAtPath:audioPath error:nil];
                             
-                            dispatch_async(statsQueue, ^{
-                                videoProgress[@(videoIndex)][@"state"] = @"done";
-                                videoProgress[@(videoIndex)][@"status"] = @"Merge failed";
-                                failedVideos++;
-                                completedVideos++;
-                                dispatch_async(dispatch_get_main_queue(), ^{
-                                    [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                                    
-                                    if (completedVideos >= totalVideos) {
-                                        [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                        [MediaSelectionViewController setDownloadInProgress:NO];
-                                    }
-                                });
-                            });
+                            finishItem(YES, videoIndex, @"Merge failed");
                             return;
                         }
                     }
@@ -1849,29 +1573,15 @@ static void * const playerKey = &playerKey;
                         [fm removeItemAtPath:videoPath error:nil];
                         if (audioPath) [fm removeItemAtPath:audioPath error:nil];
                         
-                        dispatch_async(statsQueue, ^{
-                            failedVideos++;
-                            completedVideos++;
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                                
-                                if (completedVideos >= totalVideos) {
-                                    [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                    [MediaSelectionViewController setDownloadInProgress:NO];
-                                }
-                            });
-                        });
+                        finishItem(YES, videoIndex, @"Export failed");
                         return;
                         }
                     }
                     
                 }
                 
-                // Save to camera roll or local folder
-                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                
-                if (saveToCameraRoll) {
-                    // Save to camera roll
+                // Save to Photos or Saved Media, as read once when the picker started
+                if (toPhotos) {
                     // For sideload builds, copy to Caches and use ALAssetsLibrary
                     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
                     NSString *cachesDir = [paths firstObject];
@@ -1889,23 +1599,11 @@ static void * const playerKey = &playerKey;
                             [fm removeItemAtPath:outputPath error:nil];
                             [fm removeItemAtPath:cacheVideoPath error:nil];
                             
-                            dispatch_async(statsQueue, ^{
-                                if (!error && assetURL) {
-                                } else {
-                                    NSLog(@"Failed to save video %ld: %@", (long)videoIndex, error);
-                                    failedVideos++;
-                                }
-                                completedVideos++;
-                                
-                                dispatch_async(dispatch_get_main_queue(), ^{
-                                    [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                                    
-                                    if (completedVideos >= totalVideos) {
-                                        [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                        [MediaSelectionViewController setDownloadInProgress:NO];
-                                    }
-                                });
-                            });
+                            BOOL savedOK = (!error && assetURL);
+                            if (!savedOK) {
+                                NSLog(@"Failed to save video %ld: %@", (long)videoIndex, error);
+                            }
+                            finishItem(!savedOK, videoIndex, nil);
                         }];
 #pragma clang diagnostic pop
                     } else {
@@ -1916,70 +1614,25 @@ static void * const playerKey = &playerKey;
                         if (audioPath) [fm removeItemAtPath:audioPath error:nil];
                         [fm removeItemAtPath:outputPath error:nil];
                         
-                        dispatch_async(statsQueue, ^{
-                            failedVideos++;
-                            completedVideos++;
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                                
-                                if (completedVideos >= totalVideos) {
-                                    [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                    [MediaSelectionViewController setDownloadInProgress:NO];
-                                }
-                            });
-                        });
+                        finishItem(YES, videoIndex, nil);
                     }
                 } else {
-                    // Save to AudioNotes folder
-                    NSString *audioNotesDir = [documentsPath stringByAppendingPathComponent:@"AudioNotes"];
-                    if (![fm fileExistsAtPath:audioNotesDir]) {
-                        [fm createDirectoryAtPath:audioNotesDir withIntermediateDirectories:YES attributes:nil error:nil];
-                    }
-                    
+                    // Save to Saved Media
                     NSDateFormatter *formatter = [NSDateFormatter new];
                     [formatter setDateFormat:@"yyyyMMdd-HHmmss"];
                     NSString *destName = [NSString stringWithFormat:@"Video-%@_%ld.mp4", [formatter stringFromDate:[NSDate date]], (long)videoIndex];
-                    NSString *destPath = [audioNotesDir stringByAppendingPathComponent:destName];
                     
                     NSError *moveError = nil;
-                    if ([fm moveItemAtPath:outputPath toPath:destPath error:&moveError]) {
-                        
-                        // Cleanup
-                        [fm removeItemAtPath:videoPath error:nil];
-                        if (audioPath) [fm removeItemAtPath:audioPath error:nil];
-                        
-                        dispatch_async(statsQueue, ^{
-                            completedVideos++;
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                                
-                                if (completedVideos >= totalVideos) {
-                                    [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                    [MediaSelectionViewController setDownloadInProgress:NO];
-                                }
-                            });
-                        });
-                    } else {
-                        NSLog(@"Failed to move video %ld to AudioNotes: %@", (long)videoIndex, moveError);
-                        
-                        // Cleanup
-                        [fm removeItemAtPath:videoPath error:nil];
-                        if (audioPath) [fm removeItemAtPath:audioPath error:nil];
+                    NSString *destPath = [ThetaHelper moveIntoSavedMedia:outputPath name:destName error:&moveError];
+                    
+                    // Cleanup
+                    [fm removeItemAtPath:videoPath error:nil];
+                    if (audioPath) [fm removeItemAtPath:audioPath error:nil];
+                    if (!destPath) {
+                        NSLog(@"Failed to move video %ld to Saved Media: %@", (long)videoIndex, moveError);
                         [fm removeItemAtPath:outputPath error:nil];
-                        
-                        dispatch_async(statsQueue, ^{
-                            failedVideos++;
-                            completedVideos++;
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                [progressToast updateProgressWithTitle:@"Bulk saving videos!" subtitle:formatProgressDisplay()];
-                                
-                                if (completedVideos >= totalVideos) {
-                                    [self showCompletionToast:progressToast completed:completedVideos total:totalVideos failed:failedVideos];
-                                    [MediaSelectionViewController setDownloadInProgress:NO];
-                                }
-                            });
-                        });
                     }
+                    finishItem(destPath == nil, videoIndex, nil);
                 }
             }
         });

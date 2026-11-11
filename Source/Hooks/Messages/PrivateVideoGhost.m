@@ -155,16 +155,11 @@ static void hook_visualmsgghostbuttons(IGDirectVisualMessageViewerController *se
                     if (originalImageVersions.count > 1) {
                         id photoURL = [originalImageVersions lastObject];
                         NSURL *url = [photoURL valueForKey:@"url"];
+                        if (![ThetaHelper tryBeginGlobalDownloadOrNotify]) return;
                         MediaSelectionViewController *mediaSelectionViewController = [[MediaSelectionViewController alloc] init];
-                        [mediaSelectionViewController downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension){
-                            if (ENABLED(THAppShowBanners)) {
-                                BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
-                                if (saveToCameraRoll) {
-                                    [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
-                                } else {
-                                    [ThetaHelper showToastWithTitle:@"Saved!" subtitle:@"Saved to local folder." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:nil];
-                                }
-                            }
+                        [mediaSelectionViewController downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension, NSError *error){
+                            [ThetaHelper endGlobalDownload];
+                            [ThetaHelper showSaveResultForPath:filePath error:error];
                         }];
                     }
                 }

@@ -521,9 +521,8 @@ static void thetaInstantToastFailure(NSString *subtitle) {
                             openURL:nil];
 }
 
-static void thetaInstantToastSuccess(void) {
+static void thetaInstantToastSaved(BOOL saveToCameraRoll) {
     if (!ENABLED(THAppShowBanners)) return;
-    BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
     if (saveToCameraRoll) {
         [ThetaHelper showToastWithTitle:@"Saved Instant!"
                                subtitle:@"Tap here to go to camera roll."
@@ -537,6 +536,10 @@ static void thetaInstantToastSuccess(void) {
                                autoHide:4
                                 openURL:nil];
     }
+}
+
+static void thetaInstantToastSuccess(void) {
+    thetaInstantToastSaved(ThetaSettingChoiceIs(THSaveMethod, @"camera_roll"));
 }
 
 static void thetaInstantSaveImage(UIImage *image) {
@@ -581,12 +584,12 @@ static void thetaInstantSaveURL(NSURL *url, BOOL isVideoHint) {
     if (![ThetaHelper tryBeginGlobalDownloadOrNotify]) return;
     static MediaSelectionViewController *sInstantDownloader = nil;
     sInstantDownloader = [[MediaSelectionViewController alloc] init];
-    [sInstantDownloader downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension) {
+    [sInstantDownloader downloadMediaToTemp:url completion:^(NSString *filePath, NSString *fileExtension, NSError *error) {
         sInstantDownloader = nil;
         [ThetaHelper endGlobalDownload];
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (filePath.length) thetaInstantToastSuccess();
-            else thetaInstantToastFailure(@"Download failed.");
+            if (filePath.length && !error) thetaInstantToastSaved(![ThetaHelper isSavedMediaPath:filePath]);
+            else [ThetaHelper showSaveFailure:error];
         });
         (void)fileExtension;
     }];
