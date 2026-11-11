@@ -15,7 +15,7 @@ static void saveMedia(id hostView);
     }
     if (!host) {
         if (ENABLED(THAppShowBanners)) {
-            [ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"Lost profile context." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
+            [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:@"Lost profile context." openURL:nil];
         }
         return;
     }
@@ -483,7 +483,7 @@ static void saveMedia(id hostView) {
         UIViewController *profileVC = theta_profileViewControllerFromView([hostView isKindOfClass:[UIView class]] ? hostView : nil);
         if (!profileVC) {
             if (ENABLED(THAppShowBanners)) {
-                [ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"Open a user profile and try again." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
+                [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:@"Open a user profile and try again." openURL:nil];
             }
             return;
         }
@@ -610,7 +610,7 @@ static void saveMedia(id hostView) {
             NSInteger total = (NSInteger)readyItems.count + (NSInteger)hdVideos.count;
             void (^presentPicker)(void) = ^{
                 if (total == 0) {
-                    [ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"Found posts, but no downloadable media URLs." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:4 openURL:nil];
+                    [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:@"Found posts, but no downloadable media URLs." openURL:nil];
                     return;
                 }
 
@@ -639,7 +639,7 @@ static void saveMedia(id hostView) {
                     [[ThetaHelper topViewController] presentViewController:navController animated:YES completion:nil];
                 } @catch (NSException *exception) {
                     THDebugLog(@"[Theta] Save Profile Posts multi: %@", exception);
-                    [ThetaHelper showToastWithTitle:@"Save failed" subtitle:exception.reason ?: @"Couldn't open media picker." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:4 openURL:nil];
+                    [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:exception.reason ?: @"Couldn't open media picker." openURL:nil];
                 }
             };
 
@@ -658,7 +658,7 @@ static void saveMedia(id hostView) {
     } @catch (NSException *exception) {
         THDebugLog(@"[Theta] Save Profile Posts: %@", exception);
         if (ENABLED(THAppShowBanners)) {
-            [ThetaHelper showToastWithTitle:@"Save failed" subtitle:exception.reason ?: @"Unexpected error." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
+            [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:exception.reason ?: @"Unexpected error." openURL:nil];
         }
     }
 }

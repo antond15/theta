@@ -55,7 +55,9 @@ typedef NS_ENUM(NSInteger, ThetaSaveErrorCode) {
 + (NSString *)moveIntoSavedMedia:(NSString *)path name:(NSString *)name error:(NSError **)error;
 /** The one result toast for a finished save: success (Photos or Saved Media, from `path`) or the failure in `error`. */
 + (void)showSaveResultForPath:(NSString *)path error:(NSError *)error;
-/** Failure toast for `error`; Photos access off links to Settings. */
+/** A failure toast, shown even with Show Banners off. */
++ (void)showFailureToastWithTitle:(NSString *)title subtitle:(NSString *)subtitle openURL:(NSURL *)openURL;
+/** Failure toast for `error` (always shown); Photos access off links to Settings. */
 + (void)showSaveFailure:(NSError *)error;
 
 #pragma mark - Utility Functions

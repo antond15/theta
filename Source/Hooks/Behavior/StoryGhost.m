@@ -721,11 +721,7 @@ static void thetaStorySaveURL(NSURL *url, BOOL isVideoHint) {
     NSURLSession *session = [NSURLSession sharedSession];
     NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:url completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         if (error || !location) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (ENABLED(THAppShowBanners)) {
-                    [ThetaHelper showToastWithTitle:@"Save failed" subtitle:error.localizedDescription ?: @"Download error" icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
-                }
-            });
+            [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:error.localizedDescription ?: @"Download error" openURL:nil];
             return;
         }
         NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
@@ -734,7 +730,10 @@ static void thetaStorySaveURL(NSURL *url, BOOL isVideoHint) {
         NSString *permanentFilePath = [documentsPath stringByAppendingPathComponent:newFilename];
         NSError *fileError = nil;
         [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:permanentFilePath] error:&fileError];
-        if (fileError) return;
+        if (fileError) {
+            [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:@"Couldn't save the file." openURL:nil];
+            return;
+        }
 
         BOOL saveToCameraRoll = ThetaSettingChoiceIs(THSaveMethod, @"camera_roll");
         if (saveToCameraRoll) {
@@ -746,13 +745,13 @@ static void thetaStorySaveURL(NSURL *url, BOOL isVideoHint) {
                 }
             } completionHandler:^(BOOL success, NSError * _Nullable err) {
                 [[NSFileManager defaultManager] removeItemAtPath:permanentFilePath error:nil];
+                if (!success) {
+                    [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:err.localizedDescription ?: @"Photos error" openURL:nil];
+                    return;
+                }
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (ENABLED(THAppShowBanners)) {
-                        if (success) {
-                            [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
-                        } else {
-                            [ThetaHelper showToastWithTitle:@"Save failed" subtitle:err.localizedDescription ?: @"Photos error" icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
-                        }
+                        [ThetaHelper showToastWithTitle:@"Saved to camera roll!" subtitle:@"Tap here to go to camera roll." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:4 openURL:[NSURL URLWithString:@"photos-redirect://"]];
                     }
                 });
             }];
@@ -811,9 +810,7 @@ static void downloadButtonTapped(IGStoryFullscreenCell *self) {
 		} @catch (__unused NSException *e) {}
 	}
 	if (!currentMedia) {
-		if (ENABLED(THAppShowBanners)) {
-			[ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"Couldn't find the current story item." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
-		}
+		[ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:@"Couldn't find the current story item." openURL:nil];
 		return;
 	}
 
@@ -872,9 +869,7 @@ static void downloadButtonTapped(IGStoryFullscreenCell *self) {
 		return;
 	}
 
-	if (ENABLED(THAppShowBanners)) {
-		[ThetaHelper showToastWithTitle:@"Save failed" subtitle:@"No downloadable photo/video URL on this story." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:3 openURL:nil];
-	}
+	[ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:@"No downloadable photo/video URL on this story." openURL:nil];
 }
 
 static void downloadAllMedia(IGStoryFullscreenCell *self) {

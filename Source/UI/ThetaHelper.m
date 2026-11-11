@@ -360,13 +360,25 @@ static BOOL ThetaPhotosStatusAllowsWrite(PHAuthorizationStatus status) {
     return [fm moveItemAtPath:path toPath:dest error:error] ? dest : nil;
 }
 
++ (void)showFailureToastWithTitle:(NSString *)title subtitle:(NSString *)subtitle openURL:(NSURL *)openURL {
+    UIImage *icon = [UIImage systemImageNamed:@"exclamationmark.triangle"];
+    if (ENABLED(THAppShowBanners)) {
+        [self showToastWithTitle:title subtitle:subtitle icon:icon autoHide:4 openURL:openURL];
+        return;
+    }
+    // Show Banners off still shows a failure (without haptics): a save must never fail silently.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        CustomToastView *toast = [[CustomToastView alloc] initWithTitle:title subtitle:subtitle icon:icon autoHide:4 openURL:openURL];
+        [toast presentToast];
+    });
+}
+
 + (void)showSaveFailure:(NSError *)error {
     BOOL access = [error.domain isEqualToString:ThetaSaveErrorDomain] && error.code == ThetaSaveErrorPhotosAccess;
-    UIImage *icon = [UIImage systemImageNamed:@"exclamationmark.triangle"];
     if (access) {
-        [self showToastWithTitle:@"Photos access is off" subtitle:@"Tap here to open Settings." icon:icon autoHide:4 openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
+        [self showFailureToastWithTitle:@"Photos access is off" subtitle:@"Tap here to open Settings." openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
     } else {
-        [self showToastWithTitle:@"Save failed" subtitle:error.localizedDescription ?: @"Couldn't save the media." icon:icon autoHide:4 openURL:nil];
+        [self showFailureToastWithTitle:@"Save failed" subtitle:error.localizedDescription ?: @"Couldn't save the media." openURL:nil];
     }
 }
 

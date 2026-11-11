@@ -47,7 +47,7 @@ static void hook_audioPlayerDidPlayToEnd(id self, SEL _cmd, id arg1) {
                         if (mediaSelectionVC) {
                             [mediaSelectionVC performDownloadToAudioNotesWithURL:url completion:^(NSString *filePath, NSString *fileExtension){
                                 if (!filePath) {
-                                    [ThetaHelper showToastWithTitle:@"Audio Download Failed" subtitle:@"The audio download failed." icon:[UIImage systemImageNamed:@"exclamationmark.triangle"] autoHide:2 openURL:nil];
+                                    [ThetaHelper showFailureToastWithTitle:@"Audio Download Failed" subtitle:@"The audio download failed." openURL:nil];
                                     return;
                                 }
 
@@ -61,12 +61,10 @@ static void hook_audioPlayerDidPlayToEnd(id self, SEL _cmd, id arg1) {
                                         NSString *ext = [[outputPath pathExtension] lowercaseString];
                                         BOOL isMP3 = [ext isEqualToString:@"mp3"];
                                         [ThetaHelper showToastWithTitle:@"Audio Downloaded" subtitle:@"Saved audio to local folder." icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] autoHide:2 openURL:nil];
-
-                                        // clear theta_audio_url_key
-                                        objc_setAssociatedObject(self, &theta_audio_url_key, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                                        // The URL stays set: a replay of this message asks again.
                                     } else {
                                         THDebugLog(@"MP3 convert error: %@", error);
-                                        [ThetaHelper showToastWithTitle:@"Audio Conversion Failed" subtitle:@"Could not convert to MP3." icon:[UIImage systemImageNamed:@"xmark.circle.fill"] autoHide:2 openURL:nil];
+                                        [ThetaHelper showFailureToastWithTitle:@"Audio Conversion Failed" subtitle:@"Could not convert to MP3." openURL:nil];
                                     }
                                 }];
                             }];

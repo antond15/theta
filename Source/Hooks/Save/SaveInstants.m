@@ -513,12 +513,7 @@ static BOOL thetaInstantLooksVideoURL(NSURL *url) {
 }
 
 static void thetaInstantToastFailure(NSString *subtitle) {
-    if (!ENABLED(THAppShowBanners)) return;
-    [ThetaHelper showToastWithTitle:@"Save failed"
-                           subtitle:subtitle ?: @"Couldn't find Instant media."
-                               icon:[UIImage systemImageNamed:@"exclamationmark.triangle"]
-                           autoHide:3
-                            openURL:nil];
+    [ThetaHelper showFailureToastWithTitle:@"Save failed" subtitle:subtitle ?: @"Couldn't find Instant media." openURL:nil];
 }
 
 static void thetaInstantToastSaved(BOOL saveToCameraRoll) {
