@@ -548,7 +548,7 @@ static void * const playerKey = &playerKey;
         }
         
         NSURL *url = (toPhotos && saved > 0) ? [NSURL URLWithString:@"photos-redirect://"] : nil;
-        [progressToast completeProgressWithTitle:title subtitle:subtitle icon:icon url:url];
+        [ThetaHelper finishProgressToast:progressToast success:failed == 0 title:title subtitle:subtitle icon:icon url:url];
     }
 
     // Allow new downloads after completion

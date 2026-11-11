@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
+@class CustomToastView;
+
 /** Errors from the media save paths (`downloadMediaToTemp:`, the single reel save). */
 FOUNDATION_EXPORT NSString *const ThetaSaveErrorDomain;
 typedef NS_ENUM(NSInteger, ThetaSaveErrorCode) {
@@ -55,6 +57,9 @@ typedef NS_ENUM(NSInteger, ThetaSaveErrorCode) {
 + (NSString *)moveIntoSavedMedia:(NSString *)path name:(NSString *)name error:(NSError **)error;
 /** The one result toast for a finished save: success (Photos or Saved Media, from `path`) or the failure in `error`. */
 + (void)showSaveResultForPath:(NSString *)path error:(NSError *)error;
+/** Ends a save's progress toast with its result. With Show Banners off a success just closes it; a failure
+    always shows. Safe from any thread. */
++ (void)finishProgressToast:(CustomToastView *)toast success:(BOOL)success title:(NSString *)title subtitle:(NSString *)subtitle icon:(UIImage *)icon url:(NSURL *)url;
 /** A failure toast, shown even with Show Banners off. */
 + (void)showFailureToastWithTitle:(NSString *)title subtitle:(NSString *)subtitle openURL:(NSURL *)openURL;
 /** Failure toast for `error` (always shown); Photos access off links to Settings. */

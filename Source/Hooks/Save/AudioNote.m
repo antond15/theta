@@ -246,10 +246,11 @@ static void hook_saveNoteAudio(id self, SEL _cmd) {
                                                                 
                                                                 if (success) {
                                                                     // Show success completion
-                                                                    [progressToast completeProgressWithTitle:@"Audio Downloaded!" 
-                                                                                                    subtitle:[NSString stringWithFormat:@"Audio saved to your device."] 
-                                                                                                        icon:[UIImage systemImageNamed:@"checkmark.circle.fill"] 
-                                                                                                        url:nil];
+                                                                    [ThetaHelper finishProgressToast:progressToast success:YES
+                                                                                               title:@"Audio Downloaded!"
+                                                                                            subtitle:@"Audio saved to your device."
+                                                                                                icon:[UIImage systemImageNamed:@"checkmark.circle.fill"]
+                                                                                                 url:nil];
                                                                     [progressToast hideAfter:3.0];
                                                                 } else {
                                                                     THDebugLog(@"Failed to save audio file to: %@", filePath);

@@ -63,14 +63,16 @@ static BOOL theta_tryBeginSaveJob(void) {
 
 static void showCompletionToast(CustomToastView *progressToast, BOOL success, NSString *title, NSString *subtitle, UIImage *icon, NSURL *url) {
     if (progressToast) {
-        [progressToast completeProgressWithTitle:title subtitle:subtitle icon:icon url:url];
-        if (success) {
+        [ThetaHelper finishProgressToast:progressToast success:success title:title subtitle:subtitle icon:icon url:url];
+        if (success && ENABLED(THAppShowBanners)) {
             // Haptic feedback for success
             UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
             [generator impactOccurred];
         }
-    } else {
+    } else if (success) {
         [ThetaHelper showToastWithTitle:title subtitle:subtitle icon:icon autoHide:4 openURL:url];
+    } else {
+        [ThetaHelper showFailureToastWithTitle:title subtitle:subtitle openURL:url];
     }
 }
 

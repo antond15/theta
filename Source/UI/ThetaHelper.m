@@ -360,6 +360,16 @@ static BOOL ThetaPhotosStatusAllowsWrite(PHAuthorizationStatus status) {
     return [fm moveItemAtPath:path toPath:dest error:error] ? dest : nil;
 }
 
++ (void)finishProgressToast:(CustomToastView *)toast success:(BOOL)success title:(NSString *)title subtitle:(NSString *)subtitle icon:(UIImage *)icon url:(NSURL *)url {
+    if (!toast) return;
+    void (^finish)(void) = ^{
+        if (success && !ENABLED(THAppShowBanners)) [toast hideWithAnimation];
+        else [toast completeProgressWithTitle:title subtitle:subtitle icon:icon url:url];
+    };
+    if ([NSThread isMainThread]) finish();
+    else dispatch_async(dispatch_get_main_queue(), finish);
+}
+
 + (void)showFailureToastWithTitle:(NSString *)title subtitle:(NSString *)subtitle openURL:(NSURL *)openURL {
     UIImage *icon = [UIImage systemImageNamed:@"exclamationmark.triangle"];
     if (ENABLED(THAppShowBanners)) {
