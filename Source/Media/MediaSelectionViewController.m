@@ -12,23 +12,6 @@
 #import "Include/AV1Transcoder.h"
 #import "Include/ThetaDashManifest.h"
 
-// Helper functions for cleaner code
-static void cleanupTemporaryFiles(NSString *videoPath, NSString *audioPath, NSString *outputPath) {
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    
-    NSMutableArray *paths = [NSMutableArray array];
-    if (videoPath) [paths addObject:videoPath];
-    if (audioPath) [paths addObject:audioPath];
-    if (outputPath) [paths addObject:outputPath];
-    
-    for (NSString *path in paths) {
-        NSError *error;
-        if ([fileManager fileExistsAtPath:path]) {
-            [fileManager removeItemAtPath:path error:&error];
-        }
-    }
-}
-
 static void showCompletionToast(CustomToastView *progressToast, BOOL success, NSString *title, NSString *subtitle, UIImage *icon, NSURL *url) {
     if (progressToast) {
         [progressToast completeProgressWithTitle:title subtitle:subtitle icon:icon url:url];
@@ -280,7 +263,7 @@ static void showCompletionToast(CustomToastView *progressToast, BOOL success, NS
     for (NSUInteger i = 0; i < count; i++) {
         NSDictionary *mediaItem = imageItems[i];
         NSString *urlString = mediaItem[@"url"];
-        NSURL *url = [NSURL URLWithString:urlString];
+        NSURL *url = ThetaPreviewURLForItem(mediaItem);
         dispatch_group_enter(group);
         NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
             if (data) {
@@ -348,6 +331,13 @@ static void showCompletionToast(CustomToastView *progressToast, BOOL success, NS
     return [UIColor colorWithRed:averageRed green:averageGreen blue:averageBlue alpha:1.0];
 }
 
+/** The picker previews the smallest image version when the item has one; the original is downloaded only on save. */
+static NSURL *ThetaPreviewURLForItem(NSDictionary *mediaItem) {
+    NSString *preview = mediaItem[@"previewURL"];
+    NSString *urlString = preview.length ? preview : mediaItem[@"url"];
+    return urlString.length ? [NSURL URLWithString:urlString] : nil;
+}
+
 static BOOL ThetaPreviewImageIsPlaceholder(UIImage *image) {
     if (!image) return YES;
     if (@available(iOS 13.0, *)) {
@@ -386,7 +376,8 @@ static BOOL ThetaPreviewImageIsPlaceholder(UIImage *image) {
     config.timeoutIntervalForRequest = 12.0;
     config.HTTPAdditionalHeaders = @{ @"Accept": @"image/*,*/*;q=0.8" };
     NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
-    NSURLSessionDataTask *task = [session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    NSURLSessionDataTask *task = [session dataTaskWithURL:ThetaPreviewURLForItem(mediaItem) ?: url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        [session finishTasksAndInvalidate];
         if (!data || error) {
             completion(nil);
             return;
@@ -1112,9 +1103,8 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
             }
 
             NSFileManager *fm = [NSFileManager defaultManager];
-            NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
             NSString *fileExtension = ThetaDownloadExtension(url, response);
-            NSString *stagedPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"media-%@.%@", [[NSUUID UUID] UUIDString], fileExtension]];
+            NSString *stagedPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"media-%@.%@", [[NSUUID UUID] UUIDString], fileExtension]];
 
             NSError *moveError = nil;
             if (![fm moveItemAtURL:location toURL:[NSURL fileURLWithPath:stagedPath] error:&moveError]) {
@@ -1196,7 +1186,18 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
 
 #pragma mark - HD Video Download Methods
 
+/** Entry point of the bulk video save. The setup in `startHDVideosBulk` runs before any item is in flight, so an
+    exception there ends the whole job once (all videos failed, lock released). */
 - (void)downloadHDVideosBulk:(NSArray<IGVideo *> *)videos progressToast:(CustomToastView *)progressToast completed:(NSInteger)completedItems total:(NSInteger)totalItems failed:(NSInteger)failedItems toPhotos:(BOOL)toPhotos {
+    @try {
+        [self startHDVideosBulk:videos progressToast:progressToast completed:completedItems total:totalItems failed:failedItems toPhotos:toPhotos];
+    } @catch (NSException *exception) {
+        THDebugLog(@"bulk video save raised: %@", exception.name);
+        [self showCompletionToast:progressToast completed:totalItems total:totalItems failed:failedItems + (NSInteger)videos.count toPhotos:toPhotos];
+    }
+}
+
+- (void)startHDVideosBulk:(NSArray<IGVideo *> *)videos progressToast:(CustomToastView *)progressToast completed:(NSInteger)completedItems total:(NSInteger)totalItems failed:(NSInteger)failedItems toPhotos:(BOOL)toPhotos {
     if (!videos || videos.count == 0) {
         // Nothing to run: still end the save (releases the lock).
         [self showCompletionToast:progressToast completed:completedItems total:totalItems failed:failedItems toPhotos:toPhotos];
@@ -1321,7 +1322,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
     };
     
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *stagingPath = NSTemporaryDirectory();
     
     // Configure per-item UIProgressView rows in the toast (one bar per video)
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -1365,8 +1366,8 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                 
                 // Unique per job so overlapping saves never share a file; theta_ names are swept at launch.
                 NSString *jobID = [[NSUUID UUID] UUIDString];
-                NSString *videoPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_video_%ld_%@.mp4", (long)videoIndex, jobID]];
-                __block NSString *audioPath = hasAudio ? [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_audio_%ld_%@.m4a", (long)videoIndex, jobID]] : nil;
+                NSString *videoPath = [stagingPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_video_%ld_%@.mp4", (long)videoIndex, jobID]];
+                __block NSString *audioPath = hasAudio ? [stagingPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_audio_%ld_%@.m4a", (long)videoIndex, jobID]] : nil;
                 
                 // Remove any existing files
                 if ([fm fileExistsAtPath:videoPath]) [fm removeItemAtPath:videoPath error:nil];
@@ -1459,7 +1460,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                 });
                 formatProgressDisplay(); // Updates toast internally with progress
                 
-                NSString *outputPath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_output_%ld_%@.mp4", (long)videoIndex, jobID]];
+                NSString *outputPath = [stagingPath stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_bulk_output_%ld_%@.mp4", (long)videoIndex, jobID]];
                 if ([fm fileExistsAtPath:outputPath]) [fm removeItemAtPath:outputPath error:nil];
                 
                 __block NSTimeInterval transcodeStartTime = [[NSDate date] timeIntervalSince1970];
@@ -1645,171 +1646,6 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
     });
 }
 
-- (void)generateHDVideoThumbnail:(IGVideo *)video forIndex:(NSInteger)index {
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        @try {
-            THDebugLog(@"Starting thumbnail generation for HD video %ld", (long)index);
-            
-            // First, create a placeholder immediately
-            UIImage *placeholder = [self createVideoPlaceholder];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                NSString *cacheKey = [NSString stringWithFormat:@"hd_video_%ld", (long)index];
-                [self.previewCache setObject:placeholder forKey:cacheKey];
-                
-                // Reload the specific cell immediately with placeholder
-                NSIndexPath *indexPath = [NSIndexPath indexPathForItem:index + self.mediaItems.count inSection:0];
-                [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
-                THDebugLog(@"Created initial placeholder for HD video %ld", (long)index);
-            });
-            
-            // Try to get video info and attempt thumbnail generation
-            NSSet *videoURLs = [video allVideoURLs];
-            if (videoURLs && videoURLs.count > 0) {
-                NSURL *firstVideoURL = [videoURLs anyObject];
-                THDebugLog(@"Found video URL for HD video %ld: %@", (long)index, firstVideoURL);
-                
-                // Try to download a small portion and generate thumbnail
-                [self attemptThumbnailFromURL:firstVideoURL forIndex:index];
-            } else {
-                THDebugLog(@"No video URLs found for HD video %ld", (long)index);
-            }
-            
-        } @catch (NSException *exception) {
-            THDebugLog(@"Error generating HD video thumbnail: %@", exception);
-        }
-    });
-}
-
-- (UIImage *)createVideoPlaceholder {
-    UIGraphicsBeginImageContextWithOptions(CGSizeMake(400, 400), NO, 0);
-    CGContextRef context = UIGraphicsGetCurrentContext();
-    
-    // Create gradient background
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGFloat locations[] = {0.0, 1.0};
-    CGFloat components[] = {
-        0.15, 0.15, 0.25, 1.0,  // Start color - darker blue
-        0.05, 0.05, 0.15, 1.0   // End color - even darker
-    };
-    CGGradientRef gradient = CGGradientCreateWithColorComponents(colorSpace, components, locations, 2);
-    CGContextDrawLinearGradient(context, gradient, CGPointMake(0, 0), CGPointMake(400, 400), 0);
-    CGGradientRelease(gradient);
-    CGColorSpaceRelease(colorSpace);
-    
-    // Add video icon with better styling
-    UIImage *videoIcon = [UIImage systemImageNamed:@"play.circle.fill"];
-    if (videoIcon) {
-        // Draw a larger, more prominent play button
-        [videoIcon drawInRect:CGRectMake(120, 120, 160, 160)];
-    }
-    
-    // Add "HD" text
-    UIFont *hdFont = [UIFont boldSystemFontOfSize:24];
-    NSDictionary *textAttributes = @{
-        NSFontAttributeName: hdFont,
-        NSForegroundColorAttributeName: [UIColor whiteColor]
-    };
-    
-    NSString *hdText = @"HD VIDEO";
-    CGSize textSize = [hdText sizeWithAttributes:textAttributes];
-    CGPoint textPoint = CGPointMake((400 - textSize.width) / 2, 320);
-    [hdText drawAtPoint:textPoint withAttributes:textAttributes];
-    
-    UIImage *placeholder = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    
-    return placeholder;
-}
-
-- (void)attemptThumbnailFromURL:(NSURL *)videoURL forIndex:(NSInteger)index {
-    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
-    config.timeoutIntervalForRequest = 10.0;
-    config.timeoutIntervalForResource = 15.0;
-    
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
-    
-    // Request only the first 2MB of the video
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:videoURL];
-    [request setValue:@"bytes=0-2097152" forHTTPHeaderField:@"Range"];
-    
-    NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error || !data) {
-            THDebugLog(@"Error downloading video data for thumbnail %ld: %@", (long)index, error);
-            return;
-        }
-        
-        THDebugLog(@"Downloaded %ld bytes for thumbnail generation %ld", (long)data.length, (long)index);
-        
-        // Check if we got a valid response
-        NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
-        if (httpResponse.statusCode != 200 && httpResponse.statusCode != 206) {
-            THDebugLog(@"HTTP error %ld for thumbnail generation %ld", (long)httpResponse.statusCode, (long)index);
-            return;
-        }
-        
-        // Write to temp file
-        NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"theta_thumb_%ld_%@.mp4", (long)index, [[NSUUID UUID] UUIDString]]];
-        BOOL writeSuccess = [data writeToFile:tempPath atomically:YES];
-        
-        if (!writeSuccess) {
-            THDebugLog(@"Failed to write video data to temp file for %ld", (long)index);
-            return;
-        }
-        
-        // Try to create thumbnail from the downloaded portion
-        AVAsset *asset = [AVAsset assetWithURL:[NSURL fileURLWithPath:tempPath]];
-        
-        dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
-        [asset loadValuesAsynchronouslyForKeys:@[@"tracks"] completionHandler:^{
-            AVKeyValueStatus status = [asset statusOfValueForKey:@"tracks" error:nil];
-            if (status != AVKeyValueStatusLoaded) {
-                THDebugLog(@"Failed to load asset tracks for thumbnail %ld", (long)index);
-                [[NSFileManager defaultManager] removeItemAtPath:tempPath error:nil];
-                dispatch_semaphore_signal(semaphore);
-                return;
-            }
-            
-            AVAssetImageGenerator *imageGenerator = [[AVAssetImageGenerator alloc] initWithAsset:asset];
-            imageGenerator.appliesPreferredTrackTransform = YES;
-            imageGenerator.maximumSize = CGSizeMake(400, 400);
-            imageGenerator.requestedTimeToleranceBefore = CMTimeMake(2, 1);  // 2 second tolerance
-            imageGenerator.requestedTimeToleranceAfter = CMTimeMake(2, 1);   // 2 second tolerance
-            
-            // Try at the beginning of the video
-            CMTime time = CMTimeMake(1, 1);  // 1 second
-            NSError *imageError = nil;
-            CGImageRef cgImage = [imageGenerator copyCGImageAtTime:time actualTime:nil error:&imageError];
-            
-            if (cgImage) {
-                UIImage *thumbnail = [UIImage imageWithCGImage:cgImage];
-                CGImageRelease(cgImage);
-                
-                THDebugLog(@"Successfully generated thumbnail for HD video %ld", (long)index);
-                
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    NSString *cacheKey = [NSString stringWithFormat:@"hd_video_%ld", (long)index];
-                    [self.previewCache setObject:thumbnail forKey:cacheKey];
-                    
-                    // Reload the specific cell with actual thumbnail
-                    NSIndexPath *indexPath = [NSIndexPath indexPathForItem:index + self.mediaItems.count inSection:0];
-                    [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
-                    THDebugLog(@"Updated HD video %ld with actual thumbnail", (long)index);
-                });
-            } else {
-                THDebugLog(@"Failed to generate thumbnail for HD video %ld: %@", (long)index, imageError);
-            }
-            
-            // Clean up temp file
-            [[NSFileManager defaultManager] removeItemAtPath:tempPath error:nil];
-            dispatch_semaphore_signal(semaphore);
-        }];
-        
-        dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
-    }];
-    
-    [task resume];
-}
-
 - (void)setupVideoPlayerForCell:(UIView *)cardView atIndex:(NSInteger)videoIndex {
     // Remove any existing video player
     for (UIView *subview in cardView.subviews) {
@@ -1842,6 +1678,18 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
     
     // Store player reference for cleanup
     cardView.tag = 999; // Mark as having video player
+}
+
+/** Calls `done(YES)` on the main queue once the player's item is ready, `done(NO)` if it failed or `deadline` passed. */
+static void ThetaPollPlayerReady(AVPlayer *player, NSDate *deadline, void (^done)(BOOL ready)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        AVPlayerItemStatus status = player.currentItem.status;
+        if (status == AVPlayerItemStatusReadyToPlay) { done(YES); return; }
+        if (status == AVPlayerItemStatusFailed || deadline.timeIntervalSinceNow <= 0) { done(NO); return; }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            ThetaPollPlayerReady(player, deadline, done);
+        });
+    });
 }
 
 + (void)preloadHDVideoThumbnails:(NSArray<IGVideo *> *)hdVideos completion:(void(^)(void))completion {
@@ -1893,14 +1741,14 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
         // Store the observer reference
         objc_setAssociatedObject(player, "loopObserver", observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         
-        // Set up a timer to check if player is ready
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            if (player.currentItem.status == AVPlayerItemStatusReadyToPlay) {
-                NSString *key = [NSString stringWithFormat:@"video_player_%ld", (long)i];
+        // Leave the group as soon as the item is ready (or failed), after 3 s at the latest
+        NSString *key = [NSString stringWithFormat:@"video_player_%ld", (long)i];
+        ThetaPollPlayerReady(player, [NSDate dateWithTimeIntervalSinceNow:3.0], ^(BOOL ready) {
+            if (ready) {
                 videoPlayers[key] = player;
                 THDebugLog(@"Preloaded video player %ld", (long)i);
             } else {
-                THDebugLog(@"Failed to preload video player %ld (timeout)", (long)i);
+                THDebugLog(@"Failed to preload video player %ld", (long)i);
             }
             dispatch_group_leave(group);
         });

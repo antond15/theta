@@ -48,8 +48,18 @@ NSString *ThetaDashFormatByteCount(unsigned long long bytes) {
 
 static NSString *ThetaDashXMLAttr(NSString *tag, NSString *name) {
     if (!tag.length || !name.length) return nil;
-    NSString *pattern = [NSString stringWithFormat:@"%@\\s*=\\s*[\"']([^\"']*)[\"']", name];
-    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:pattern options:NSRegularExpressionCaseInsensitive error:nil];
+    static NSMutableDictionary<NSString *, NSRegularExpression *> *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
+    NSRegularExpression *re;
+    @synchronized (cache) {
+        re = cache[name];
+        if (!re) {
+            NSString *pattern = [NSString stringWithFormat:@"%@\\s*=\\s*[\"']([^\"']*)[\"']", name];
+            re = [NSRegularExpression regularExpressionWithPattern:pattern options:NSRegularExpressionCaseInsensitive error:nil];
+            if (re) cache[name] = re;
+        }
+    }
     NSTextCheckingResult *match = [re firstMatchInString:tag options:0 range:NSMakeRange(0, tag.length)];
     if (!match || match.numberOfRanges < 2) return nil;
     return [tag substringWithRange:[match rangeAtIndex:1]];
@@ -181,14 +191,15 @@ NSArray<ThetaDashVideoQuality *> *ThetaDashManifestVideoQualities(NSString *mani
         NSRange blockRange = NSMakeRange(setMatch.range.location, NSMaxRange(close) - setMatch.range.location);
         NSString *block = [manifest substringWithRange:blockRange];
 
+        NSString *lowerBlock = block.lowercaseString;
         BOOL looksLikeVideo = [contentType isEqualToString:@"video"]
-            || [block.lowercaseString containsString:@"fbqualitylabel"]
-            || [block.lowercaseString containsString:@"codecs=\"av01"]
-            || [block.lowercaseString containsString:@"codecs=\"avc1"]
-            || [block.lowercaseString containsString:@"codecs=\"hvc1"]
-            || [block.lowercaseString containsString:@"codecs=\"hev1"]
-            || [block.lowercaseString containsString:@"codecs=\"vp09"]
-            || [block.lowercaseString containsString:@"codecs=\"vp9"];
+            || [lowerBlock containsString:@"fbqualitylabel"]
+            || [lowerBlock containsString:@"codecs=\"av01"]
+            || [lowerBlock containsString:@"codecs=\"avc1"]
+            || [lowerBlock containsString:@"codecs=\"hvc1"]
+            || [lowerBlock containsString:@"codecs=\"hev1"]
+            || [lowerBlock containsString:@"codecs=\"vp09"]
+            || [lowerBlock containsString:@"codecs=\"vp9"];
         if (!looksLikeVideo) continue;
 
         NSRegularExpression *repRe = [NSRegularExpression regularExpressionWithPattern:@"<Representation\\b[^>]*>" options:NSRegularExpressionCaseInsensitive error:nil];
@@ -320,17 +331,8 @@ NSString *IGDashManifestBestQualityURL(NSString *manifest) {
         }
 
         if (bestBandwidthRange.location != NSNotFound) {
-            NSRange searchStart = NSMakeRange(bestBandwidthRange.location, manifest.length - bestBandwidthRange.location);
-            NSRange baseURLStart = [manifest rangeOfString:@"<BaseURL>" options:0 range:searchStart];
-            NSRange baseURLEnd = [manifest rangeOfString:@"</BaseURL>" options:0 range:searchStart];
-
-            if (baseURLStart.location != NSNotFound && baseURLEnd.location != NSNotFound) {
-                NSUInteger urlStart = baseURLStart.location + baseURLStart.length;
-                NSUInteger urlLength = baseURLEnd.location - urlStart;
-                NSString *url = [manifest substringWithRange:NSMakeRange(urlStart, urlLength)];
-                url = [url stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
-                return url;
-            }
+            NSString *url = ThetaDashExtractBaseURLAfterRangeInBlock(manifest, bestBandwidthRange);
+            if (url.length) return url;
         }
 
         return nil;
@@ -343,16 +345,7 @@ NSString *IGDashManifestBestQualityURL(NSString *manifest) {
     NSRange qualityRange = [manifest rangeOfString:search options:NSBackwardsSearch range:videoSearchRange];
     if (qualityRange.location == NSNotFound) return nil;
 
-    NSRange baseURLSearchRange = NSMakeRange(qualityRange.location, manifest.length - qualityRange.location);
-    NSRange baseURLStart = [manifest rangeOfString:@"<BaseURL>" options:0 range:baseURLSearchRange];
-    NSRange baseURLEnd = [manifest rangeOfString:@"</BaseURL>" options:0 range:baseURLSearchRange];
-    if (baseURLStart.location == NSNotFound || baseURLEnd.location == NSNotFound) return nil;
-
-    NSUInteger urlStart = baseURLStart.location + baseURLStart.length;
-    NSUInteger urlLength = baseURLEnd.location - urlStart;
-    NSString *url = [manifest substringWithRange:NSMakeRange(urlStart, urlLength)];
-    url = [url stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
-    return url;
+    return ThetaDashExtractBaseURLAfterRangeInBlock(manifest, qualityRange);
 }
 
 NSString *IGDashManifestBestCompatibleURL(NSString *manifest) {
@@ -409,17 +402,8 @@ NSString *IGDashManifestBestCompatibleURL(NSString *manifest) {
     }
 
     if (bestCompatibleRepRange.location != NSNotFound) {
-        NSRange searchStart = NSMakeRange(bestCompatibleRepRange.location, manifest.length - bestCompatibleRepRange.location);
-        NSRange baseURLStart = [manifest rangeOfString:@"<BaseURL>" options:0 range:searchStart];
-        NSRange baseURLEnd = [manifest rangeOfString:@"</BaseURL>" options:0 range:searchStart];
-
-        if (baseURLStart.location != NSNotFound && baseURLEnd.location != NSNotFound) {
-            NSUInteger urlStart = baseURLStart.location + baseURLStart.length;
-            NSUInteger urlLength = baseURLEnd.location - urlStart;
-            NSString *url = [manifest substringWithRange:NSMakeRange(urlStart, urlLength)];
-            url = [url stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
-            return url;
-        }
+        NSString *url = ThetaDashExtractBaseURLAfterRangeInBlock(manifest, bestCompatibleRepRange);
+        if (url.length) return url;
     }
 
     return IGDashManifestBestQualityURL(manifest);
@@ -427,17 +411,22 @@ NSString *IGDashManifestBestCompatibleURL(NSString *manifest) {
 
 static NSString *ThetaDashExtractBaseURLAfterRangeInBlock(NSString *block, NSRange repTagRange) {
     NSRange afterRep = NSMakeRange(NSMaxRange(repTagRange), block.length - NSMaxRange(repTagRange));
+    // The BaseURL belongs to this representation: stop at the next one or the end of the set.
+    NSRange searchLimit = afterRep;
     NSRange nextRep = [block rangeOfString:@"<Representation" options:0 range:afterRep];
-    NSRange searchLimit;
-    if (nextRep.location == NSNotFound) {
-        searchLimit = afterRep;
-    } else {
-        searchLimit = NSMakeRange(afterRep.location, nextRep.location - afterRep.location);
+    if (nextRep.location != NSNotFound) {
+        searchLimit.length = nextRep.location - afterRep.location;
+    }
+    NSRange setEnd = [block rangeOfString:@"</AdaptationSet>" options:0 range:searchLimit];
+    if (setEnd.location != NSNotFound) {
+        searchLimit.length = setEnd.location - searchLimit.location;
     }
     NSRange baseStart = [block rangeOfString:@"<BaseURL>" options:0 range:searchLimit];
-    NSRange baseEnd = [block rangeOfString:@"</BaseURL>" options:0 range:searchLimit];
-    if (baseStart.location == NSNotFound || baseEnd.location == NSNotFound) return nil;
-    NSUInteger uStart = baseStart.location + baseStart.length;
+    if (baseStart.location == NSNotFound) return nil;
+    NSRange afterStart = NSMakeRange(NSMaxRange(baseStart), NSMaxRange(searchLimit) - NSMaxRange(baseStart));
+    NSRange baseEnd = [block rangeOfString:@"</BaseURL>" options:0 range:afterStart];
+    if (baseEnd.location == NSNotFound) return nil;
+    NSUInteger uStart = NSMaxRange(baseStart);
     NSString *u = [block substringWithRange:NSMakeRange(uStart, baseEnd.location - uStart)];
     return [u stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
 }
@@ -592,6 +581,16 @@ static NSString *ThetaRenameAudioByMagic(NSString *path) {
     return path;
 }
 
+static BOOL ThetaAudioTrackIsAACLC(AVAsset *asset) {
+    AVAssetTrack *track = [[asset tracksWithMediaType:AVMediaTypeAudio] firstObject];
+    if (!track) return NO;
+    for (id desc in track.formatDescriptions) {
+        const AudioStreamBasicDescription *asbd = CMAudioFormatDescriptionGetStreamBasicDescription((__bridge CMAudioFormatDescriptionRef)desc);
+        if (asbd && asbd->mFormatID == kAudioFormatMPEG4AAC) return YES; // HE-AAC is kAudioFormatMPEG4AAC_HE
+    }
+    return NO;
+}
+
 static NSString *ThetaTranscodeAudioToM4A(AVAsset *asset, NSString *sourcePath) {
     if (!asset || !sourcePath.length) return nil;
     NSString *outPath = [[sourcePath stringByDeletingPathExtension] stringByAppendingString:@"_lc.m4a"];
@@ -631,6 +630,12 @@ NSString *ThetaPrepareDashAudioForMerge(NSString *audioPath) {
 
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:path] options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
     ThetaAVAssetLoadKeys(asset);
+
+    // AAC-LC in an MP4 container needs no export: the merge takes the track as it is.
+    if ([path.pathExtension isEqualToString:@"m4a"] && ThetaAudioTrackIsAACLC(asset)) {
+        THDebugLog(@"ThetaPrepareDashAudioForMerge: AAC-LC, export skipped");
+        return path;
+    }
 
     NSString *transcoded = ThetaTranscodeAudioToM4A(asset, path);
     if (transcoded.length) {

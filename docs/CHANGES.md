@@ -53,6 +53,8 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - **Clear App Cache** clears `Library/Caches` and Theta's own temp files only. It used to delete almost all of `Documents/`, including media saved with Save Method = Folder and, on sideload, Instagram's app-group data. It refuses with the usual "Download in progress" toast while a save is running, so it can't delete a save's files under it.
 - **Launch cleanup** deletes only Theta's own leftover temp files. It used to delete every audio and video file in `Documents/`.
 - Bulk-save and thumbnail temp files have unique names, so overlapping saves can't overwrite each other.
+- **Picker speed.** The picker previews each photo from its smallest image version, fetched in parallel by the picker, instead of downloading every full-size original one after another before it opens (a single photo no longer downloads twice). Only saved items download the original. Video previews are ready as soon as the player is, with a 3 s cap, instead of a fixed 3 s wait. Bulk and photo downloads are staged in the temp directory, not `Documents/`.
+- **Faster reel merges.** DASH audio that is already AAC-LC in an MP4 container is merged as it is, without an AAC re-export. The DASH manifest parser caches its attribute regexes and searches a representation's `BaseURL` only inside that representation. The dead software-encoder branch (the bundled FFmpeg only has VideoToolbox H.264) and unused thumbnail and cleanup helpers are gone. A bulk save that throws while it is being set up now ends the job (all videos failed, lock released).
 
 ## Settings storage
 

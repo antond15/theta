@@ -8,18 +8,25 @@
 #import <Photos/Photos.h>
 #import "Include/ThetaDashManifest.h"
 
-// Helper functions for cleaner code
-static void cleanupTemporaryFiles(NSString *videoPath, NSString *audioPath, NSString *outputPath) {
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    
-    NSArray *paths = @[videoPath, audioPath, outputPath];
-    
-    for (int i = 0; i < paths.count; i++) {
-        NSError *error;
-        if ([fileManager removeItemAtPath:paths[i] error:&error]) {
-            // do nothing
+/** The original photo URL (the last version) and the smallest version's URL for the picker preview. The preview
+    is fetched by the picker; only saved items download the original. */
+static NSURL *theta_photoURLs(IGPhoto *photo, NSURL **previewURL) {
+    NSArray *versions = nil;
+    @try { versions = [photo valueForKey:@"_originalImageVersions"]; } @catch (__unused NSException *e) {}
+    if (![versions isKindOfClass:[NSArray class]] || versions.count <= 1) return nil;
+    NSURL *original = nil, *smallest = nil;
+    @try {
+        original = [versions.lastObject valueForKey:@"url"];
+        CGFloat smallestArea = CGFLOAT_MAX;
+        for (id version in versions) {
+            NSURL *u = [version valueForKey:@"url"];
+            CGFloat area = [[version valueForKey:@"width"] doubleValue] * [[version valueForKey:@"height"] doubleValue];
+            if ([u isKindOfClass:[NSURL class]] && area > 0 && area < smallestArea) { smallestArea = area; smallest = u; }
         }
-    }
+    } @catch (__unused NSException *e) {}
+    if (![original isKindOfClass:[NSURL class]]) return nil;
+    if (previewURL) *previewURL = smallest ?: original;
+    return original;
 }
 
 static void theta_removePath(NSString *path) {
@@ -591,7 +598,7 @@ static void downloadMedia(id self) {
             @autoreleasepool {
                 for (IGPostItem *media in currentMedia.items) {
                     NSURL *url = nil;
-                    UIImage *preview = nil;
+                    NSURL *previewURL = nil;
                     BOOL isVideo = NO;
 
                     BOOL handled = NO;
@@ -599,17 +606,7 @@ static void downloadMedia(id self) {
                     if (!handled && [media respondsToSelector:@selector(itemMediaType)]) {
                         if (media.itemMediaType == 1) {
                             IGPhoto *photo = media.photo;
-                            NSArray *originalImageVersions = [photo valueForKey:@"_originalImageVersions"];
-                            if (originalImageVersions.count > 1) {
-                                id photoURL = [originalImageVersions lastObject];
-                                url = [photoURL valueForKey:@"url"];
-                                if (url) {
-                                    NSData *imageData = [NSData dataWithContentsOfURL:url];
-                                    if (imageData) {
-                                        preview = [UIImage imageWithData:imageData];
-                                    }
-                                }
-                            }
+                            url = theta_photoURLs(photo, &previewURL);
                         } else if (media.itemMediaType == 2) {
                             IGVideo *video = media.video;
                             [igvideos addObject:video];
@@ -621,17 +618,7 @@ static void downloadMedia(id self) {
                     if (!handled && [media respondsToSelector:@selector(mediaType)]) {
                         if (media.mediaType == 1) {
                             IGPhoto *photo = media.photo;
-                            NSArray *originalImageVersions = [photo valueForKey:@"_originalImageVersions"];
-                            if (originalImageVersions.count > 1) {
-                                id photoURL = [originalImageVersions lastObject];
-                                url = [photoURL valueForKey:@"url"];
-                                if (url) {
-                                    NSData *imageData = [NSData dataWithContentsOfURL:url];
-                                    if (imageData) {
-                                        preview = [UIImage imageWithData:imageData];
-                                    }
-                                }
-                            }
+                            url = theta_photoURLs(photo, &previewURL);
                         } else if (media.mediaType == 2) {
                             IGVideo *video = media.video;
                             [igvideos addObject:video];
@@ -643,7 +630,7 @@ static void downloadMedia(id self) {
                     // Add to appropriate arrays
                     if (url || isVideo) {
                         // Count all items for total count
-                        NSDictionary *mediaDict = @{ @"url": url ? url.absoluteString : @"", @"preview": preview ?: [UIImage systemImageNamed:@"photo"] };
+                        NSDictionary *mediaDict = @{ @"url": url ? url.absoluteString : @"", @"previewURL": previewURL.absoluteString ?: @"", @"preview": [UIImage systemImageNamed:@"photo"] };
                         [mediaItems addObject:mediaDict];
                         
                         // Add non-video items to regularItems
@@ -893,7 +880,7 @@ static void downloadSundialMedia(id self) {
             if (!mediaItem) continue;
             
             NSURL *url = nil;
-            UIImage *preview = nil;
+            NSURL *previewURL = nil;
             IGVideo *video = nil;
 
             BOOL handled = NO;
@@ -902,17 +889,7 @@ static void downloadSundialMedia(id self) {
                 if (mediaItem.itemMediaType == 1) {
                     IGPhoto *photo = mediaItem.photo;
                     if (photo) {
-                        NSArray *originalImageVersions = [photo valueForKey:@"_originalImageVersions"];
-                        if (originalImageVersions.count > 1) {
-                            id photoURL = [originalImageVersions lastObject];
-                            url = [photoURL valueForKey:@"url"];
-                            if (url) {
-                                NSData *imageData = [NSData dataWithContentsOfURL:url];
-                                if (imageData) {
-                                    preview = [UIImage imageWithData:imageData];
-                                }
-                            }
-                        }
+                        url = theta_photoURLs(photo, &previewURL);
                     }
                 } else if (mediaItem.itemMediaType == 2) {
                     video = mediaItem.video;
@@ -929,17 +906,7 @@ static void downloadSundialMedia(id self) {
                 if (mediaItem.mediaType == 1) {
                     IGPhoto *photo = mediaItem.photo;
                     if (photo) {
-                        NSArray *originalImageVersions = [photo valueForKey:@"_originalImageVersions"];
-                        if (originalImageVersions.count > 1) {
-                            id photoURL = [originalImageVersions lastObject];
-                            url = [photoURL valueForKey:@"url"];
-                            if (url) {
-                                NSData *imageData = [NSData dataWithContentsOfURL:url];
-                                if (imageData) {
-                                    preview = [UIImage imageWithData:imageData];
-                                }
-                            }
-                        }
+                        url = theta_photoURLs(photo, &previewURL);
                     }
                 } else if (mediaItem.mediaType == 2) {
                     video = mediaItem.video;
@@ -953,7 +920,7 @@ static void downloadSundialMedia(id self) {
             }
 
             if (url) {
-                NSDictionary *mediaDict = @{ @"url": url.absoluteString, @"preview": preview ?: [UIImage systemImageNamed:@"photo"] };
+                NSDictionary *mediaDict = @{ @"url": url.absoluteString, @"previewURL": previewURL.absoluteString ?: @"", @"preview": [UIImage systemImageNamed:@"photo"] };
                 dispatch_sync(syncQueue, ^{
                     [normalItems addObject:mediaDict];
                 });

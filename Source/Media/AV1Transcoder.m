@@ -349,14 +349,6 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
         }
     }
     
-    // Check for HDR
-    BOOL isHDR = NO;
-    if (videoStream->codecpar->color_primaries == AVCOL_PRI_BT2020 || 
-        videoStream->codecpar->color_trc == AVCOL_TRC_SMPTE2084 ||
-        videoStream->codecpar->color_trc == AVCOL_TRC_ARIB_STD_B67) {
-        isHDR = YES;
-    }
-    
     // Get frame rate
     AVRational frameRate = p_av_guess_frame_rate(inputFormatContext, videoStream, NULL);
     double fps = (double)frameRate.num / frameRate.den;
@@ -434,11 +426,8 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     
         // For sideload builds, always use H.264 for better Photos compatibility
         // Photos app has issues with HEVC when saving via NSData in sandboxed apps
+        // The bundled FFmpeg has no software H.264 encoder, so VideoToolbox is the only one.
         encoder = p_avcodec_find_encoder_by_name("h264_videotoolbox");
-        if (!encoder) {
-            THDebugLog(@"VideoToolbox encoder not available, falling back to libx264");
-            encoder = p_avcodec_find_encoder(AV_CODEC_ID_H264);
-        }
     
     if (!encoder) {
         THDebugLog(@"Could not find any suitable encoder");
@@ -498,9 +487,8 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     encoderContext->colorspace = decoderContext->colorspace;
     encoderContext->color_range = decoderContext->color_range;
     
-    // Use NV12 for VideoToolbox (native hardware format), YUV420P for software
-    BOOL usingVideoToolbox = (strstr(encoder->name, "videotoolbox") != NULL);
-    encoderContext->pix_fmt = usingVideoToolbox ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P;
+    // NV12 is VideoToolbox's native format
+    encoderContext->pix_fmt = AV_PIX_FMT_NV12;
     
     // Preserve original frame rate (important for 60fps, 120fps, etc.)
     encoderContext->time_base = videoStream->time_base;
@@ -514,38 +502,13 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     
     encoderContext->gop_size = (int)(fps * 0.5); // GOP size = 0.5 seconds worth of frames
     
-    // Check if we're using VideoToolbox or software encoder
-    BOOL isHEVC = (encoder->id == AV_CODEC_ID_HEVC);
+    encoderContext->max_b_frames = 0; // VideoToolbox doesn't use B-frames by default
     
-    if (usingVideoToolbox) {
-        // VideoToolbox-specific settings (hardware encoder)
-        encoderContext->max_b_frames = 0; // VideoToolbox doesn't use B-frames by default
-        
-        // VideoToolbox options
-        if (encoderContext->priv_data) {
-            p_av_opt_set(encoderContext->priv_data, "allow_sw", "1", 0);
-            p_av_opt_set(encoderContext->priv_data, "realtime", "true", 0);
-            p_av_opt_set_int(encoderContext->priv_data, "prio_speed", 1, 0);
-        }
-    } else {
-        // Software encoder settings
-        encoderContext->max_b_frames = 2;
-        encoderContext->thread_count = 0; // Auto-detect number of threads
-        encoderContext->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
-        
-        if (isHEVC) {
-            // x265 options for HEVC
-            p_av_opt_set(encoderContext->priv_data, "preset", "fast", 0);
-            if (isHDR) {
-                // HDR settings for x265
-                p_av_opt_set(encoderContext->priv_data, "hdr10", "1", 0);
-            }
-        } else {
-            // x264 options for H.264
-            p_av_opt_set(encoderContext->priv_data, "preset", "veryfast", 0);
-            p_av_opt_set(encoderContext->priv_data, "profile", "high", 0);
-            p_av_opt_set(encoderContext->priv_data, "crf", "23", 0);
-        }
+    // VideoToolbox options
+    if (encoderContext->priv_data) {
+        p_av_opt_set(encoderContext->priv_data, "allow_sw", "1", 0);
+        p_av_opt_set(encoderContext->priv_data, "realtime", "true", 0);
+        p_av_opt_set_int(encoderContext->priv_data, "prio_speed", 1, 0);
     }
     
     if (outputFormatContext->oformat->flags & AVFMT_GLOBALHEADER) {
