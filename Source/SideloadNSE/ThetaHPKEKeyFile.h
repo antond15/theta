@@ -47,6 +47,11 @@ void ThetaInstallSuiteRemap(void);
 #define THETA_SHARED_SUITE @"group.com.burbn.instagram"
 #define THETA_SHARED_MUTE_REEL_SHARES @"Theta_MuteSharedReelNotifications"
 
+/* The same settings in settings.plist next to the key file, which the NSE reads first. Set writes
+   only on a change; Get sets `found` to NO when the file or the key is missing. */
+void ThetaSharedSettingSetBool(NSString *key, BOOL value);
+BOOL ThetaSharedSettingBool(NSString *key, BOOL *found);
+
 /* CFPreferences* replacements that apply the same group remap to their applicationID, for
    callers (Meta's caching defaults wrapper) that bypass NSUserDefaults. Resolve the real
    functions with ThetaCFPrefsResolveReal() before any slot is rebound to these. */

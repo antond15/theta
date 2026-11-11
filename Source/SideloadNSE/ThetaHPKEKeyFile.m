@@ -399,6 +399,63 @@ static void ThetaHPKEChangeItems(void (^change)(NSMutableDictionary *items)) {
     }
 }
 
+/* settings.plist, next to keys.plist: the Theta settings the NSE needs, written by the app. On 451
+   the NSE read the shared NSUserDefaults suite as off although the app mirrored the toggle there
+   (cause not found); this directory already carries the HPKE keys from the app to the NSE. */
+static NSString *const kThetaSharedSettingsFile = @"settings.plist";
+
+/* The stored settings, empty if there is no file, or nil if it exists but can't be read. */
+static NSDictionary *ThetaSharedSettingsLoad(NSURL *dir) {
+    NSError *err = nil;
+    NSData *raw = [NSData dataWithContentsOfURL:[dir URLByAppendingPathComponent:kThetaSharedSettingsFile]
+                                        options:0
+                                          error:&err];
+    if (!raw) return ThetaHPKEIsMissingFile(err) ? @{} : nil;
+    id plist = [NSPropertyListSerialization propertyListWithData:raw options:NSPropertyListImmutable format:NULL error:NULL];
+    return [plist isKindOfClass:[NSDictionary class]] ? plist : @{};
+}
+
+void ThetaSharedSettingSetBool(NSString *key, BOOL value) {
+    if (!key.length) return;
+    @synchronized (ThetaHPKELock()) {
+        NSURL *dir = ThetaHPKESharedDirectory();
+        NSDictionary *current = dir ? ThetaSharedSettingsLoad(dir) : nil;
+        if (!current) {
+            ThetaHPKELog(@"shared setting %@=%d not written (no readable store)", key, value);
+            return;
+        }
+        id stored = current[key];
+        if ([stored isKindOfClass:[NSNumber class]] && [stored boolValue] == value) return;
+        NSMutableDictionary *next = [current mutableCopy];
+        next[key] = @(value);
+        NSError *err = nil;
+        NSData *plist = [NSPropertyListSerialization dataWithPropertyList:next
+                                                                   format:NSPropertyListBinaryFormat_v1_0
+                                                                  options:0
+                                                                    error:&err];
+        // Read while the phone is locked, like the keys.
+        BOOL ok = plist && [plist writeToURL:[dir URLByAppendingPathComponent:kThetaSharedSettingsFile]
+                                     options:NSDataWritingAtomic | NSDataWritingFileProtectionCompleteUntilFirstUserAuthentication
+                                       error:&err];
+        ThetaHPKELog(@"shared setting %@=%d written ok=%d err=%@", key, value, ok, err);
+        (void)ok;
+    }
+}
+
+BOOL ThetaSharedSettingBool(NSString *key, BOOL *found) {
+    if (found) *found = NO;
+    if (!key.length) return NO;
+    NSDictionary *settings = nil;
+    @synchronized (ThetaHPKELock()) {
+        NSURL *dir = ThetaHPKESharedDirectory();
+        settings = dir ? ThetaSharedSettingsLoad(dir) : nil;
+    }
+    id value = settings[key];
+    if (![value isKindOfClass:[NSNumber class]]) return NO;
+    if (found) *found = YES;
+    return [value boolValue];
+}
+
 void ThetaHPKEDumpStatus(void) {
     @synchronized (ThetaHPKELock()) {
         gStoreResolved = NO;

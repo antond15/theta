@@ -431,9 +431,15 @@ static NSString *ThetaNSEStringValue(id obj, NSString *key) {
     return [value isKindOfClass:[NSString class]] ? value : nil;
 }
 
+/* The app's settings.plist first; the shared suite only when the file has no value (an app build
+   from before the file). */
 static BOOL ThetaNSEMuteReelSharesEnabled(void) {
+    BOOL found = NO;
+    BOOL enabled = ThetaSharedSettingBool(THETA_SHARED_MUTE_REEL_SHARES, &found);
     NSUserDefaults *shared = [[NSUserDefaults alloc] initWithSuiteName:THETA_SHARED_SUITE];
-    return [shared boolForKey:THETA_SHARED_MUTE_REEL_SHARES];
+    BOOL suite = [shared boolForKey:THETA_SHARED_MUTE_REEL_SHARES];
+    ThetaNSELog("mute reel shares: file=%s suite=%d", found ? (enabled ? "1" : "0") : "-", suite);
+    return found ? enabled : suite;
 }
 
 static BOOL ThetaNSEIsReelShare(id request, id content) {
