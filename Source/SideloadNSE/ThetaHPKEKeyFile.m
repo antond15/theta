@@ -46,10 +46,8 @@ static NSString *ThetaHPKECString(CFDictionaryRef dict, CFStringRef key) {
 }
 
 BOOL ThetaHPKEDictIsHPKE(CFDictionaryRef dict) {
-    NSString *svc = ThetaHPKECString(dict, kSecAttrService);
-    NSString *acc = ThetaHPKECString(dict, kSecAttrAccount);
-    NSString *blob = [[NSString stringWithFormat:@"%@ %@", svc ?: @"", acc ?: @""] lowercaseString];
-    return [blob containsString:@"hpke"] || [blob containsString:@"notif"];
+    if (!dict || CFGetTypeID(dict) != CFDictionaryGetTypeID()) return NO;
+    return [ThetaHPKECString(dict, kSecAttrService) isEqualToString:THETA_HPKE_SERVICE];
 }
 
 void ThetaHPKESetContainerOrig(ThetaHPKEContainerURLFn fn) {
@@ -232,9 +230,10 @@ static NSURL *ThetaHPKETryGroup(id fm, SEL sel, NSString *gid) {
     return dir;
 }
 
+/* Not cached while no container is writable (before the first unlock), so a long-lived NSE
+   process finds it once the phone is unlocked. */
 static NSURL *ThetaHPKESharedDirectory(void) {
     if (gStoreResolved) return gStoreDir;
-    gStoreResolved = YES;
     id fm = [NSFileManager defaultManager];
     SEL sel = @selector(containerURLForSecurityApplicationGroupIdentifier:);
 
@@ -247,6 +246,7 @@ static NSURL *ThetaHPKESharedDirectory(void) {
         NSURL *dir = ThetaHPKETryGroup(fm, sel, gid);
         if (dir) {
             gStoreDir = dir;
+            gStoreResolved = YES;
             ThetaHPKELog(@"shared store %@", dir.path);
             return gStoreDir;
         }
@@ -259,6 +259,7 @@ static NSURL *ThetaHPKESharedDirectory(void) {
         NSURL *dir = ThetaHPKETryGroup(fm, sel, gid);
         if (dir) {
             gStoreDir = dir;
+            gStoreResolved = YES;
             ThetaHPKELog(@"shared store %@ (sideload group %@)", dir.path, gid);
             return gStoreDir;
         }
@@ -267,181 +268,347 @@ static NSURL *ThetaHPKESharedDirectory(void) {
     return nil;
 }
 
-void ThetaHPKEDumpStatus(void) {
-    gStoreResolved = NO;
-    gStoreDir = nil;
-    (void)ThetaHPKESharedDirectory();
+/* keys.plist: { <account, or "" without one> : { "data": NSData, "generic": NSData (optional) } }
+   for THETA_HPKE_SERVICE. Up to 2026-11 every key had a hash-named file plus a service-named
+   alias; ThetaHPKEMigrateLegacyFiles folds those in once. */
+static NSString *const kThetaHPKEStoreFile = @"keys.plist";
+
+static NSObject *ThetaHPKELock(void) {
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    return lock;
 }
 
-void ThetaHPKEMirrorKeychain(NSString *preferredGroup, NSString *wildcardGroup) {
-    NSArray<NSString *> *services = @[
-        @"com.instagram.notifications.hpke",
-        @"instagram.notifications.hpke",
-        @"com.instagram.hpke",
-    ];
+static NSData *ThetaHPKECData(CFDictionaryRef dict, CFStringRef key) {
+    if (!dict) return nil;
+    CFTypeRef v = CFDictionaryGetValue(dict, key);
+    if (!v || CFGetTypeID(v) != CFDataGetTypeID()) return nil;
+    return (__bridge NSData *)v;
+}
+
+static NSDictionary *ThetaHPKEItem(NSData *data, NSData *generic) {
+    if (![data isKindOfClass:[NSData class]]) return nil;
+    if (![generic isKindOfClass:[NSData class]]) return @{ @"data" : data };
+    return @{ @"data" : data, @"generic" : generic };
+}
+
+static BOOL ThetaHPKEIsMissingFile(NSError *err) {
+    return [err.domain isEqualToString:NSCocoaErrorDomain] && err.code == NSFileReadNoSuchFileError;
+}
+
+/* The items in the file, empty if there is none, or nil if it exists but can't be read (before
+   the first unlock), so a write never replaces keys it couldn't see. */
+static NSMutableDictionary *ThetaHPKELoadItems(NSURL *dir) {
+    NSError *err = nil;
+    NSData *raw = [NSData dataWithContentsOfURL:[dir URLByAppendingPathComponent:kThetaHPKEStoreFile]
+                                        options:0
+                                          error:&err];
+    if (!raw) {
+        if (ThetaHPKEIsMissingFile(err)) return [NSMutableDictionary dictionary];
+        ThetaHPKELog(@"key file unreadable: %@", err);
+        return nil;
+    }
+    id plist = [NSPropertyListSerialization propertyListWithData:raw
+                                                          options:NSPropertyListImmutable
+                                                           format:NULL
+                                                            error:NULL];
+    NSMutableDictionary *items = [NSMutableDictionary dictionary];
+    if (![plist isKindOfClass:[NSDictionary class]]) return items;
+    [(NSDictionary *)plist enumerateKeysAndObjectsUsingBlock:^(id account, id item, __unused BOOL *stop) {
+        if (![account isKindOfClass:[NSString class]] || ![item isKindOfClass:[NSDictionary class]]) return;
+        NSDictionary *clean = ThetaHPKEItem(item[@"data"], item[@"generic"]);
+        if (clean) items[account] = clean;
+    }];
+    return items;
+}
+
+static BOOL ThetaHPKEWriteItems(NSURL *dir, NSDictionary *items) {
+    NSURL *url = [dir URLByAppendingPathComponent:kThetaHPKEStoreFile];
+    NSError *err = nil;
+    if (!items.count) {
+        BOOL ok = [[NSFileManager defaultManager] removeItemAtURL:url error:&err] ||
+                  ([err.domain isEqualToString:NSCocoaErrorDomain] && err.code == NSFileNoSuchFileError);
+        ThetaHPKELog(@"key file removed ok=%d", ok);
+        return ok;
+    }
+    NSData *plist = [NSPropertyListSerialization dataWithPropertyList:items
+                                                               format:NSPropertyListBinaryFormat_v1_0
+                                                              options:0
+                                                                error:&err];
+    // The NSE reads the key while the phone is locked, so not NSFileProtectionComplete.
+    BOOL ok = plist && [plist writeToURL:url
+                                 options:NSDataWritingAtomic | NSDataWritingFileProtectionCompleteUntilFirstUserAuthentication
+                                   error:&err];
+    ThetaHPKELog(@"key file written items=%lu ok=%d err=%@", (unsigned long)items.count, ok, err);
+    return ok;
+}
+
+/* Fold the pre-2026-11 per-item and alias files into keys.plist, then delete them (all of them:
+   the old "notif" match also stored unrelated items there). Retried until it succeeds. */
+static void ThetaHPKEMigrateLegacyFiles(NSURL *dir) {
+    static BOOL done;
+    if (done) return;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray<NSURL *> *files = [fm contentsOfDirectoryAtURL:dir
+                                includingPropertiesForKeys:nil
+                                                   options:NSDirectoryEnumerationSkipsHiddenFiles
+                                                     error:NULL];
+    NSMutableArray<NSURL *> *legacy = [NSMutableArray array];
+    NSMutableDictionary *found = [NSMutableDictionary dictionary];
+    for (NSURL *file in files) {
+        if (![file.pathExtension isEqualToString:@"plist"] ||
+            [file.lastPathComponent isEqualToString:kThetaHPKEStoreFile]) continue;
+        NSData *raw = [NSData dataWithContentsOfURL:file options:0 error:NULL];
+        if (!raw) return; // locked: try again on the next store access
+        [legacy addObject:file];
+        id stored = [NSPropertyListSerialization propertyListWithData:raw options:NSPropertyListImmutable format:NULL error:NULL];
+        if (![stored isKindOfClass:[NSDictionary class]] ||
+            ![stored[@"service"] isEqual:THETA_HPKE_SERVICE]) continue;
+        NSDictionary *item = ThetaHPKEItem(stored[@"data"], stored[@"generic"]);
+        NSString *account = [stored[@"account"] isKindOfClass:[NSString class]] ? stored[@"account"] : @"";
+        if (item && !found[account]) found[account] = item;
+    }
+    if (legacy.count) {
+        NSMutableDictionary *items = ThetaHPKELoadItems(dir);
+        if (!items) return;
+        BOOL changed = NO;
+        for (NSString *account in found) {
+            if (items[account]) continue;
+            items[account] = found[account];
+            changed = YES;
+        }
+        if (changed && !ThetaHPKEWriteItems(dir, items)) return;
+        for (NSURL *file in legacy) [fm removeItemAtURL:file error:NULL];
+        ThetaHPKELog(@"migrated %lu legacy files, %lu keys", (unsigned long)legacy.count, (unsigned long)found.count);
+    }
+    done = YES;
+}
+
+/* Load the items, apply `change`, and write the file only if they differ. */
+static void ThetaHPKEChangeItems(void (^change)(NSMutableDictionary *items)) {
+    @synchronized (ThetaHPKELock()) {
+        NSURL *dir = ThetaHPKESharedDirectory();
+        if (!dir) return;
+        ThetaHPKEMigrateLegacyFiles(dir);
+        NSMutableDictionary *items = ThetaHPKELoadItems(dir);
+        if (!items) return;
+        NSDictionary *before = [items copy];
+        change(items);
+        if (![items isEqualToDictionary:before]) ThetaHPKEWriteItems(dir, items);
+    }
+}
+
+void ThetaHPKEDumpStatus(void) {
+    @synchronized (ThetaHPKELock()) {
+        gStoreResolved = NO;
+        gStoreDir = nil;
+        NSURL *dir = ThetaHPKESharedDirectory();
+        if (dir) ThetaHPKEMigrateLegacyFiles(dir);
+    }
+}
+
+void ThetaHPKEMirrorKeychain(ThetaSecItemCopyMatchingFn copyMatching, NSString *preferredGroup, NSString *wildcardGroup) {
+    if (!copyMatching) copyMatching = SecItemCopyMatching;
     NSMutableArray *groups = [NSMutableArray arrayWithObject:[NSNull null]];
     if (preferredGroup.length) [groups addObject:preferredGroup];
     if (wildcardGroup.length && ![wildcardGroup isEqualToString:preferredGroup])
         [groups addObject:wildcardGroup];
-    __unused int found = 0;
-    for (NSString *svc in services) {
-        for (id group in groups) {
-            NSMutableDictionary *query = [@{
-                (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
-                (__bridge id)kSecAttrService : svc,
-                (__bridge id)kSecReturnData : @YES,
-                (__bridge id)kSecReturnAttributes : @YES,
-                (__bridge id)kSecMatchLimit : (__bridge id)kSecMatchLimitAll,
-            } mutableCopy];
-            if (group != [NSNull null])
-                query[(__bridge id)kSecAttrAccessGroup] = group;
-            CFTypeRef result = NULL;
-            OSStatus st = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
-            if (st == errSecSuccess && result) {
-                NSArray *items = CFGetTypeID(result) == CFArrayGetTypeID()
-                    ? (__bridge NSArray *)result
-                    : @[ (__bridge id)result ];
-                for (id item in items) {
-                    if ([item isKindOfClass:[NSDictionary class]]) {
-                        ThetaHPKESave((__bridge CFDictionaryRef)item);
-                        found++;
-                    } else if ([item isKindOfClass:[NSData class]]) {
-                        NSMutableDictionary *attrs = [query mutableCopy];
-                        attrs[(__bridge id)kSecValueData] = item;
-                        ThetaHPKESave((__bridge CFDictionaryRef)attrs);
-                        found++;
-                    }
-                }
-                CFRelease(result);
-            } else {
-                ThetaHPKELog(@"mirror svc=%@ group=%@ st=%d", svc,
-                             group == [NSNull null] ? @"(default)" : group, (int)st);
+    NSMutableDictionary *found = [NSMutableDictionary dictionary];
+    BOOL clean = YES;
+    for (id group in groups) {
+        NSMutableDictionary *query = [@{
+            (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
+            (__bridge id)kSecAttrService : THETA_HPKE_SERVICE,
+            (__bridge id)kSecReturnData : @YES,
+            (__bridge id)kSecReturnAttributes : @YES,
+            (__bridge id)kSecMatchLimit : (__bridge id)kSecMatchLimitAll,
+        } mutableCopy];
+        if (group != [NSNull null])
+            query[(__bridge id)kSecAttrAccessGroup] = group;
+        CFTypeRef result = NULL;
+        OSStatus st = copyMatching((__bridge CFDictionaryRef)query, &result);
+        if (st == errSecSuccess && result) {
+            NSArray *items = CFGetTypeID(result) == CFArrayGetTypeID()
+                ? (__bridge NSArray *)result
+                : @[ (__bridge id)result ];
+            for (NSDictionary *item in items) {
+                if (![item isKindOfClass:[NSDictionary class]]) continue;
+                NSDictionary *entry = ThetaHPKEItem(item[(__bridge id)kSecValueData], item[(__bridge id)kSecAttrGeneric]);
+                id account = item[(__bridge id)kSecAttrAccount];
+                NSString *key = [account isKindOfClass:[NSString class]] ? account : @"";
+                if (entry && !found[key]) found[key] = entry;
             }
+        } else if (st != errSecItemNotFound) {
+            clean = NO;
         }
+        if (result) CFRelease(result);
+        ThetaHPKELog(@"mirror group=%@ st=%d", group == [NSNull null] ? @"(default)" : group, (int)st);
     }
-    ThetaHPKELog(@"mirror done found=%d store=%@", found, gStoreDir.path ?: @"(none)");
-}
-
-static NSString *ThetaHPKEFileName(NSString *service, NSString *account) {
-    NSString *raw = [NSString stringWithFormat:@"%@|%@", service ?: @"", account ?: @""];
-    NSUInteger hash = raw.hash;
-    return [NSString stringWithFormat:@"%lx.plist", (unsigned long)hash];
-}
-
-static NSURL *ThetaHPKEFileURL(CFDictionaryRef dict) {
-    NSURL *dir = ThetaHPKESharedDirectory();
-    if (!dir) return nil;
-    NSString *svc = ThetaHPKECString(dict, kSecAttrService);
-    NSString *acc = ThetaHPKECString(dict, kSecAttrAccount);
-    if (!svc.length) return nil;
-    return [dir URLByAppendingPathComponent:ThetaHPKEFileName(svc, acc)];
-}
-
-static void ThetaHPKEWriteDict(CFDictionaryRef dict) {
-    NSURL *url = ThetaHPKEFileURL(dict);
-    if (!url) return;
-    NSMutableDictionary *out = [NSMutableDictionary dictionary];
-    NSString *svc = ThetaHPKECString(dict, kSecAttrService);
-    NSString *acc = ThetaHPKECString(dict, kSecAttrAccount);
-    if (svc) out[@"service"] = svc;
-    if (acc) out[@"account"] = acc;
-    CFTypeRef data = CFDictionaryGetValue(dict, kSecValueData);
-    if (data && CFGetTypeID(data) == CFDataGetTypeID()) {
-        out[@"data"] = (__bridge NSData *)data;
-    }
-    CFTypeRef generic = CFDictionaryGetValue(dict, kSecAttrGeneric);
-    if (generic && CFGetTypeID(generic) == CFDataGetTypeID()) {
-        out[@"generic"] = (__bridge NSData *)generic;
-    }
-    NSError *err = nil;
-    NSData *plist = [NSPropertyListSerialization dataWithPropertyList:out
-                                                               format:NSPropertyListBinaryFormat_v1_0
-                                                              options:0
-                                                                error:&err];
-    if (!plist || ![plist writeToURL:url atomically:YES]) {
-        ThetaHPKELog(@"failed to write %@: %@", url.path, err);
-        return;
-    }
-    if (svc.length) {
-        NSString *safe = [[svc componentsSeparatedByCharactersInSet:
-                           [[NSCharacterSet alphanumericCharacterSet] invertedSet]]
-                          componentsJoinedByString:@"_"];
-        NSURL *alias = [[url URLByDeletingLastPathComponent]
-                        URLByAppendingPathComponent:[safe stringByAppendingString:@".plist"]];
-        [plist writeToURL:alias atomically:YES];
-    }
-    ThetaHPKELog(@"saved svc=%@ acc=%@", svc, acc);
+    // With a clean read the keychain is the truth: keys it no longer has leave the file too.
+    ThetaHPKEChangeItems(^(NSMutableDictionary *items) {
+        if (clean) [items setDictionary:found];
+        else [items addEntriesFromDictionary:found];
+    });
+    ThetaHPKELog(@"mirror done found=%lu clean=%d store=%@", (unsigned long)found.count, clean, gStoreDir.path ?: @"(none)");
 }
 
 void ThetaHPKESave(CFDictionaryRef attributes) {
     if (!ThetaHPKEDictIsHPKE(attributes)) return;
-    ThetaHPKEWriteDict(attributes);
+    NSDictionary *item = ThetaHPKEItem(ThetaHPKECData(attributes, kSecValueData),
+                                       ThetaHPKECData(attributes, kSecAttrGeneric));
+    if (!item) return;
+    NSString *account = ThetaHPKECString(attributes, kSecAttrAccount) ?: @"";
+    ThetaHPKEChangeItems(^(NSMutableDictionary *items) { items[account] = item; });
 }
 
 void ThetaHPKESaveFromQueryAndAttrs(CFDictionaryRef query, CFDictionaryRef attrs) {
-    if (!ThetaHPKEDictIsHPKE(query) && !ThetaHPKEDictIsHPKE(attrs)) return;
-    NSMutableDictionary *merged = [NSMutableDictionary dictionary];
-    if (query) [merged addEntriesFromDictionary:(__bridge NSDictionary *)query];
-    if (attrs) [merged addEntriesFromDictionary:(__bridge NSDictionary *)attrs];
-    ThetaHPKEWriteDict((__bridge CFDictionaryRef)merged);
+    if (!ThetaHPKEDictIsHPKE(query) || !attrs) return;
+    NSString *account = ThetaHPKECString(query, kSecAttrAccount);
+    NSString *renamed = ThetaHPKECString(attrs, kSecAttrAccount);
+    NSData *data = ThetaHPKECData(attrs, kSecValueData);
+    NSData *generic = ThetaHPKECData(attrs, kSecAttrGeneric);
+    if (!data && !generic && !renamed) return;
+    ThetaHPKEChangeItems(^(NSMutableDictionary *items) {
+        NSArray *matching = account ? (items[account] ? @[ account ] : @[]) : items.allKeys;
+        for (NSString *key in matching) {
+            NSDictionary *old = items[key];
+            NSDictionary *item = ThetaHPKEItem(data ?: old[@"data"], generic ?: old[@"generic"]);
+            [items removeObjectForKey:key];
+            items[renamed ?: key] = item;
+        }
+        // Not in the file yet: only an update that carries the key itself creates an entry.
+        if (!matching.count && account && data)
+            items[renamed ?: account] = ThetaHPKEItem(data, generic);
+    });
 }
 
-static NSURL *ThetaHPKEFindStoredURL(CFDictionaryRef query) {
-    NSURL *exact = ThetaHPKEFileURL(query);
-    if (exact && [[NSFileManager defaultManager] fileExistsAtPath:exact.path]) return exact;
-    NSURL *dir = ThetaHPKESharedDirectory();
-    if (!dir) return nil;
-    NSString *want = ThetaHPKECString(query, kSecAttrService).lowercaseString;
-    NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:dir
-                                                  includingPropertiesForKeys:nil
-                                                                     options:NSDirectoryEnumerationSkipsHiddenFiles
-                                                                       error:NULL];
-    for (NSURL *file in files) {
-        if (![file.pathExtension isEqualToString:@"plist"]) continue;
-        NSDictionary *stored = [NSDictionary dictionaryWithContentsOfURL:file];
-        NSString *svc = [stored[@"service"] description].lowercaseString;
-        if (want.length && [svc isEqualToString:want]) return file;
-        if (!want.length && [svc containsString:@"hpke"]) return file;
-    }
-    return exact;
-}
-
-OSStatus ThetaHPKECopyMatching(CFDictionaryRef query, CFTypeRef *result) {
-    if (!ThetaHPKEDictIsHPKE(query)) return errSecItemNotFound;
-    NSURL *url = ThetaHPKEFindStoredURL(query);
-    if (!url) return errSecItemNotFound;
-    NSData *raw = [NSData dataWithContentsOfURL:url];
-    if (!raw.length) return errSecItemNotFound;
-    NSDictionary *stored = [NSPropertyListSerialization propertyListWithData:raw
-                                                                    options:NSPropertyListImmutable
-                                                                     format:NULL
-                                                                      error:NULL];
-    if (![stored isKindOfClass:[NSDictionary class]] || !stored.count) return errSecItemNotFound;
-
-    BOOL wantData = CFDictionaryContainsKey(query, kSecReturnData) &&
-                    CFBooleanGetValue((CFBooleanRef)CFDictionaryGetValue(query, kSecReturnData));
-    BOOL wantAttrs = CFDictionaryContainsKey(query, kSecReturnAttributes) &&
-                     CFBooleanGetValue((CFBooleanRef)CFDictionaryGetValue(query, kSecReturnAttributes));
-    if (!wantData && !wantAttrs) wantData = YES;
-
-    NSMutableDictionary *attrs = [NSMutableDictionary dictionary];
-    id svc = stored[@"service"];
-    id acc = stored[@"account"];
-    id gen = stored[@"generic"];
-    if (svc) attrs[(__bridge id)kSecAttrService] = svc;
-    if (acc) attrs[(__bridge id)kSecAttrAccount] = acc;
-    if (gen) attrs[(__bridge id)kSecAttrGeneric] = gen;
-    NSData *data = stored[@"data"];
-
-    if (result) {
-        if (wantData && !wantAttrs) {
-            *result = data ? CFBridgingRetain(data) : NULL;
-            if (!data) return errSecItemNotFound;
-        } else {
-            if (wantData && data) attrs[(__bridge id)kSecValueData] = data;
-            *result = CFBridgingRetain(attrs);
+void ThetaHPKESaveReadResult(CFDictionaryRef query, CFTypeRef result) {
+    if (!result || !ThetaHPKEDictIsHPKE(query)) return;
+    NSString *queried = ThetaHPKECString(query, kSecAttrAccount);
+    NSMutableDictionary *full = [NSMutableDictionary dictionary];      // read with attributes
+    NSMutableDictionary *dataOnly = [NSMutableDictionary dictionary];  // generic not returned
+    NSArray *results = CFGetTypeID(result) == CFArrayGetTypeID()
+        ? (__bridge NSArray *)result
+        : @[ (__bridge id)result ];
+    for (id r in results) {
+        if ([r isKindOfClass:[NSData class]]) {
+            // A bare value only says which item it is when the query named the account.
+            if (queried && results.count == 1) dataOnly[queried] = r;
+        } else if ([r isKindOfClass:[NSDictionary class]]) {
+            NSDictionary *item = ThetaHPKEItem(r[(__bridge id)kSecValueData], r[(__bridge id)kSecAttrGeneric]);
+            id account = r[(__bridge id)kSecAttrAccount] ?: queried;
+            if (item) full[[account isKindOfClass:[NSString class]] ? account : @""] = item;
         }
     }
-    ThetaHPKELog(@"loaded svc=%@ bytes=%lu", svc, (unsigned long)data.length);
+    if (!full.count && !dataOnly.count) return;
+    ThetaHPKEChangeItems(^(NSMutableDictionary *items) {
+        [items addEntriesFromDictionary:full];
+        for (NSString *account in dataOnly)
+            items[account] = ThetaHPKEItem(dataOnly[account], items[account][@"generic"]);
+    });
+}
+
+void ThetaHPKEDelete(CFDictionaryRef query, OSStatus status) {
+    if (!ThetaHPKEDictIsHPKE(query)) return;
+    NSString *account = ThetaHPKECString(query, kSecAttrAccount);
+    // Not found in the keychain means a stale entry, but only an account says which one.
+    if (status != errSecSuccess && !(status == errSecItemNotFound && account)) return;
+    ThetaHPKEChangeItems(^(NSMutableDictionary *items) {
+        if (account) [items removeObjectForKey:account];
+        else [items removeAllObjects];
+    });
+}
+
+static BOOL ThetaHPKEQueryFlag(CFDictionaryRef query, CFStringRef key) {
+    CFTypeRef v = CFDictionaryGetValue(query, key);
+    if (!v) return NO;
+    if (CFGetTypeID(v) == CFBooleanGetTypeID()) return CFBooleanGetValue((CFBooleanRef)v);
+    if (CFGetTypeID(v) == CFNumberGetTypeID()) return [(__bridge NSNumber *)v boolValue];
+    return NO;
+}
+
+/* Answer a query the keychain couldn't, in the shape the keychain would: one item, or an array
+   when kSecMatchLimit is kSecMatchLimitAll or a count. */
+OSStatus ThetaHPKECopyMatching(CFDictionaryRef query, CFTypeRef *result) {
+    if (!ThetaHPKEDictIsHPKE(query)) return errSecItemNotFound;
+    NSDictionary *items = nil;
+    @synchronized (ThetaHPKELock()) {
+        NSURL *dir = ThetaHPKESharedDirectory();
+        if (dir) {
+            ThetaHPKEMigrateLegacyFiles(dir);
+            items = ThetaHPKELoadItems(dir);
+        }
+    }
+    NSString *account = ThetaHPKECString(query, kSecAttrAccount);
+    NSArray *keys = account ? (items[account] ? @[ account ] : @[])
+                            : [items.allKeys sortedArrayUsingSelector:@selector(compare:)];
+    if (!keys.count) return errSecItemNotFound;
+
+    CFTypeRef limit = CFDictionaryGetValue(query, kSecMatchLimit);
+    BOOL asArray = NO;
+    NSUInteger max = 1;
+    if (limit && CFEqual(limit, kSecMatchLimitAll)) {
+        asArray = YES;
+        max = NSUIntegerMax;
+    } else if (limit && CFGetTypeID(limit) == CFNumberGetTypeID()) {
+        asArray = YES;
+        max = MAX([(__bridge NSNumber *)limit unsignedIntegerValue], (NSUInteger)1);
+    }
+    BOOL wantData = ThetaHPKEQueryFlag(query, kSecReturnData);
+    BOOL wantAttrs = ThetaHPKEQueryFlag(query, kSecReturnAttributes);
+    if (!wantData && !wantAttrs) wantData = YES;
+
+    NSMutableArray *out = [NSMutableArray array];
+    for (NSString *key in keys) {
+        if (out.count >= max) break;
+        NSDictionary *item = items[key];
+        if (wantData && !wantAttrs) {
+            [out addObject:item[@"data"]];
+            continue;
+        }
+        NSMutableDictionary *attrs = [NSMutableDictionary dictionary];
+        attrs[(__bridge id)kSecClass] = (__bridge id)kSecClassGenericPassword;
+        attrs[(__bridge id)kSecAttrService] = THETA_HPKE_SERVICE;
+        if (key.length) attrs[(__bridge id)kSecAttrAccount] = key;
+        if (item[@"generic"]) attrs[(__bridge id)kSecAttrGeneric] = item[@"generic"];
+        if (wantData) attrs[(__bridge id)kSecValueData] = item[@"data"];
+        [out addObject:attrs];
+    }
+    if (result) *result = CFBridgingRetain(asArray ? [out copy] : out.firstObject);
+    ThetaHPKELog(@"loaded %lu of %lu keys from file", (unsigned long)out.count, (unsigned long)items.count);
     return errSecSuccess;
+}
+
+OSStatus ThetaSecItemUpdateDuplicate(CFDictionaryRef attributes, ThetaSecItemUpdateFn update) {
+    if (!update || !attributes || CFGetTypeID(attributes) != CFDictionaryGetTypeID()) return errSecDuplicateItem;
+    CFTypeRef cls = CFDictionaryGetValue(attributes, kSecClass);
+    if (!cls || !(CFEqual(cls, kSecClassGenericPassword) || CFEqual(cls, kSecClassInternetPassword)))
+        return errSecDuplicateItem;
+    if (!ThetaHPKECData(attributes, kSecValueData)) return errSecDuplicateItem;
+
+    // The password classes' primary key (what made the add a duplicate), and the values to store.
+    const CFStringRef queryKeys[] = {
+        kSecClass, kSecAttrAccessGroup, kSecAttrSynchronizable, kSecAttrService, kSecAttrAccount,
+        kSecAttrServer, kSecAttrProtocol, kSecAttrPort, kSecAttrPath, kSecAttrSecurityDomain,
+        kSecAttrAuthenticationType,
+    };
+    const CFStringRef updateKeys[] = {
+        kSecValueData, kSecAttrGeneric, kSecAttrLabel, kSecAttrComment, kSecAttrDescription,
+        kSecAttrType, kSecAttrCreator, kSecAttrIsInvisible, kSecAttrIsNegative, kSecAttrAccessible,
+    };
+    NSDictionary *added = (__bridge NSDictionary *)attributes;
+    NSMutableDictionary *query = [NSMutableDictionary dictionary];
+    NSMutableDictionary *values = [NSMutableDictionary dictionary];
+    for (size_t i = 0; i < sizeof(queryKeys) / sizeof(queryKeys[0]); i++) {
+        id v = added[(__bridge id)queryKeys[i]];
+        if (v) query[(__bridge id)queryKeys[i]] = v;
+    }
+    for (size_t i = 0; i < sizeof(updateKeys) / sizeof(updateKeys[0]); i++) {
+        id v = added[(__bridge id)updateKeys[i]];
+        if (v) values[(__bridge id)updateKeys[i]] = v;
+    }
+    OSStatus st = update((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)values);
+    ThetaHPKELog(@"duplicate add of %@ updated st=%d", added[(__bridge id)kSecAttrService], (int)st);
+    return st;
 }

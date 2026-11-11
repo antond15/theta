@@ -56,13 +56,7 @@ static OSStatus hooked_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *res
     OSStatus status = real_SecItemCopyMatching(rewritten ? rewritten : query, result);
     if (rewritten) CFRelease(rewritten);
     if (status == errSecSuccess && result && *result && ThetaHPKEDictIsHPKE(query)) {
-        if (CFGetTypeID(*result) == CFDataGetTypeID()) {
-            NSMutableDictionary *attrs = [NSMutableDictionary dictionaryWithDictionary:(__bridge NSDictionary *)query];
-            attrs[(__bridge id)kSecValueData] = (__bridge NSData *)*result;
-            ThetaHPKESave((__bridge CFDictionaryRef)attrs);
-        } else if (CFGetTypeID(*result) == CFDictionaryGetTypeID()) {
-            ThetaHPKESaveFromQueryAndAttrs(query, (CFDictionaryRef)*result);
-        }
+        ThetaHPKESaveReadResult(query, *result);
         return status;
     }
     if (status != errSecSuccess && ThetaHPKEDictIsHPKE(query)) {
@@ -102,11 +96,16 @@ static void theta_rebindStrlenInFBShared(const struct mach_header *header, intpt
 static OSStatus hooked_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result) {
     if (!real_SecItemAdd) return -25243; // errSecUnimplemented
     CFDictionaryRef rewritten = SideloadSecItemDictCopy(attributes, NO);
-    OSStatus status = real_SecItemAdd(rewritten ? rewritten : attributes, result);
+    CFDictionaryRef added = rewritten ? rewritten : attributes;
+    OSStatus status = real_SecItemAdd(added, result);
+    // The group rewrite makes duplicates likelier; store the new password instead of keeping the
+    // old one. Other classes can't be updated this way and keep reporting success.
+    if (status == errSecDuplicateItem) {
+        status = ThetaSecItemUpdateDuplicate(added, real_SecItemUpdate);
+        if (status == errSecDuplicateItem) status = errSecSuccess;
+    }
     if (rewritten) CFRelease(rewritten);
-    ThetaHPKESave(attributes);
-    // Item already in the sideload keychain — that *is* persistence.
-    if (status == errSecDuplicateItem) return errSecSuccess;
+    if (status == errSecSuccess) ThetaHPKESave(attributes);
 #if THETA_DEBUG
     if (status != errSecSuccess) {
         fprintf(stderr, "[Theta] SecItemAdd failed status=%d (session may not persist)\n", (int)status);
@@ -123,7 +122,7 @@ static OSStatus hooked_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attr
     OSStatus status = real_SecItemUpdate(q ? q : query, a ? a : attributesToUpdate);
     if (q) CFRelease(q);
     if (a) CFRelease(a);
-    ThetaHPKESaveFromQueryAndAttrs(query, attributesToUpdate);
+    if (status == errSecSuccess) ThetaHPKESaveFromQueryAndAttrs(query, attributesToUpdate);
     return status;
 }
 
@@ -132,6 +131,7 @@ static OSStatus hooked_SecItemDelete(CFDictionaryRef query) {
     CFDictionaryRef rewritten = SideloadSecItemDictCopy(query, YES);
     OSStatus status = real_SecItemDelete(rewritten ? rewritten : query);
     if (rewritten) CFRelease(rewritten);
+    ThetaHPKEDelete(query, status);
     return status;
 }
 

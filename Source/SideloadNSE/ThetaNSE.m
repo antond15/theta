@@ -3,7 +3,7 @@
  * Full Theta.dylib is too large for the NSE jetsam cap and fishhook cannot
  * patch LC_DYLD_CHAINED_FIXUPS, so this dylib only:
  *   - Rebind SecItem* (remap Meta keychain groups onto the host app's)
- *   - Swizzle FB/UIC keychain accessGroup + app-group containerURL
+ *   - Swizzle FBKeychainItemController/UICKeyChainStore accessGroup + app-group containerURL
  *   - Silence DMs that share a reel when Mute Shared Reel Notifications is on
  */
 
@@ -21,6 +21,7 @@
 #import <stdio.h>
 #import <string.h>
 #import <stdarg.h>
+#import <stdatomic.h>
 #import "fishhook.h"
 #import "Source/SideloadNSE/ThetaHPKEKeyFile.h"
 
@@ -140,20 +141,10 @@ static BOOL ThetaNSESkipGroup(CFStringRef group) {
     return NO;
 }
 
-static BOOL ThetaNSEServiceNeedsHostGroup(CFDictionaryRef dict) {
-    CFTypeRef svc = CFDictionaryGetValue(dict, kSecAttrService);
-    if (!svc || CFGetTypeID(svc) != CFStringGetTypeID()) return NO;
-    char buf[256];
-    if (!CFStringGetCString((CFStringRef)svc, buf, sizeof(buf), kCFStringEncodingUTF8)) return NO;
-    for (char *p = buf; *p; p++)
-        if (*p >= 'A' && *p <= 'Z') *p = (char)(*p - 'A' + 'a');
-    return strstr(buf, "hpke") || strstr(buf, "notif");
-}
-
 static CFDictionaryRef ThetaNSERewriteDict(CFDictionaryRef dict, BOOL isQuery) {
     if (!dict || CFGetTypeID(dict) != CFDictionaryGetTypeID() || !gKeychainGroup.length) return NULL;
     CFTypeRef ag = CFDictionaryGetValue(dict, kSecAttrAccessGroup);
-    BOOL rewriteGroup = ThetaNSEServiceNeedsHostGroup(dict) ||
+    BOOL rewriteGroup = ThetaHPKEDictIsHPKE(dict) ||
                         ((ag != NULL) && !ThetaNSESkipGroup((CFStringRef)ag));
     BOOL hasSync = CFDictionaryContainsKey(dict, kSecAttrSynchronizable);
     if (!rewriteGroup && !hasSync) return NULL;
@@ -178,15 +169,6 @@ static void ThetaNSELogSecStatus(const char *op, OSStatus st) {
     ThetaNSELog("%s status=%d group=%s", op, (int)st, gKeychainGroup.UTF8String ?: "(null)");
 }
 
-static BOOL ThetaNSEBlobLooksHPKE(const char *s) {
-    if (!s || !s[0]) return NO;
-    for (const char *p = s; *p; p++) {
-        char c = (*p >= 'A' && *p <= 'Z') ? (char)(*p - 'A' + 'a') : *p;
-        if ((c == 'h' && strstr(p, "hpke")) || (c == 'n' && strstr(p, "notif"))) return YES;
-    }
-    return NO;
-}
-
 static void ThetaNSECopyCFString(CFDictionaryRef dict, CFStringRef key, char *out, size_t outLen) {
     out[0] = 0;
     if (!dict || outLen < 2) return;
@@ -203,7 +185,7 @@ static void ThetaNSELogQuery(const char *op, CFDictionaryRef query, OSStatus st)
     ThetaNSECopyCFString(query, kSecAttrAccount, acc, sizeof(acc));
     ThetaNSECopyCFString(query, kSecAttrAccessGroup, ag, sizeof(ag));
     BOOL interesting = (st != errSecSuccess && st != errSecItemNotFound && st != errSecDuplicateItem);
-    if (ThetaNSEBlobLooksHPKE(svc) || ThetaNSEBlobLooksHPKE(acc) || ThetaHPKEDictIsHPKE(query))
+    if (ThetaHPKEDictIsHPKE(query))
         interesting = YES;
     if (gSecLogLeft > 0) {
         interesting = YES;
@@ -258,10 +240,15 @@ static OSStatus hooked_CopyMatching(CFDictionaryRef query, CFTypeRef *result) {
 static OSStatus hooked_Add(CFDictionaryRef attributes, CFTypeRef *result) {
     if (!real_SecItemAdd) return (OSStatus)-4;
     CFDictionaryRef rewritten = ThetaNSERewriteDict(attributes, NO);
-    OSStatus st = real_SecItemAdd(rewritten ? rewritten : attributes, result);
+    CFDictionaryRef added = rewritten ? rewritten : attributes;
+    OSStatus st = real_SecItemAdd(added, result);
+    // Store the new password instead of keeping the old one; other classes keep reporting success.
+    if (st == errSecDuplicateItem) {
+        st = ThetaSecItemUpdateDuplicate(added, real_SecItemUpdate);
+        if (st == errSecDuplicateItem) st = errSecSuccess;
+    }
     if (rewritten) CFRelease(rewritten);
-    ThetaHPKESave(attributes);
-    if (st == errSecDuplicateItem) return errSecSuccess;
+    if (st == errSecSuccess) ThetaHPKESave(attributes);
     ThetaNSELogSecStatus("SecItemAdd", st);
     return st;
 }
@@ -273,7 +260,7 @@ static OSStatus hooked_Update(CFDictionaryRef query, CFDictionaryRef attrs) {
     OSStatus st = real_SecItemUpdate(q ? q : query, a ? a : attrs);
     if (q) CFRelease(q);
     if (a) CFRelease(a);
-    ThetaHPKESaveFromQueryAndAttrs(query, attrs);
+    if (st == errSecSuccess) ThetaHPKESaveFromQueryAndAttrs(query, attrs);
     return st;
 }
 
@@ -282,14 +269,18 @@ static OSStatus hooked_Delete(CFDictionaryRef query) {
     CFDictionaryRef rewritten = ThetaNSERewriteDict(query, YES);
     OSStatus st = real_SecItemDelete(rewritten ? rewritten : query);
     if (rewritten) CFRelease(rewritten);
+    ThetaHPKEDelete(query, st);
     return st;
 }
 
-static NSString *hook_accessGroup(id self, SEL _cmd) {
+static NSString *hook_fbAccessGroup(id self, SEL _cmd) {
     if (gKeychainGroup.length) return gKeychainGroup;
-    if (orig_fbAccessGroup) return orig_fbAccessGroup(self, _cmd);
-    if (orig_uicAccessGroup) return orig_uicAccessGroup(self, _cmd);
-    return nil;
+    return orig_fbAccessGroup ? orig_fbAccessGroup(self, _cmd) : nil;
+}
+
+static NSString *hook_uicAccessGroup(id self, SEL _cmd) {
+    if (gKeychainGroup.length) return gKeychainGroup;
+    return orig_uicAccessGroup ? orig_uicAccessGroup(self, _cmd) : nil;
 }
 
 static id hook_uicStore(id self, SEL _cmd, id service, id group) {
@@ -335,8 +326,6 @@ static BOOL hook_mkdir(id self, SEL _cmd, NSString *path, BOOL intermediates, NS
     }
     return NO;
 }
-
-static void ThetaNSERebindAllNow(const char *why);
 
 static void ThetaNSESwizzle(Class cls, SEL sel, IMP neo, void **orig) {
     if (!cls || !sel || !neo) return;
@@ -398,11 +387,14 @@ static void ThetaNSELogAppImages(const char *why) {
 }
 #endif
 
-static id (*orig_getEnc4)(id, SEL, id, id, id, NSError **);
-static id hook_getEnc4(id self, SEL _cmd, id keyFor, id group, id accessible, NSError **err) {
-    ThetaNSELog("getEnc4 for=%s group=%s rewrite=%s",
-                [[keyFor description] UTF8String] ?: "-",
+/* +[MetaHPKEManager getEncryptionInfoFor:…]: the key type is an NSInteger (`q` in 451's type
+   encoding), not an object. */
+static id (*orig_getEnc4)(id, SEL, NSInteger, id, id, NSError **);
+static id hook_getEnc4(id self, SEL _cmd, NSInteger keyFor, id group, id accessible, NSError **err) {
+    ThetaNSELog("getEnc4 for=%ld group=%s accessible=%s rewrite=%s",
+                (long)keyFor,
                 [[group description] UTF8String] ?: "-",
+                [[accessible description] UTF8String] ?: "-",
                 gKeychainGroup.UTF8String ?: "-");
     NSError *local = nil;
     id info = orig_getEnc4 ? orig_getEnc4(self, _cmd, keyFor, gKeychainGroup.length ? gKeychainGroup : group, accessible, &local) : nil;
@@ -413,12 +405,18 @@ static id hook_getEnc4(id self, SEL _cmd, id keyFor, id group, id accessible, NS
     return info;
 }
 
-static id (*orig_getEnc2)(id, SEL, id, NSError **);
-static id hook_getEnc2(id self, SEL _cmd, id keyFor, NSError **err) {
-    ThetaNSELog("getEnc2 for=%s", [[keyFor description] UTF8String] ?: "-");
+/* Instagram's own 2-argument version passes kSecAttrAccessibleAlwaysThisDeviceOnly; only the
+   access group differs here. */
+static id (*orig_getEnc2)(id, SEL, NSInteger, NSError **);
+static id hook_getEnc2(id self, SEL _cmd, NSInteger keyFor, NSError **err) {
+    ThetaNSELog("getEnc2 for=%ld", (long)keyFor);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    id accessible = (__bridge id)kSecAttrAccessibleAlwaysThisDeviceOnly;
+#pragma clang diagnostic pop
     if (orig_getEnc4)
         return hook_getEnc4(self, @selector(getEncryptionInfoFor:accessGroup:secAttrAccessible:error:),
-                            keyFor, gKeychainGroup, nil, err);
+                            keyFor, gKeychainGroup, accessible, err);
     return orig_getEnc2 ? orig_getEnc2(self, _cmd, keyFor, err) : nil;
 }
 
@@ -433,7 +431,12 @@ static NSString *ThetaNSEStringValue(id obj, NSString *key) {
     return [value isKindOfClass:[NSString class]] ? value : nil;
 }
 
-static BOOL ThetaNSEIsMutedReelShare(id request, id content) {
+static BOOL ThetaNSEMuteReelSharesEnabled(void) {
+    NSUserDefaults *shared = [[NSUserDefaults alloc] initWithSuiteName:THETA_SHARED_SUITE];
+    return [shared boolForKey:THETA_SHARED_MUTE_REEL_SHARES];
+}
+
+static BOOL ThetaNSEIsReelShare(id request, id content) {
     NSString *category = ThetaNSEStringValue(content, @"categoryIdentifier");
     if (!category.length) {
         id original = nil;
@@ -441,9 +444,7 @@ static BOOL ThetaNSEIsMutedReelShare(id request, id content) {
         category = ThetaNSEStringValue(original, @"categoryIdentifier");
     }
     ThetaNSELog("delivering category=%s", category.UTF8String ?: "-");
-    if (![category isEqualToString:kThetaNSEClipsShareCategory]) return NO;
-    NSUserDefaults *shared = [[NSUserDefaults alloc] initWithSuiteName:THETA_SHARED_SUITE];
-    return [shared boolForKey:THETA_SHARED_MUTE_REEL_SHARES];
+    return [category isEqualToString:kThetaNSEClipsShareCategory];
 }
 
 /* Dropping a push outright needs the filtering entitlement, which a sideload can't have. Deliver
@@ -462,12 +463,53 @@ static id ThetaNSESilencedContent(id content) {
     return quiet;
 }
 
-static void ThetaNSERemoveDelivered(NSString *identifier) {
-    if (!identifier.length) return;
+static id ThetaNSENotificationCenter(void) {
     Class centerClass = objc_getClass("UNUserNotificationCenter");
-    if (!centerClass) return;
+    if (!centerClass) return nil;
+    return ((id (*)(Class, SEL))objc_msgSend)(centerClass, @selector(currentNotificationCenter));
+}
+
+/* A muted reel share is only posted after the content handler is called, and iOS may suspend the
+   extension right after, so the removal of the current one is best effort. This sweep removes
+   any earlier one still in Notification Center, then calls `done`, at the latest after 1 s. */
+static void ThetaNSESweepMutedReelShares(dispatch_block_t done) {
+    id center = ThetaNSENotificationCenter();
+    SEL getSel = @selector(getDeliveredNotificationsWithCompletionHandler:);
+    if (![center respondsToSelector:getSel]) {
+        done();
+        return;
+    }
+    __block atomic_flag called = ATOMIC_FLAG_INIT;
+    dispatch_block_t once = ^{
+        if (!atomic_flag_test_and_set(&called)) done();
+    };
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), once);
+    void (^completion)(NSArray *) = ^(NSArray *delivered) {
+        NSMutableArray<NSString *> *ids = [NSMutableArray array];
+        for (id notification in delivered) {
+            NSString *category = nil, *identifier = nil;
+            @try {
+                category = [notification valueForKeyPath:@"request.content.categoryIdentifier"];
+                identifier = [notification valueForKeyPath:@"request.identifier"];
+            } @catch (__unused NSException *e) {}
+            if ([category isKindOfClass:[NSString class]] && [category isEqualToString:kThetaNSEClipsShareCategory] &&
+                [identifier isKindOfClass:[NSString class]])
+                [ids addObject:identifier];
+        }
+        if (ids.count) {
+            ((void (*)(id, SEL, NSArray *))objc_msgSend)(center, @selector(removeDeliveredNotificationsWithIdentifiers:), ids);
+            ThetaNSELog("swept %lu muted reel shares", (unsigned long)ids.count);
+        }
+        once();
+    };
+    ((void (*)(id, SEL, id))objc_msgSend)(center, getSel, completion);
+}
+
+static void ThetaNSERemoveDeliveredSoon(NSString *identifier) {
+    if (!identifier.length) return;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        id center = ((id (*)(Class, SEL))objc_msgSend)(centerClass, @selector(currentNotificationCenter));
+        id center = ThetaNSENotificationCenter();
         ((void (*)(id, SEL, NSArray *))objc_msgSend)(center, @selector(removeDeliveredNotificationsWithIdentifiers:), @[identifier]);
         ThetaNSELog("removed muted reel share %s", identifier.UTF8String);
     });
@@ -475,7 +517,6 @@ static void ThetaNSERemoveDelivered(NSString *identifier) {
 
 static void hook_didReceive(id self, SEL _cmd, id request, ThetaNSEContentHandler handler) {
     ThetaNSEReprobeGroupIfNeeded();
-    ThetaNSERebindAllNow("didReceive");
 #if THETA_DEBUG
     gSecLogLeft = 32;
     id content = nil;
@@ -498,11 +539,16 @@ static void hook_didReceive(id self, SEL _cmd, id request, ThetaNSEContentHandle
         ThetaNSELog("contentHandler titleLen=%lu bodyLen=%lu",
                     (unsigned long)titleLen, (unsigned long)bodyLen);
 #endif
-        id delivered = notifContent;
-        BOOL muted = notifContent && ThetaNSEIsMutedReelShare(request, notifContent);
-        if (muted) delivered = ThetaNSESilencedContent(notifContent);
-        if (origHandler) origHandler(delivered);
-        if (muted) ThetaNSERemoveDelivered(ThetaNSEStringValue(request, @"identifier"));
+        if (!ThetaNSEMuteReelSharesEnabled()) {
+            origHandler(notifContent);
+            return;
+        }
+        BOOL muted = notifContent && ThetaNSEIsReelShare(request, notifContent);
+        id delivered = muted ? ThetaNSESilencedContent(notifContent) : notifContent;
+        ThetaNSESweepMutedReelShares(^{
+            origHandler(delivered);
+            if (muted) ThetaNSERemoveDeliveredSoon(ThetaNSEStringValue(request, @"identifier"));
+        });
     };
     if (orig_didReceive) orig_didReceive(self, _cmd, request, origHandler ? wrapped : handler);
 }
@@ -612,21 +658,6 @@ static void ThetaNSEAddImage(const struct mach_header *mh, intptr_t slide) {
     if (interesting)
         ThetaNSELog("rebound %d SecItem* slots in %s", n, name ?: "(unnamed)");
 #endif
-}
-
-static void ThetaNSERebindAllNow(const char *why) {
-    uint32_t count = _dyld_image_count();
-    __unused int extra = 0;
-    for (uint32_t i = 0; i < count; i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (!ThetaNSEShouldRebindImage(name)) continue;
-        int n = ThetaNSERebindImage(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i), name);
-        if (n) {
-            extra += n;
-            ThetaNSELog("late rebound %d slots in %s (%s)", n, name ?: "?", why);
-        }
-    }
-    ThetaNSELog("rebind-all %s extra=%d images=%u", why, extra, count);
 }
 
 static int ThetaNSERebindLoadedImages(void) {
@@ -746,9 +777,8 @@ static void ThetaNSEInit(void) {
         ThetaNSELoadGroup();
         ThetaNSEHookSecItem();
 
-        ThetaNSESwizzle(objc_getClass("FBSDKKeychainStore"), @selector(accessGroup), (IMP)hook_accessGroup, (void **)&orig_fbAccessGroup);
-        ThetaNSESwizzle(objc_getClass("FBKeychainItemController"), @selector(accessGroup), (IMP)hook_accessGroup, (void **)&orig_fbAccessGroup);
-        ThetaNSESwizzle(objc_getClass("UICKeyChainStore"), @selector(accessGroup), (IMP)hook_accessGroup, (void **)&orig_uicAccessGroup);
+        ThetaNSESwizzle(objc_getClass("FBKeychainItemController"), @selector(accessGroup), (IMP)hook_fbAccessGroup, (void **)&orig_fbAccessGroup);
+        ThetaNSESwizzle(objc_getClass("UICKeyChainStore"), @selector(accessGroup), (IMP)hook_uicAccessGroup, (void **)&orig_uicAccessGroup);
         ThetaNSESwizzle(objc_getClass("UICKeyChainStore"),
                         @selector(keyChainStoreWithService:accessGroup:),
                         (IMP)hook_uicStore, (void **)&orig_uicStore);

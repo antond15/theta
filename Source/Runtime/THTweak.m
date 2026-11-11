@@ -177,7 +177,7 @@ static void MirrorHPKEKeys(void) {
     NSRange dot = [group rangeOfString:@"."];
     if (dot.location != NSNotFound)
         wildcard = [[group substringToIndex:dot.location] stringByAppendingString:@".*"];
-    ThetaHPKEMirrorKeychain(group, wildcard);
+    ThetaHPKEMirrorKeychain(real_SecItemCopyMatching, group, wildcard);
 }
 
 // The launch probe fails if iOS started the app while the device was still locked. Until it
