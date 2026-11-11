@@ -1,11 +1,6 @@
 /* Sideload fishhook rebindings (strlen / SecItem*) */
 #import "Source/SideloadNSE/ThetaHPKEKeyFile.h"
 
-// Keychain hook via fishhook (file scope)
-static OSStatus (*original_SecItemCopyMatching)(CFDictionaryRef query, CFTypeRef *result);
-static OSStatus (*original_SecItemAdd)(CFDictionaryRef attributes, CFTypeRef *result);
-static OSStatus (*original_SecItemUpdate)(CFDictionaryRef query, CFDictionaryRef attributesToUpdate);
-static OSStatus (*original_SecItemDelete)(CFDictionaryRef query);
 #define kErrSecItemNotFoundKeychain ((OSStatus)-25300)
 
 // Real SecItem* resolved once before we rebind (dlsym after rebind would return our hook).
@@ -112,10 +107,12 @@ static OSStatus hooked_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result)
     ThetaHPKESave(attributes);
     // Item already in the sideload keychain — that *is* persistence.
     if (status == errSecDuplicateItem) return errSecSuccess;
+#if THETA_DEBUG
     if (status != errSecSuccess) {
         fprintf(stderr, "[Theta] SecItemAdd failed status=%d (session may not persist)\n", (int)status);
         fflush(stderr);
     }
+#endif
     return status;
 }
 
@@ -163,10 +160,10 @@ static void install_fishhook_rebindings(void) {
     real_SecItemDelete = (OSStatus (*)(CFDictionaryRef))p;
 
     struct rebinding rebindings[] = {
-        { "SecItemCopyMatching", (void *)hooked_SecItemCopyMatching, (void **)&original_SecItemCopyMatching },
-        { "SecItemAdd", (void *)hooked_SecItemAdd, (void **)&original_SecItemAdd },
-        { "SecItemUpdate", (void *)hooked_SecItemUpdate, (void **)&original_SecItemUpdate },
-        { "SecItemDelete", (void *)hooked_SecItemDelete, (void **)&original_SecItemDelete },
+        { "SecItemCopyMatching", (void *)hooked_SecItemCopyMatching, NULL },
+        { "SecItemAdd", (void *)hooked_SecItemAdd, NULL },
+        { "SecItemUpdate", (void *)hooked_SecItemUpdate, NULL },
+        { "SecItemDelete", (void *)hooked_SecItemDelete, NULL },
     };
     size_t n = sizeof(rebindings) / sizeof(rebindings[0]);
     if (rebind_symbols(rebindings, n) == 0) {

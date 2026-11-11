@@ -21,7 +21,6 @@ static void InitializeHooks(void) {
     THRegisterHideTypingIndicatorHooks();
     THRegisterMuteSharedReelNotificationsHooks();
     THRegisterHideSharedMediaThumbnailsHooks();
-    THRegisterKeepDeletedMessagesHooks();
     THRegisterSaveProfilePicturesHooks();
     THRegisterScreenshotProtectionProviderHooks();
     THRegisterSundialViewerUFIHooks();
@@ -35,7 +34,6 @@ static void InitializeHooks(void) {
     THRegisterCallConfirmationHooks();
     THRegisterMarkAsSeenThreadAndReactionHooks();
     THRegisterPrivateVideoGhostHooks();
-    THRegisterStorySeenLocalOnlyHooks();
     THRegisterStoryGhostHooks();
     THRegisterHideTabsHooks();
     THRegisterDismissIGDSPromoDialogHooks();
@@ -63,8 +61,6 @@ static void InitializeHooks(void) {
     THRegisterHideTestFlightNagHooks();
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        THRegisterDeferredDBBHooks();
-
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             if (ENABLED(THAppLoadBanner)) {
                 NSString *title = [NSString stringWithFormat:@"Theta %s | Instagram %s", THETA_VERSION, appVersion.UTF8String];
@@ -96,7 +92,7 @@ static void InitializeHooks(void) {
                 vc.modalPresentationStyle = UIModalPresentationOverFullScreen;
                 [top presentViewController:vc animated:YES completion:nil];
             } @catch (NSException *e) {
-                NSLog(@"[Theta] NUX presentation failed: %@", e);
+                THDebugLog(@"[Theta] NUX presentation failed: %@", e);
             }
         });
 
@@ -150,7 +146,7 @@ static void RunSideloadSetupOnce(void) {
             ThetaInstallSuiteRemap();
             ThetaHPKEDumpStatus();
             if (!orig_NSFileManager || !orig_createDirectoryAtPath) {
-                NSLog(@"[Theta] Sideload NSFileManager hooks incomplete (orig_container=%p orig_mkdir=%p)",
+                THDebugLog(@"[Theta] Sideload NSFileManager hooks incomplete (orig_container=%p orig_mkdir=%p)",
                       orig_NSFileManager, orig_createDirectoryAtPath);
             } else {
                 THDebugLog(@"[Theta] Sideload keychain/container hooks installed");
@@ -170,7 +166,7 @@ static void RunSideloadSetupOnce(void) {
             fflush(stderr);
 #endif
         } @catch (NSException *e) {
-            NSLog(@"[Theta] Sideload setup exception: %@", e);
+            THDebugLog(@"[Theta] Sideload setup exception: %@", e);
         }
     });
 }
@@ -192,21 +188,23 @@ static void RetryKeychainGroupIfNeeded(void) {
     if (keychainAccessGroup.length) MirrorHPKEKeys();
 }
 
+// The UI hooks wait for the foreground; the privacy hooks are already installed by the
+// constructor. A background launch installs them on the next foreground notification.
 static void StartTweakWhenReady(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIApplicationState state = UIApplication.sharedApplication.applicationState;
-        if (state == UIApplicationStateBackground) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                StartTweakWhenReady();
-            });
-            return;
-        }
+        if (UIApplication.sharedApplication.applicationState == UIApplicationStateBackground) return;
         InitializeHooks();
     });
 }
 
 static void ObserveAppLifecycle(void) {
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
+                                                      object:nil
+                                                       queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(__unused NSNotification *note) {
+        StartTweakWhenReady();
+    }];
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(__unused NSNotification *note) {
@@ -219,7 +217,6 @@ static void ObserveAppLifecycle(void) {
         StartTweakWhenReady();
     }];
     StartTweakWhenReady();
-    RunSideloadSetupOnce();
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationProtectedDataDidBecomeAvailable
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
@@ -239,12 +236,20 @@ static void ThetaLoad(void) {
     // Discover the real keychain group before remapping SecItem* onto it.
     RunSideloadSetupOnce();
     install_fishhook_rebindings();
-    dispatch_async(dispatch_get_main_queue(), ^{ RunSideloadSetupOnce(); });
     MirrorHPKEKeys();
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
-                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        MirrorHPKEKeys();
-    });
+    if (!keychainAccessGroup.length) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
+                       dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            MirrorHPKEKeys();
+        });
+    }
+
+    // Privacy and protection hooks: iOS can launch Instagram in the background (push, refresh),
+    // where InitializeHooks waits for the foreground, so these must be in place from the start.
+    THRegisterKeepDeletedMessagesHooks();
+    THRegisterStorySeenLocalOnlyHooks();
+    THRegisterInstantsGhostHooks();
+    THRegisterDBBHooks();
 
     THRegisterLiquidGlassTabBarEarlyHooks();
     // The tab bar is built before InitializeHooks runs, so its hooks must already be installed.

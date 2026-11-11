@@ -373,9 +373,16 @@ static BOOL theta_payloadLooksLikeStorySeen(id obj) {
     return NO;
 }
 
+// Debug builds: which seen path was blocked, and whether the foreground hook pass had run yet
+// (a background launch blocks before it).
+#define THSeenDropLog(what, path) \
+    THDebugLog(@"[Theta] seen blocked: %@ %@ (foreground hooks %s)", what, (path) ?: @"-", hooksInitialized ? "installed" : "pending")
+
 static BOOL theta_shouldDropStorySeenTraffic(id payload) {
     if (!theta_blockSeenReceipts()) return NO;
-    return theta_payloadLooksLikeStorySeen(payload);
+    BOOL drop = theta_payloadLooksLikeStorySeen(payload);
+    if (drop) THSeenDropLog(@"nsurlsession", [payload isKindOfClass:[NSURLRequest class]] ? ((NSURLRequest *)payload).URL.path : nil);
+    return drop;
 }
 
 static NSURLRequest *theta_dummySeenRequest(void) {
@@ -433,6 +440,7 @@ static id hook_tigonStartRequest(id self, SEL _cmd, id req, id policy, id callba
         Class taskCls = objc_getClass("IGCompletedRequestTask");
         if ([url isKindOfClass:[NSURL class]] && theta_urlLooksLikeStorySeen(url)
             && summaryCls && taskCls && [callbacks respondsToSelector:@selector(failure:summary:)]) {
+            THSeenDropLog(@"tigon", url.path);
             NSError *err = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
             ((void (*)(id, SEL, id, id))objc_msgSend)(callbacks, @selector(failure:summary:), err, [summaryCls new]);
             return [taskCls new];
@@ -443,7 +451,10 @@ static id hook_tigonStartRequest(id self, SEL _cmd, id req, id policy, id callba
 
 static void (*orig_sundialUploadSeenStateIfNecessary)(id, SEL);
 static void hook_sundialUploadSeenStateIfNecessary(id self, SEL _cmd) {
-    if (theta_blockSeenReceipts()) return;
+    if (theta_blockSeenReceipts()) {
+        THSeenDropLog(@"uploadSeenStateIfNecessary", NSStringFromClass(object_getClass(self)));
+        return;
+    }
     orig_sundialUploadSeenStateIfNecessary(self, _cmd);
 }
 
@@ -457,7 +468,10 @@ static void hook_sundialAppendSeenState(id self, SEL _cmd, id payload) {
    the direct (unhookable) -[IGAPIRequest startWithAPIClient:callback:], passing [uploader networker]. */
 static id (*orig_uploaderNetworker)(id, SEL);
 static id hook_uploaderNetworker(id self, SEL _cmd) {
-    if (theta_blockSeenReceipts()) return nil;
+    if (theta_blockSeenReceipts()) {
+        THSeenDropLog(@"uploader networker", @"-");
+        return nil;
+    }
     return orig_uploaderNetworker(self, _cmd);
 }
 

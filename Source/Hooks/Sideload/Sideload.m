@@ -33,11 +33,13 @@ static void loadKeychainAccessGroup() {
 			fflush(stderr);
 #endif
 		} else {
+#if THETA_DEBUG
 			fprintf(stderr, "[Theta] Failed to get keychain access group: %d\n", (int)ret);
 			fflush(stderr);
+#endif
 		}
 	} @catch (NSException *exception) {
-		NSLog(@"Error loading keychain access group: %@", exception);
+		THDebugLog(@"Error loading keychain access group: %@", exception);
 	}
 }
 
@@ -117,7 +119,7 @@ static NSURL *hook_NSFileManager(id self, SEL _cmd, NSString *groupIdentifier) {
 
 		return SideloadCacheGroupURL(groupIdentifier, fakeURL);
 	} @catch (NSException *exception) {
-		NSLog(@"Error in NSFileManager hook: %@", exception);
+		THDebugLog(@"Error in NSFileManager hook: %@", exception);
 		return orig_NSFileManager ? orig_NSFileManager(self, _cmd, groupIdentifier) : nil;
 	}
 }
@@ -132,9 +134,8 @@ static BOOL hook_createDirectoryAtPath(id self, SEL _cmd, NSString *path, BOOL c
 	}
 	BOOL ok = orig_createDirectoryAtPath(self, _cmd, path, createIntermediates, attributes, error);
 	if (ok) return YES;
-	if (path && ([path rangeOfString:@"MobileConfig" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-	             [path rangeOfString:@"FBMobileConfig" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-	             [path rangeOfString:@"mobileconfig" options:NSCaseInsensitiveSearch].location != NSNotFound)) {
+	// Case-insensitive, so this also covers FBMobileConfig.
+	if (path && [path rangeOfString:@"MobileConfig" options:NSCaseInsensitiveSearch].location != NSNotFound) {
 		// Fake success so IG doesn't assert/crash when the group path is unusable.
 		if (error) *error = nil;
 		return YES;
@@ -153,7 +154,7 @@ NSString *hook_accessGroup_FBSDKKeychainStore(id self, SEL _cmd) {
 		if (keychainAccessGroup) return keychainAccessGroup;
 		return orig_accessGroup_FBSDKKeychainStore ? orig_accessGroup_FBSDKKeychainStore(self, _cmd) : nil;
 	} @catch (NSException *exception) {
-		NSLog(@"Error in accessGroup hook (FBSDKKeychainStore): %@", exception);
+		THDebugLog(@"Error in accessGroup hook (FBSDKKeychainStore): %@", exception);
 		return orig_accessGroup_FBSDKKeychainStore ? orig_accessGroup_FBSDKKeychainStore(self, _cmd) : nil;
 	}
 }
@@ -163,7 +164,7 @@ NSString *hook_accessGroup_FBKeychainItemController(id self, SEL _cmd) {
 		if (keychainAccessGroup) return keychainAccessGroup;
 		return orig_accessGroup_FBKeychainItemController ? orig_accessGroup_FBKeychainItemController(self, _cmd) : nil;
 	} @catch (NSException *exception) {
-		NSLog(@"Error in accessGroup hook (FBKeychainItemController): %@", exception);
+		THDebugLog(@"Error in accessGroup hook (FBKeychainItemController): %@", exception);
 		return orig_accessGroup_FBKeychainItemController ? orig_accessGroup_FBKeychainItemController(self, _cmd) : nil;
 	}
 }
@@ -173,7 +174,7 @@ NSString *hook_accessGroup_UICKeyChainStore(id self, SEL _cmd) {
 		if (keychainAccessGroup) return keychainAccessGroup;
 		return orig_accessGroup_UICKeyChainStore ? orig_accessGroup_UICKeyChainStore(self, _cmd) : nil;
 	} @catch (NSException *exception) {
-		NSLog(@"Error in accessGroup hook (UICKeyChainStore): %@", exception);
+		THDebugLog(@"Error in accessGroup hook (UICKeyChainStore): %@", exception);
 		return orig_accessGroup_UICKeyChainStore ? orig_accessGroup_UICKeyChainStore(self, _cmd) : nil;
 	}
 }

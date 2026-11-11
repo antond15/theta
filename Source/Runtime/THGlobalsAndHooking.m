@@ -99,7 +99,7 @@ static BOOL ThetaInstallMessageHook(Class cls, SEL sel, void *replacement, void 
     Method method = instanceMethod ?: classMethod;
     if (!method) {
         if (reportMissing) {
-            NSLog(@"-[%@ %@] not found", NSStringFromClass(cls), NSStringFromSelector(sel));
+            THDebugLog(@"-[%@ %@] not found", NSStringFromClass(cls), NSStringFromSelector(sel));
             RecordFailedHookLine([NSString stringWithFormat:@"-[%@ %@] — method not found", NSStringFromClass(cls), NSStringFromSelector(sel)]);
         }
         return NO;
@@ -117,6 +117,11 @@ static BOOL ThetaInstallMessageHook(Class cls, SEL sel, void *replacement, void 
     Class targetClass = instanceMethod ? cls : object_getClass((id)cls);
     IMP previous = NULL;
 
+    // Other threads can call the method the moment the hook is live, and several hooks call
+    // their original unchecked: store it before installing.
+    if (original) {
+        *(IMP *)original = real;
+    }
     if (class_addMethod(targetClass, sel, (IMP)replacement, types)) {
         // Method was inherited; we added an override. `real` is the super IMP.
         previous = real;
@@ -125,6 +130,10 @@ static BOOL ThetaInstallMessageHook(Class cls, SEL sel, void *replacement, void 
         Method local = instanceMethod ? class_getInstanceMethod(targetClass, sel)
                                       : class_getClassMethod(cls, sel);
         if (!local) local = method;
+        IMP current = method_getImplementation(local);
+        if (original && current) {
+            *(IMP *)original = current;
+        }
         previous = method_setImplementation(local, (IMP)replacement);
         if (!previous) previous = real;
     }

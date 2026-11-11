@@ -1568,6 +1568,11 @@ static void hook_instantNavAppear(id self, SEL _cmd, BOOL animated) {
     @try { thetaInstantInstallButtons(self); } @catch (__unused NSException *e) {}
 }
 
+// Instants seen blocking; installed from the constructor so it is in place on a background launch.
+void THRegisterInstantsGhostHooks(void) {
+    thetaInstantEnsureGhostHooks();
+}
+
 void THRegisterSaveInstantsHooks(void) {
     Class consumption = ThetaFirstClass(@[
         @"_TtC26IGQuickSnapConsumptionCore36IGQuickSnapConsumptionViewController",

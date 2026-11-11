@@ -108,8 +108,10 @@ toasts, lock screen), `Source/Media`, `Source/ProfileAnalyzer`, `Source/Sideload
   `-[IGStorySeenStateUploader networker]`) before relying on a hook.
 - **Network blocking** goes through `-[IGTigonNetworkLayer startRequest:policy:callbacks:]` and
   fails a request the way Tigon fails one it won't start.
-- **Hook install timing.** Some surfaces (the tab bar) are built before the normal hook pass;
-  those hooks also install from the constructor.
+- **Hook install timing.** The normal hook pass waits for the foreground. Surfaces built before it
+  (the tab bar) and the privacy and protection hooks (seen receipts, Instants seen, Keep Deleted
+  Messages, DBB), which must hold on a background launch, install from the constructor. A hook
+  registered there must not also be registered in `InitializeHooks`.
 - **Warnings.** A clean build prints six known warnings (`docs/DEVELOPMENT.md#building`). Don't
   add new ones.
 - **Debug logging** only through `THDebugLog` (`Include/ThetaDebug.h`), compiled in only with

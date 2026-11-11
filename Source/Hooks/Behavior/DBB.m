@@ -40,7 +40,7 @@ static BOOL hook_boolForKey(id self, SEL _cmd, NSString *key) {
     return orig_boolForKey(self, _cmd, key);
 }
 
-void THRegisterDeferredDBBHooks(void) {
+void THRegisterDBBHooks(void) {
     SEL sel = @selector(queryAndLogDeviceLockedStatusWithSource:ndid:extra:);
     const char *classNames[] = {
         "_TtC24DeviceLockedStatusLogger26IGDeviceLockedStatusLogger",
@@ -84,11 +84,11 @@ void THRegisterDeferredDBBHooks(void) {
     if (ud) {
         if (!ThetaInstallMessageHook(ud, @selector(objectForKey:), (void *)hook_objectForKey, (void *)&orig_objectForKey, NO) || !orig_objectForKey) {
             orig_objectForKey = NULL;
-            NSLog(@"[Theta] DBB: skipped objectForKey: hook (no orig)");
+            THDebugLog(@"[Theta] DBB: skipped objectForKey: hook (no orig)");
         }
         if (!ThetaInstallMessageHook(ud, @selector(boolForKey:), (void *)hook_boolForKey, (void *)&orig_boolForKey, NO) || !orig_boolForKey) {
             // If bool hook installed without orig, undo is hard; null-check in hook avoids PC=0.
-            if (!orig_boolForKey) NSLog(@"[Theta] DBB: boolForKey: hook missing orig");
+            if (!orig_boolForKey) THDebugLog(@"[Theta] DBB: boolForKey: hook missing orig");
         }
     }
 }
