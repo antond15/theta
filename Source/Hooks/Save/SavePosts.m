@@ -134,6 +134,10 @@ static void theta_deliverSavedVideo(NSString *path, BOOL toPhotos, CustomToastVi
     finishJob();
 }
 
+static BOOL theta_conversionWasInterrupted(NSError *error) {
+    return [error.domain isEqualToString:@"AV1Transcoder"] && error.code == -2;
+}
+
 static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedVideoURL);
 
 static void downloadHDVideo(IGVideo *inputVideo) {
@@ -321,8 +325,10 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                 NSString *reason = transcodeError.localizedDescription.length
                     ? [NSString stringWithFormat:@"AV1 conversion failed: %@", transcodeError.localizedDescription]
                     : @"This reel is AV1 and couldn't be converted.";
+                BOOL interrupted = theta_conversionWasInterrupted(transcodeError);
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    showCompletionToast(progressToast, NO, @"Couldn't convert video", reason,
+                    showCompletionToast(progressToast, NO, interrupted ? @"Save failed" : @"Couldn't convert video",
+                                        interrupted ? @"Conversion was interrupted" : reason,
                                         [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                 });
                 finishJob();
@@ -497,8 +503,11 @@ static void downloadHDVideoSelectingURL(IGVideo *inputVideo, NSString *selectedV
                     theta_deliverSavedVideo(fallbackPath, toPhotos, progressToast, finishJob);
                     return;
                 }
+                BOOL interrupted = theta_conversionWasInterrupted(transcodeError);
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    showCompletionToast(progressToast, NO, @"Error", @"Could not prepare video for saving", [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
+                    showCompletionToast(progressToast, NO, interrupted ? @"Save failed" : @"Error",
+                                        interrupted ? @"Conversion was interrupted" : @"Could not prepare video for saving",
+                                        [UIImage systemImageNamed:@"exclamationmark.triangle"], nil);
                 });
                 finishJob();
             }

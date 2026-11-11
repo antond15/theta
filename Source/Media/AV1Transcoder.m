@@ -74,7 +74,7 @@ FUNC_PTR(sws_freeContext);
 #define LOAD_FUNC(handle, name) \
     p_##name = dlsym(handle, #name); \
     if (!p_##name) { \
-        NSLog(@"Failed to load function %s: %s", #name, dlerror()); \
+        THDebugLog(@"Failed to load function %s: %s", #name, dlerror()); \
         return NO; \
     }
 
@@ -101,10 +101,10 @@ static void *theta_dlopenFFmpegLibrary(NSArray<NSString *> *bases, NSString *lib
                 THDebugLog(@"[Theta] ffmpeg: loaded %@ from %@", libName, full);
                 return handle;
             }
-            NSLog(@"[Theta] ffmpeg: dlopen failed for %@: %s", full, dlerror());
+            THDebugLog(@"[Theta] ffmpeg: dlopen failed for %@: %s", full, dlerror());
         }
     }
-    NSLog(@"[Theta] ffmpeg: %@ not found in %@", libName, bases);
+    THDebugLog(@"[Theta] ffmpeg: %@ not found in %@", libName, bases);
     return NULL;
 }
 
@@ -129,7 +129,7 @@ static BOOL loadFFmpegLibraries(NSError **error) {
         if ([fm fileExistsAtPath:path] && ![bases containsObject:path]) [bases addObject:path];
     }
     if (bases.count == 0) {
-        NSLog(@"Failed to find ffmpeg framework in %@", candidates);
+        THDebugLog(@"Failed to find ffmpeg framework in %@", candidates);
         if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:-1 userInfo:@{NSLocalizedDescriptionKey: @"ffmpeg framework not found"}];
         return NO;
     }
@@ -153,7 +153,7 @@ static BOOL loadFFmpegLibraries(NSError **error) {
     if (missing.count) {
         NSString *msg = [NSString stringWithFormat:@"ffmpeg didn't load (%@)",
                          [missing componentsJoinedByString:@", "]];
-        NSLog(@"[Theta] %@ — searched %@", msg, bases);
+        THDebugLog(@"[Theta] %@ — searched %@", msg, bases);
         if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:-1 userInfo:@{NSLocalizedDescriptionKey: msg}];
         return NO;
     }
@@ -278,7 +278,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Open input file
     ret = p_avformat_open_input(&inputFormatContext, [inputPath UTF8String], NULL, NULL);
     if (ret < 0) {
-        NSLog(@"Could not open input file: %s", av_err2str_helper(ret));
+        THDebugLog(@"Could not open input file: %s", av_err2str_helper(ret));
         if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:ret userInfo:@{NSLocalizedDescriptionKey: @"Could not open input file"}];
         return NO;
     }
@@ -288,7 +288,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Find stream information
     ret = p_avformat_find_stream_info(inputFormatContext, NULL);
     if (ret < 0) {
-        NSLog(@"Could not find stream info: %s", av_err2str_helper(ret));
+        THDebugLog(@"Could not find stream info: %s", av_err2str_helper(ret));
         av1_close_audio_format_context(&audioFormatContext);
         p_avformat_close_input(&inputFormatContext);
         if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:ret userInfo:@{NSLocalizedDescriptionKey: @"Could not find stream info"}];
@@ -308,7 +308,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     }
     
     if (videoStreamIndex < 0) {
-        NSLog(@"Could not find video stream");
+        THDebugLog(@"Could not find video stream");
         av1_close_audio_format_context(&audioFormatContext);
         p_avformat_close_input(&inputFormatContext);
         if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:-1 userInfo:@{NSLocalizedDescriptionKey: @"Could not find video stream"}];
@@ -322,11 +322,11 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
         if (audioPath && audioPath.length > 0) {
             ret = p_avformat_open_input(&audioFormatContext, [audioPath UTF8String], NULL, NULL);
             if (ret < 0) {
-                NSLog(@"Warning: Could not open separate audio file: %s", av_err2str_helper(ret));
+                THDebugLog(@"Warning: Could not open separate audio file: %s", av_err2str_helper(ret));
             } else {
                 ret = p_avformat_find_stream_info(audioFormatContext, NULL);
                 if (ret < 0) {
-                    NSLog(@"Warning: Could not find audio stream info: %s", av_err2str_helper(ret));
+                    THDebugLog(@"Warning: Could not find audio stream info: %s", av_err2str_helper(ret));
                     p_avformat_close_input(&audioFormatContext);
                     audioFormatContext = NULL;
                 } else {
@@ -339,7 +339,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
                         }
                     }
                     if (audioStreamIndexInAudioFile < 0) {
-                        NSLog(@"Warning: No audio stream found in separate audio file");
+                        THDebugLog(@"Warning: No audio stream found in separate audio file");
                         p_avformat_close_input(&audioFormatContext);
                         audioFormatContext = NULL;
                     }
@@ -371,7 +371,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
         decoder = p_avcodec_find_decoder(srcCodecId);
     }
     if (!decoder) {
-        NSLog(@"Could not find decoder for codec %s", p_avcodec_get_name(srcCodecId));
+        THDebugLog(@"Could not find decoder for codec %s", p_avcodec_get_name(srcCodecId));
         av1_close_audio_format_context(&audioFormatContext);
         p_avformat_close_input(&inputFormatContext);
         if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:-1 userInfo:@{NSLocalizedDescriptionKey: @"Could not find video decoder"}];
@@ -381,7 +381,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Allocate decoder context
     decoderContext = p_avcodec_alloc_context3(decoder);
     if (!decoderContext) {
-        NSLog(@"Could not allocate decoder context");
+        THDebugLog(@"Could not allocate decoder context");
         av1_close_audio_format_context(&audioFormatContext);
         p_avformat_close_input(&inputFormatContext);
         if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:-1 userInfo:@{NSLocalizedDescriptionKey: @"Could not allocate decoder context"}];
@@ -391,7 +391,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Copy codec parameters to decoder context
     ret = p_avcodec_parameters_to_context(decoderContext, videoStream->codecpar);
     if (ret < 0) {
-        NSLog(@"Could not copy codec parameters: %s", av_err2str_helper(ret));
+        THDebugLog(@"Could not copy codec parameters: %s", av_err2str_helper(ret));
         p_avcodec_free_context(&decoderContext);
         av1_close_audio_format_context(&audioFormatContext);
         p_avformat_close_input(&inputFormatContext);
@@ -408,7 +408,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Open decoder
     ret = p_avcodec_open2(decoderContext, decoder, NULL);
     if (ret < 0) {
-        NSLog(@"Could not open decoder: %s", av_err2str_helper(ret));
+        THDebugLog(@"Could not open decoder: %s", av_err2str_helper(ret));
         p_avcodec_free_context(&decoderContext);
         av1_close_audio_format_context(&audioFormatContext);
         p_avformat_close_input(&inputFormatContext);
@@ -421,7 +421,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Create output format context
     ret = p_avformat_alloc_output_context2(&outputFormatContext, NULL, NULL, [outputPath UTF8String]);
     if (ret < 0) {
-        NSLog(@"Could not create output context: %s", av_err2str_helper(ret));
+        THDebugLog(@"Could not create output context: %s", av_err2str_helper(ret));
         p_avcodec_free_context(&decoderContext);
         av1_close_audio_format_context(&audioFormatContext);
         p_avformat_close_input(&inputFormatContext);
@@ -441,7 +441,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
         }
     
     if (!encoder) {
-        NSLog(@"Could not find any suitable encoder");
+        THDebugLog(@"Could not find any suitable encoder");
         p_avformat_free_context(outputFormatContext);
         p_avcodec_free_context(&decoderContext);
         av1_close_audio_format_context(&audioFormatContext);
@@ -453,7 +453,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Create output video stream
     outputVideoStream = p_avformat_new_stream(outputFormatContext, NULL);
     if (!outputVideoStream) {
-        NSLog(@"Could not create output video stream");
+        THDebugLog(@"Could not create output video stream");
         p_avformat_free_context(outputFormatContext);
         p_avcodec_free_context(&decoderContext);
         av1_close_audio_format_context(&audioFormatContext);
@@ -465,7 +465,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Allocate encoder context
     encoderContext = p_avcodec_alloc_context3(encoder);
     if (!encoderContext) {
-        NSLog(@"Could not allocate encoder context");
+        THDebugLog(@"Could not allocate encoder context");
         p_avformat_free_context(outputFormatContext);
         p_avcodec_free_context(&decoderContext);
         av1_close_audio_format_context(&audioFormatContext);
@@ -478,7 +478,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     int encW = decoderContext->width > 0 ? decoderContext->width : videoStream->codecpar->width;
     int encH = decoderContext->height > 0 ? decoderContext->height : videoStream->codecpar->height;
     if (encW <= 0 || encH <= 0) {
-        NSLog(@"Could not determine video dimensions");
+        THDebugLog(@"Could not determine video dimensions");
         p_avcodec_free_context(&encoderContext);
         p_avformat_free_context(outputFormatContext);
         p_avcodec_free_context(&decoderContext);
@@ -555,7 +555,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Open encoder
     ret = p_avcodec_open2(encoderContext, encoder, NULL);
     if (ret < 0) {
-        NSLog(@"Could not open encoder: %s", av_err2str_helper(ret));
+        THDebugLog(@"Could not open encoder: %s", av_err2str_helper(ret));
         p_avcodec_free_context(&encoderContext);
         p_avformat_free_context(outputFormatContext);
         p_avcodec_free_context(&decoderContext);
@@ -568,7 +568,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Copy encoder parameters to output stream
     ret = p_avcodec_parameters_from_context(outputVideoStream->codecpar, encoderContext);
     if (ret < 0) {
-        NSLog(@"Could not copy encoder parameters: %s", av_err2str_helper(ret));
+        THDebugLog(@"Could not copy encoder parameters: %s", av_err2str_helper(ret));
         p_avcodec_free_context(&encoderContext);
         p_avformat_free_context(outputFormatContext);
         p_avcodec_free_context(&decoderContext);
@@ -584,29 +584,29 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     if (audioStreamIndex >= 0 || audioStreamIndexInAudioFile >= 0) {
         AVStream *audioStreamForOutput = mainInputAudioStream ?: separateInputAudioStream;
         if (!audioStreamForOutput) {
-            NSLog(@"❌ ERROR: No source audio stream for output");
+            THDebugLog(@"❌ ERROR: No source audio stream for output");
         } else {
             outputAudioStream = p_avformat_new_stream(outputFormatContext, NULL);
             if (!outputAudioStream) {
-                NSLog(@"❌ ERROR: Could not create output audio stream - audio will be lost!");
+                THDebugLog(@"❌ ERROR: Could not create output audio stream - audio will be lost!");
             } else {
                 ret = p_avcodec_parameters_copy(outputAudioStream->codecpar, audioStreamForOutput->codecpar);
                 if (ret < 0) {
-                    NSLog(@"❌ ERROR: Could not copy audio parameters: %s", av_err2str_helper(ret));
+                    THDebugLog(@"❌ ERROR: Could not copy audio parameters: %s", av_err2str_helper(ret));
                 }
                 outputAudioStream->codecpar->codec_tag = 0;
                 outputAudioStream->time_base = audioStreamForOutput->time_base;
             }
         }
     } else {
-        NSLog(@"No audio stream to copy");
+        THDebugLog(@"No audio stream to copy");
     }
     
     // Open output file
     if (!(outputFormatContext->oformat->flags & AVFMT_NOFILE)) {
         ret = p_avio_open(&outputFormatContext->pb, [outputPath UTF8String], AVIO_FLAG_WRITE);
         if (ret < 0) {
-            NSLog(@"Could not open output file: %s", av_err2str_helper(ret));
+            THDebugLog(@"Could not open output file: %s", av_err2str_helper(ret));
             p_avcodec_free_context(&encoderContext);
             p_avformat_free_context(outputFormatContext);
             p_avcodec_free_context(&decoderContext);
@@ -620,7 +620,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     // Write header
     ret = p_avformat_write_header(outputFormatContext, NULL);
     if (ret < 0) {
-        NSLog(@"Could not write header: %s", av_err2str_helper(ret));
+        THDebugLog(@"Could not write header: %s", av_err2str_helper(ret));
         p_avio_closep(&outputFormatContext->pb);
         p_avcodec_free_context(&encoderContext);
         p_avformat_free_context(outputFormatContext);
@@ -646,7 +646,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     AVPacket *outputPacket = p_av_packet_alloc();
     
     if (!decodedFrame || !encodedFrame || !packet || !outputPacket) {
-        NSLog(@"Could not allocate frame or packet buffers");
+        THDebugLog(@"Could not allocate frame or packet buffers");
         if (decodedFrame) p_av_frame_free(&decodedFrame);
         if (encodedFrame) p_av_frame_free(&encodedFrame);
         if (packet) p_av_packet_free(&packet);
@@ -666,36 +666,58 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     encodedFrame->format = encoderContext->pix_fmt;
     encodedFrame->width = encoderContext->width;
     encodedFrame->height = encoderContext->height;
-    p_av_frame_get_buffer(encodedFrame, 0);
+    ret = p_av_frame_get_buffer(encodedFrame, 0);
+    if (ret < 0) {
+        THDebugLog(@"Could not allocate the encoder frame buffer: %s", av_err2str_helper(ret));
+        p_av_frame_free(&decodedFrame);
+        p_av_frame_free(&encodedFrame);
+        p_av_packet_free(&packet);
+        p_av_packet_free(&outputPacket);
+        p_av_write_trailer(outputFormatContext);
+        p_avio_closep(&outputFormatContext->pb);
+        [[NSFileManager defaultManager] removeItemAtPath:outputPath error:nil];
+        p_avcodec_free_context(&encoderContext);
+        p_avformat_free_context(outputFormatContext);
+        p_avcodec_free_context(&decoderContext);
+        p_sws_freeContext(swsContext);
+        av1_close_audio_format_context(&audioFormatContext);
+        p_avformat_close_input(&inputFormatContext);
+        if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:ret userInfo:@{NSLocalizedDescriptionKey: @"Could not allocate the encoder frame buffer"}];
+        return NO;
+    }
     
+    // Set on any encoder, muxer or trailer failure: the output would be truncated, so it is deleted.
+    BOOL interrupted = NO;
     int frameCount = 0;
     int audioPacketCount = 0;
     NSDate *startTime = [NSDate date];
     
     // Estimate total frames based on duration and framerate
-    double duration = inputFormatContext->duration / (double)AV_TIME_BASE;
-    int estimatedTotalFrames = (int)(duration * fps);
-    if (estimatedTotalFrames == 0) estimatedTotalFrames = 300; // Default estimate if unknown
+    // An unknown container duration is AV_NOPTS_VALUE (INT64_MIN): never convert it.
+    double duration = inputFormatContext->duration > 0 ? inputFormatContext->duration / (double)AV_TIME_BASE : 0;
+    double estimatedFrames = duration * fps;
+    int estimatedTotalFrames = (estimatedFrames > 0 && estimatedFrames < 100000000.0) ? (int)estimatedFrames : 0;
+    if (estimatedTotalFrames <= 0) estimatedTotalFrames = 300; // Default estimate if unknown
     
     // Read, decode, encode, and write frames
-    while (p_av_read_frame(inputFormatContext, packet) >= 0) {
+    while (!interrupted && p_av_read_frame(inputFormatContext, packet) >= 0) {
         if (packet->stream_index == videoStreamIndex) {
             // Send packet to decoder
             ret = p_avcodec_send_packet(decoderContext, packet);
             if (ret < 0 && ret != AVERROR(EAGAIN)) {
-                NSLog(@"Error sending packet to decoder: %s", av_err2str_helper(ret));
+                THDebugLog(@"Error sending packet to decoder: %s", av_err2str_helper(ret));
                 p_av_packet_unref(packet);
                 continue;
             }
             // If EAGAIN, decoder buffer is full - just proceed to drain frames below
             
             // Receive decoded frames
-            while (1) {
+            while (!interrupted) {
                 ret = p_avcodec_receive_frame(decoderContext, decodedFrame);
                 if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
                     break;
                 } else if (ret < 0) {
-                    NSLog(@"Error receiving frame from decoder: %s", av_err2str_helper(ret));
+                    THDebugLog(@"Error receiving frame from decoder: %s", av_err2str_helper(ret));
                     break;
                 }
                 
@@ -707,7 +729,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
                                     srcW, srcH, srcFmt,
                                     encoderContext->width, encoderContext->height, encoderContext->pix_fmt,
                                     scalerFlags)) {
-                    NSLog(@"Could not initialize scaler (src pix_fmt=%d %dx%d)", (int)srcFmt, srcW, srcH);
+                    THDebugLog(@"Could not initialize scaler (src pix_fmt=%d %dx%d)", (int)srcFmt, srcW, srcH);
                     p_av_frame_unref(decodedFrame);
                     continue;
                 }
@@ -727,7 +749,8 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
                 // Send frame to encoder
                 ret = p_avcodec_send_frame(encoderContext, encodedFrame);
                 if (ret < 0 && ret != AVERROR(EAGAIN)) {
-                    NSLog(@"Error sending frame to encoder: %s", av_err2str_helper(ret));
+                    THDebugLog(@"Error sending frame to encoder: %s", av_err2str_helper(ret));
+                    interrupted = YES;
                     break;
                 }
                 
@@ -737,7 +760,8 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
                     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
                         break;
                     } else if (ret < 0) {
-                        NSLog(@"Error receiving packet from encoder: %s", av_err2str_helper(ret));
+                        THDebugLog(@"Error receiving packet from encoder: %s", av_err2str_helper(ret));
+                        interrupted = YES;
                         break;
                     }
                     
@@ -747,11 +771,12 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
                     
                     // Write packet
                     ret = p_av_interleaved_write_frame(outputFormatContext, outputPacket);
-                    if (ret < 0) {
-                        NSLog(@"Error writing packet: %s", av_err2str_helper(ret));
-                    }
-                    
                     p_av_packet_unref(outputPacket);
+                    if (ret < 0) {
+                        THDebugLog(@"Error writing packet: %s", av_err2str_helper(ret));
+                        interrupted = YES;
+                        break;
+                    }
                     frameCount++;
                     
                     // Update progress periodically (every 30 frames to reduce overhead)
@@ -801,15 +826,14 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
                 packet->stream_index = outputAudioStream->index;
                 ret = p_av_interleaved_write_frame(outputFormatContext, packet);
                 if (ret < 0) {
-                    if (audioPacketCount == 0) {
-                        NSLog(@"❌ Error writing first audio packet: %s", av_err2str_helper(ret));
-                    }
+                    THDebugLog(@"Error writing audio packet: %s", av_err2str_helper(ret));
+                    interrupted = YES;
                 } else {
                     audioPacketCount++;
                 }
             } else {
                 if (audioPacketCount == 0) {
-                    NSLog(@"❌ Skipping audio packets - output audio stream not created");
+                    THDebugLog(@"❌ Skipping audio packets - output audio stream not created");
                 }
             }
         }
@@ -821,20 +845,19 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     if (audioFormatContext && audioStreamIndexInAudioFile >= 0 && outputAudioStream) {
         AVPacket *audioPacket = p_av_packet_alloc();
         if (!audioPacket) {
-            NSLog(@"❌ Could not allocate AVPacket for separate audio track");
+            THDebugLog(@"❌ Could not allocate AVPacket for separate audio track");
         } else {
             int audioPacketsRead = 0;
 
-            while (p_av_read_frame(audioFormatContext, audioPacket) >= 0) {
+            while (!interrupted && p_av_read_frame(audioFormatContext, audioPacket) >= 0) {
                 if (audioPacket->stream_index == audioStreamIndexInAudioFile) {
                     // Copy audio packet without re-encoding (use separate file's stream time base)
                     p_av_packet_rescale_ts(audioPacket, separateInputAudioStream->time_base, outputAudioStream->time_base);
                     audioPacket->stream_index = outputAudioStream->index;
                     ret = p_av_interleaved_write_frame(outputFormatContext, audioPacket);
                     if (ret < 0) {
-                        if (audioPacketsRead == 0) {
-                            NSLog(@"❌ Error writing first audio packet from separate file: %s", av_err2str_helper(ret));
-                        }
+                        THDebugLog(@"Error writing audio packet from separate file: %s", av_err2str_helper(ret));
+                        interrupted = YES;
                     } else {
                         audioPacketsRead++;
                         audioPacketCount++;
@@ -846,62 +869,75 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
             p_av_packet_free(&audioPacket);
 
             if (audioPacketsRead == 0) {
-                NSLog(@"❌ WARNING: No audio packets were read from separate file!");
+                THDebugLog(@"❌ WARNING: No audio packets were read from separate file!");
             }
         }
     }
     
     // Flush decoder
-    p_avcodec_send_packet(decoderContext, NULL);
-    while (p_avcodec_receive_frame(decoderContext, decodedFrame) >= 0) {
-        enum AVPixelFormat srcFmt = (enum AVPixelFormat)decodedFrame->format;
-        if (srcFmt == AV_PIX_FMT_NONE) srcFmt = decoderContext->pix_fmt;
-        int srcW = decodedFrame->width > 0 ? decodedFrame->width : decoderContext->width;
-        int srcH = decodedFrame->height > 0 ? decodedFrame->height : decoderContext->height;
-        if (!av1_ensure_sws(&swsContext, &scalerSrcW, &scalerSrcH, &scalerSrcFmt,
-                            srcW, srcH, srcFmt,
-                            encoderContext->width, encoderContext->height, encoderContext->pix_fmt,
-                            scalerFlags)) {
+    if (!interrupted) {
+        p_avcodec_send_packet(decoderContext, NULL);
+        while (!interrupted && p_avcodec_receive_frame(decoderContext, decodedFrame) >= 0) {
+            enum AVPixelFormat srcFmt = (enum AVPixelFormat)decodedFrame->format;
+            if (srcFmt == AV_PIX_FMT_NONE) srcFmt = decoderContext->pix_fmt;
+            int srcW = decodedFrame->width > 0 ? decodedFrame->width : decoderContext->width;
+            int srcH = decodedFrame->height > 0 ? decodedFrame->height : decoderContext->height;
+            if (!av1_ensure_sws(&swsContext, &scalerSrcW, &scalerSrcH, &scalerSrcFmt,
+                                srcW, srcH, srcFmt,
+                                encoderContext->width, encoderContext->height, encoderContext->pix_fmt,
+                                scalerFlags)) {
+                p_av_frame_unref(decodedFrame);
+                continue;
+            }
+            p_sws_scale(swsContext,
+                     (const uint8_t * const *)decodedFrame->data, decodedFrame->linesize,
+                     0, srcH,
+                     encodedFrame->data, encodedFrame->linesize);
+            encodedFrame->pts = decodedFrame->pts;
+            ret = p_avcodec_send_frame(encoderContext, encodedFrame);
+            if (ret < 0 && ret != AVERROR(EAGAIN)) {
+                THDebugLog(@"Error sending frame to encoder: %s", av_err2str_helper(ret));
+                interrupted = YES;
+            }
+            while (!interrupted && (ret = p_avcodec_receive_packet(encoderContext, outputPacket)) >= 0) {
+                p_av_packet_rescale_ts(outputPacket, encoderContext->time_base, outputVideoStream->time_base);
+                outputPacket->stream_index = outputVideoStream->index;
+                ret = p_av_interleaved_write_frame(outputFormatContext, outputPacket);
+                p_av_packet_unref(outputPacket);
+                if (ret < 0) {
+                    THDebugLog(@"Error writing packet: %s", av_err2str_helper(ret));
+                    interrupted = YES;
+                    break;
+                }
+                frameCount++;
+            }
             p_av_frame_unref(decodedFrame);
-            continue;
         }
-        p_sws_scale(swsContext,
-                 (const uint8_t * const *)decodedFrame->data, decodedFrame->linesize,
-                 0, srcH,
-                 encodedFrame->data, encodedFrame->linesize);
-        encodedFrame->pts = decodedFrame->pts;
-        p_avcodec_send_frame(encoderContext, encodedFrame);
-        while (p_avcodec_receive_packet(encoderContext, outputPacket) >= 0) {
-            p_av_packet_rescale_ts(outputPacket, encoderContext->time_base, outputVideoStream->time_base);
-            outputPacket->stream_index = outputVideoStream->index;
-            p_av_interleaved_write_frame(outputFormatContext, outputPacket);
-            p_av_packet_unref(outputPacket);
-            frameCount++;
-        }
-        p_av_frame_unref(decodedFrame);
     }
     
     // Flush encoder
-    p_avcodec_send_frame(encoderContext, NULL);
-    while (p_avcodec_receive_packet(encoderContext, outputPacket) >= 0) {
-        p_av_packet_rescale_ts(outputPacket, encoderContext->time_base, outputVideoStream->time_base);
-        outputPacket->stream_index = outputVideoStream->index;
-        p_av_interleaved_write_frame(outputFormatContext, outputPacket);
-        p_av_packet_unref(outputPacket);
-        frameCount++;
-    }
-    
-    NSTimeInterval totalTime = [[NSDate date] timeIntervalSinceDate:startTime];
-    double avgFps = frameCount / totalTime;
-    double processingRatio = totalTime / duration; // How many seconds to process 1 second of video
-    
-    if (mainFileAudioStreamIndex >= 0 || audioStreamIndexInAudioFile >= 0) {
-    } else {
-        NSLog(@"ℹ️ No audio in source");
+    if (!interrupted) {
+        ret = p_avcodec_send_frame(encoderContext, NULL);
+        if (ret < 0 && ret != AVERROR_EOF) {
+            THDebugLog(@"Error flushing encoder: %s", av_err2str_helper(ret));
+            interrupted = YES;
+        }
+        while (!interrupted && (ret = p_avcodec_receive_packet(encoderContext, outputPacket)) >= 0) {
+            p_av_packet_rescale_ts(outputPacket, encoderContext->time_base, outputVideoStream->time_base);
+            outputPacket->stream_index = outputVideoStream->index;
+            ret = p_av_interleaved_write_frame(outputFormatContext, outputPacket);
+            p_av_packet_unref(outputPacket);
+            if (ret < 0) {
+                THDebugLog(@"Error writing packet: %s", av_err2str_helper(ret));
+                interrupted = YES;
+                break;
+            }
+            frameCount++;
+        }
     }
     
     if (frameCount <= 0) {
-        NSLog(@"Transcode produced no video frames");
+        THDebugLog(@"Transcode produced no video frames");
         if (decodedFrame) p_av_frame_free(&decodedFrame);
         if (encodedFrame) p_av_frame_free(&encodedFrame);
         if (packet) p_av_packet_free(&packet);
@@ -909,6 +945,7 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
         if (swsContext) p_sws_freeContext(swsContext);
         p_av_write_trailer(outputFormatContext);
         p_avio_closep(&outputFormatContext->pb);
+        [[NSFileManager defaultManager] removeItemAtPath:outputPath error:nil];
         p_avcodec_free_context(&encoderContext);
         p_avformat_free_context(outputFormatContext);
         p_avcodec_free_context(&decoderContext);
@@ -918,10 +955,19 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
         return NO;
     }
 
-    if (progressBlock) progressBlock(@"Finalizing.. (98%)", 0.98);
+    if (progressBlock && !interrupted) progressBlock(@"Finalizing.. (98%)", 0.98);
     
-    // Write trailer
-    p_av_write_trailer(outputFormatContext);
+    // Write trailer (it writes the moov box of an MP4; a failure or a failed close leaves an unplayable file)
+    int trailerRet = p_av_write_trailer(outputFormatContext);
+    if (trailerRet < 0) {
+        THDebugLog(@"Error writing trailer: %s", av_err2str_helper(trailerRet));
+        interrupted = YES;
+    }
+    int closeRet = p_avio_closep(&outputFormatContext->pb);
+    if (closeRet < 0) {
+        THDebugLog(@"Error closing the output file: %s", av_err2str_helper(closeRet));
+        interrupted = YES;
+    }
     
     // Cleanup
     p_av_frame_free(&decodedFrame);
@@ -931,10 +977,15 @@ static BOOL av1_ensure_sws(struct SwsContext **sws, int *haveW, int *haveH, enum
     p_sws_freeContext(swsContext);
     p_avcodec_free_context(&decoderContext);
     p_avcodec_free_context(&encoderContext);
-    p_avio_closep(&outputFormatContext->pb);
     p_avformat_free_context(outputFormatContext);
     p_avformat_close_input(&inputFormatContext);
     av1_close_audio_format_context(&audioFormatContext);
+    
+    if (interrupted) {
+        [[NSFileManager defaultManager] removeItemAtPath:outputPath error:nil];
+        if (error) *error = [NSError errorWithDomain:@"AV1Transcoder" code:-2 userInfo:@{NSLocalizedDescriptionKey: @"Conversion was interrupted"}];
+        return NO;
+    }
     return YES;
 }
 

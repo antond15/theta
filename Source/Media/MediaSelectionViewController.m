@@ -1210,7 +1210,9 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
     static const NSInteger maxConcurrentDownloads = 3;
     static const NSInteger maxConcurrentTranscoding = 2;
     
-    dispatch_semaphore_t downloadSemaphore = dispatch_semaphore_create(maxConcurrentDownloads);
+    // One slot per video in flight, from its start until finishItem: with the serial feeder below this
+    // bounds the threads a bulk save uses, however many videos are selected.
+    dispatch_semaphore_t itemSlots = dispatch_semaphore_create(maxConcurrentDownloads);
     dispatch_semaphore_t transcodeSemaphore = dispatch_semaphore_create(maxConcurrentTranscoding);
     
     __block NSInteger completedVideos = completedItems;
@@ -1221,6 +1223,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
     
     dispatch_queue_t statsQueue = dispatch_queue_create("com.theta.bulkstats", DISPATCH_QUEUE_SERIAL);
     dispatch_queue_t processingQueue = dispatch_queue_create("com.theta.bulkdownload", DISPATCH_QUEUE_CONCURRENT);
+    dispatch_queue_t feederQueue = dispatch_queue_create("com.theta.bulkfeeder", DISPATCH_QUEUE_SERIAL);
     
     // Track progress for each video
     NSMutableDictionary<NSNumber *, NSMutableDictionary *> *videoProgress = [NSMutableDictionary dictionary];
@@ -1301,6 +1304,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
     /* The one way an item ends, on every path (early failures included): counts it, and when it was
        the last one shows the result, which also releases the download lock. */
     void (^finishItem)(BOOL, NSInteger, NSString *) = ^(BOOL failed, NSInteger videoIndex, NSString *status) {
+        dispatch_semaphore_signal(itemSlots); // frees the feeder to start the next video
         dispatch_async(statsQueue, ^{
             videoProgress[@(videoIndex)][@"state"] = @"done";
             if (status) videoProgress[@(videoIndex)][@"status"] = status;
@@ -1324,15 +1328,15 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
         [progressToast setupPerItemProgressWithCount:videos.count];
     });
     
+    // Serial feeder: one parked thread waits for a free slot, the videos themselves run on the concurrent queue
+    dispatch_async(feederQueue, ^{
     // Process each video
     for (NSInteger i = 0; i < videos.count; i++) {
+        dispatch_semaphore_wait(itemSlots, DISPATCH_TIME_FOREVER);
         IGVideo *video = videos[i];
         NSInteger videoIndex = i;
         
         dispatch_async(processingQueue, ^{
-            // Wait for available download slot
-            dispatch_semaphore_wait(downloadSemaphore, DISPATCH_TIME_FOREVER);
-            
             @autoreleasepool {
                 // Update state to downloading
                 dispatch_sync(statsQueue, ^{
@@ -1343,7 +1347,6 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                 
                 NSData *videoData = [video valueForKey:@"dashManifestData"];
                 if (!videoData) {
-                    dispatch_semaphore_signal(downloadSemaphore);
                     finishItem(YES, videoIndex, @"Failed");
                     return;
                 }
@@ -1353,7 +1356,6 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                 NSString *audioURLString = IGDashManifestBestAudioURL(videoManifest);
                 
                 if (!videoURLString.length || ![NSURL URLWithString:videoURLString]) {
-                    dispatch_semaphore_signal(downloadSemaphore);
                     finishItem(YES, videoIndex, @"Failed");
                     return;
                 }
@@ -1418,9 +1420,6 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                 // Wait for downloads to complete
                 dispatch_group_wait(downloadGroup, DISPATCH_TIME_FOREVER);
                 
-                // Release download slot
-                dispatch_semaphore_signal(downloadSemaphore);
-                
                 // Verify downloads (non-empty video)
                 NSDictionary *downloadedVideoAttrs = [fm attributesOfItemAtPath:videoPath error:nil];
                 if (audioFailed || ![fm fileExistsAtPath:videoPath] || !downloadedVideoAttrs || [downloadedVideoAttrs fileSize] == 0) {
@@ -1434,7 +1433,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                     if (preparedAudio.length) {
                         audioPath = preparedAudio;
                     } else {
-                        NSLog(@"Bulk %ld: audio file missing, empty, or undecodable; video only", (long)videoIndex);
+                        THDebugLog(@"Bulk %ld: audio file missing, empty, or undecodable; video only", (long)videoIndex);
                         hasAudio = NO;
                     }
                 }
@@ -1472,7 +1471,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                     if (!transcodeSuccess) {
                     transcodeSuccess = [AV1Transcoder transcodeAV1ToH264:videoPath
                                                                     outputPath:outputPath
-                                                                     audioPath:audioPath
+                                                                     audioPath:hasAudio ? audioPath : nil
                                                                          error:&transcodeError
                                                                  progressBlock:^(NSString *status, float progress) {
                         // Update progress for this specific video
@@ -1494,11 +1493,12 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                     dispatch_semaphore_signal(transcodeSemaphore);
                     
                     if (!transcodeSuccess) {
-                        NSLog(@"Transcoding failed for video %ld (%@)", (long)videoIndex, transcodeError);
+                        THDebugLog(@"Transcoding failed for video %ld (%@)", (long)videoIndex, transcodeError);
                         if ([fm fileExistsAtPath:outputPath]) [fm removeItemAtPath:outputPath error:nil];
                         [fm removeItemAtPath:videoPath error:nil];
                         if (audioPath) [fm removeItemAtPath:audioPath error:nil];
-                        finishItem(YES, videoIndex, @"Transcoding failed");
+                        BOOL interrupted = [transcodeError.domain isEqualToString:@"AV1Transcoder"] && transcodeError.code == -2;
+                        finishItem(YES, videoIndex, interrupted ? @"Conversion interrupted" : @"Transcoding failed");
                         return;
                     }
                     
@@ -1545,7 +1545,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                             [compositionVideoTrack insertTimeRange:mergeRange ofTrack:videoTrackForMerge atTime:kCMTimeZero error:&videoInsertError];
                         }
                         if (videoInsertError) {
-                            NSLog(@"Error adding video track for video %ld: %@", (long)videoIndex, videoInsertError);
+                            THDebugLog(@"Error adding video track for video %ld: %@", (long)videoIndex, videoInsertError);
                             dispatch_semaphore_signal(transcodeSemaphore);
                             [fm removeItemAtPath:videoPath error:nil];
                             if (audioPath) [fm removeItemAtPath:audioPath error:nil];
@@ -1560,7 +1560,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                         NSError *audioInsertError = nil;
                         [compositionAudioTrack insertTimeRange:mergeRange ofTrack:audioTrackForMerge atTime:kCMTimeZero error:&audioInsertError];
                         if (audioInsertError) {
-                            NSLog(@"Error adding audio track for video %ld: %@", (long)videoIndex, audioInsertError);
+                            THDebugLog(@"Error adding audio track for video %ld: %@", (long)videoIndex, audioInsertError);
                         }
                     }
                     
@@ -1578,13 +1578,13 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                         }];
                         dispatch_semaphore_wait(exportSemaphore, DISPATCH_TIME_FOREVER);
                     } else {
-                        NSLog(@"Bulk %ld: export session cannot write MPEG-4", (long)videoIndex);
+                        THDebugLog(@"Bulk %ld: export session cannot write MPEG-4", (long)videoIndex);
                     }
                     
                     dispatch_semaphore_signal(transcodeSemaphore);
                     
                     if (!canWriteMP4 || exportSession.status != AVAssetExportSessionStatusCompleted) {
-                        NSLog(@"Export failed for video %ld: %@", (long)videoIndex, exportSession.error);
+                        THDebugLog(@"Export failed for video %ld: %@", (long)videoIndex, exportSession.error);
                         if ([fm fileExistsAtPath:outputPath]) [fm removeItemAtPath:outputPath error:nil];
                         NSError *transcodeError = nil;
                         BOOL fallbackOK = [AV1Transcoder transcodeAV1ToH264:videoPath
@@ -1599,7 +1599,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                         if (fallbackOK && fallbackAttrs && [fallbackAttrs fileSize] > 0) {
                             // Fall through to the camera-roll / folder save below.
                         } else {
-                        NSLog(@"Bulk %ld: FFmpeg fallback after export failure failed (%@)", (long)videoIndex, transcodeError);
+                        THDebugLog(@"Bulk %ld: FFmpeg fallback after export failure failed (%@)", (long)videoIndex, transcodeError);
                         // Cleanup
                         [fm removeItemAtPath:videoPath error:nil];
                         if (audioPath) [fm removeItemAtPath:audioPath error:nil];
@@ -1642,6 +1642,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
             }
         });
     }
+    });
 }
 
 - (void)generateHDVideoThumbnail:(IGVideo *)video forIndex:(NSInteger)index {
@@ -1670,11 +1671,11 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                 // Try to download a small portion and generate thumbnail
                 [self attemptThumbnailFromURL:firstVideoURL forIndex:index];
             } else {
-                NSLog(@"No video URLs found for HD video %ld", (long)index);
+                THDebugLog(@"No video URLs found for HD video %ld", (long)index);
             }
             
         } @catch (NSException *exception) {
-            NSLog(@"Error generating HD video thumbnail: %@", exception);
+            THDebugLog(@"Error generating HD video thumbnail: %@", exception);
         }
     });
 }
@@ -1733,7 +1734,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
     
     NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error || !data) {
-            NSLog(@"Error downloading video data for thumbnail %ld: %@", (long)index, error);
+            THDebugLog(@"Error downloading video data for thumbnail %ld: %@", (long)index, error);
             return;
         }
         
@@ -1742,7 +1743,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
         // Check if we got a valid response
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
         if (httpResponse.statusCode != 200 && httpResponse.statusCode != 206) {
-            NSLog(@"HTTP error %ld for thumbnail generation %ld", (long)httpResponse.statusCode, (long)index);
+            THDebugLog(@"HTTP error %ld for thumbnail generation %ld", (long)httpResponse.statusCode, (long)index);
             return;
         }
         
@@ -1751,7 +1752,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
         BOOL writeSuccess = [data writeToFile:tempPath atomically:YES];
         
         if (!writeSuccess) {
-            NSLog(@"Failed to write video data to temp file for %ld", (long)index);
+            THDebugLog(@"Failed to write video data to temp file for %ld", (long)index);
             return;
         }
         
@@ -1762,7 +1763,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
         [asset loadValuesAsynchronouslyForKeys:@[@"tracks"] completionHandler:^{
             AVKeyValueStatus status = [asset statusOfValueForKey:@"tracks" error:nil];
             if (status != AVKeyValueStatusLoaded) {
-                NSLog(@"Failed to load asset tracks for thumbnail %ld", (long)index);
+                THDebugLog(@"Failed to load asset tracks for thumbnail %ld", (long)index);
                 [[NSFileManager defaultManager] removeItemAtPath:tempPath error:nil];
                 dispatch_semaphore_signal(semaphore);
                 return;
@@ -1795,7 +1796,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                     THDebugLog(@"Updated HD video %ld with actual thumbnail", (long)index);
                 });
             } else {
-                NSLog(@"Failed to generate thumbnail for HD video %ld: %@", (long)index, imageError);
+                THDebugLog(@"Failed to generate thumbnail for HD video %ld: %@", (long)index, imageError);
             }
             
             // Clean up temp file
@@ -1899,7 +1900,7 @@ static void ThetaImportPhotoFile(NSString *path, NSString *uti, void (^completio
                 videoPlayers[key] = player;
                 THDebugLog(@"Preloaded video player %ld", (long)i);
             } else {
-                NSLog(@"Failed to preload video player %ld (timeout)", (long)i);
+                THDebugLog(@"Failed to preload video player %ld (timeout)", (long)i);
             }
             dispatch_group_leave(group);
         });

@@ -552,7 +552,7 @@ BOOL ThetaExportSessionSetFileType(AVAssetExportSession *session, NSString *file
         supported = nil;
     }
     if (supported.count > 0 && ![supported containsObject:fileType]) {
-        NSLog(@"[Theta] export preset cannot write %@ (supports %@)", fileType, supported);
+        THDebugLog(@"[Theta] export preset cannot write %@ (supports %@)", fileType, supported);
         return NO;
     }
 
@@ -561,7 +561,7 @@ BOOL ThetaExportSessionSetFileType(AVAssetExportSession *session, NSString *file
     } @catch (NSException *e) {
         /* This is the crash from the 441.0.0 / iOS 26.6 report: an unguarded setter raising
            NSInvalidArgumentException out of a background queue and aborting the process. */
-        NSLog(@"[Theta] setOutputFileType:%@ raised: %@", fileType, e.reason);
+        THDebugLog(@"[Theta] setOutputFileType:%@ raised: %@", fileType, e.reason);
         return NO;
     }
     return YES;
@@ -588,7 +588,7 @@ static NSString *ThetaRenameAudioByMagic(NSString *path) {
     [fm removeItemAtPath:dest error:nil];
     NSError *err = nil;
     if ([fm moveItemAtPath:path toPath:dest error:&err]) return dest;
-    NSLog(@"ThetaPrepareDashAudioForMerge: rename failed %@", err);
+    THDebugLog(@"ThetaPrepareDashAudioForMerge: rename failed %@", err);
     return path;
 }
 
@@ -603,14 +603,14 @@ static NSString *ThetaTranscodeAudioToM4A(AVAsset *asset, NSString *sourcePath) 
         session.outputFileType = AVFileTypeAppleM4A;
         session.outputURL = [NSURL fileURLWithPath:outPath];
     } @catch (NSException *e) {
-        NSLog(@"ThetaTranscodeAudioToM4A: session config threw %@: %@", e.name, e.reason);
+        THDebugLog(@"ThetaTranscodeAudioToM4A: session config threw %@: %@", e.name, e.reason);
         return nil;
     }
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     __block BOOL ok = NO;
     [session exportAsynchronouslyWithCompletionHandler:^{
         ok = (session.status == AVAssetExportSessionStatusCompleted);
-        if (!ok) NSLog(@"ThetaPrepareDashAudioForMerge: AAC export failed %@ status %ld", session.error, (long)session.status);
+        if (!ok) THDebugLog(@"ThetaPrepareDashAudioForMerge: AAC export failed %@ status %ld", session.error, (long)session.status);
         dispatch_semaphore_signal(sem);
     }];
     dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
@@ -644,7 +644,7 @@ NSString *ThetaPrepareDashAudioForMerge(NSString *audioPath) {
         THDebugLog(@"ThetaPrepareDashAudioForMerge: using original audio (AAC export unavailable)");
         return path;
     }
-    NSLog(@"ThetaPrepareDashAudioForMerge: no decodable audio track in %@", path);
+    THDebugLog(@"ThetaPrepareDashAudioForMerge: no decodable audio track in %@", path);
     return nil;
 }
 
@@ -678,7 +678,7 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
         ThetaAVAssetLoadKeys(videoAsset);
         AVAssetTrack *videoTrack = [[videoAsset tracksWithMediaType:AVMediaTypeVideo] firstObject];
         if (!videoTrack) {
-            NSLog(@"ThetaReaderWriter: no video track");
+            THDebugLog(@"ThetaReaderWriter: no video track");
             return NO;
         }
 
@@ -686,7 +686,7 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
         int width = ThetaEvenDimension(srcSize.width);
         int height = ThetaEvenDimension(srcSize.height);
         if (width < 2 || height < 2) {
-            NSLog(@"ThetaReaderWriter: invalid size %.0fx%.0f", srcSize.width, srcSize.height);
+            THDebugLog(@"ThetaReaderWriter: invalid size %.0fx%.0f", srcSize.width, srcSize.height);
             return NO;
         }
 
@@ -707,7 +707,7 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
             NSError *readerErr = nil;
             AVAssetReader *videoReader = [AVAssetReader assetReaderWithAsset:videoAsset error:&readerErr];
             if (!videoReader) {
-                NSLog(@"ThetaReaderWriter: video reader %@", readerErr);
+                THDebugLog(@"ThetaReaderWriter: video reader %@", readerErr);
                 return NO;
             }
             AVAssetReaderTrackOutput *videoOutput = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:videoTrack outputSettings:@{
@@ -749,7 +749,7 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
             NSError *writerErr = nil;
             AVAssetWriter *writer = [AVAssetWriter assetWriterWithURL:[NSURL fileURLWithPath:outputPath] fileType:AVFileTypeMPEG4 error:&writerErr];
             if (!writer) {
-                NSLog(@"ThetaReaderWriter: writer %@", writerErr);
+                THDebugLog(@"ThetaReaderWriter: writer %@", writerErr);
                 return NO;
             }
 
@@ -775,7 +775,7 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
             videoInput.expectsMediaDataInRealTime = NO;
             videoInput.transform = videoTrack.preferredTransform;
             if (![writer canAddInput:videoInput]) {
-                NSLog(@"ThetaReaderWriter: cannot add video input");
+                THDebugLog(@"ThetaReaderWriter: cannot add video input");
                 continue;
             }
             [writer addInput:videoInput];
@@ -799,37 +799,57 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
             }
 
             if (![videoReader startReading]) {
-                NSLog(@"ThetaReaderWriter: startReading video %@", videoReader.error);
+                THDebugLog(@"ThetaReaderWriter: startReading video %@", videoReader.error);
                 continue;
             }
             if (audioReader && ![audioReader startReading]) {
-                NSLog(@"ThetaReaderWriter: startReading audio %@", audioReader.error);
+                THDebugLog(@"ThetaReaderWriter: startReading audio %@", audioReader.error);
                 audioReader = nil;
                 audioOutput = nil;
                 audioInput = nil;
             }
             if (![writer startWriting]) {
-                NSLog(@"ThetaReaderWriter: startWriting %@", writer.error);
+                THDebugLog(@"ThetaReaderWriter: startWriting %@", writer.error);
                 continue;
             }
             [writer startSessionAtSourceTime:kCMTimeZero];
 
             dispatch_queue_t pump = dispatch_queue_create("theta.readerwriter", DISPATCH_QUEUE_SERIAL);
             dispatch_semaphore_t done = dispatch_semaphore_create(0);
+            // Both input blocks run on the one serial queue, so these flags need no lock.
             __block BOOL videoFinished = NO;
             __block BOOL audioFinished = (audioInput == nil);
             __block BOOL signaled = NO;
+            __block BOOL readFailed = NO;
             void (^signalIfDone)(void) = ^{
                 if (videoFinished && audioFinished && !signaled) {
                     signaled = YES;
                     dispatch_semaphore_signal(done);
                 }
             };
+            // A failed writer (or a failed reader) stops calling the blocks of inputs that are still
+            // waiting, so finish both inputs here or the wait below would never return.
+            void (^abortAll)(void) = ^{
+                if (!videoFinished) { [videoInput markAsFinished]; videoFinished = YES; }
+                if (audioInput && !audioFinished) { [audioInput markAsFinished]; audioFinished = YES; }
+                signalIfDone();
+            };
 
             [videoInput requestMediaDataWhenReadyOnQueue:pump usingBlock:^{
+                if (videoFinished) return;
                 while (videoInput.readyForMoreMediaData) {
+                    if (writer.status != AVAssetWriterStatusWriting) {
+                        abortAll();
+                        return;
+                    }
                     CMSampleBufferRef sample = [videoOutput copyNextSampleBuffer];
                     if (!sample) {
+                        // A NULL sample is the end of the stream only when the reader did not fail.
+                        if (videoReader.status == AVAssetReaderStatusFailed || videoReader.status == AVAssetReaderStatusCancelled) {
+                            readFailed = YES;
+                            abortAll();
+                            return;
+                        }
                         [videoInput markAsFinished];
                         videoFinished = YES;
                         signalIfDone();
@@ -838,9 +858,7 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
                     BOOL appended = [videoInput appendSampleBuffer:sample];
                     CFRelease(sample);
                     if (!appended) {
-                        [videoInput markAsFinished];
-                        videoFinished = YES;
-                        signalIfDone();
+                        abortAll();
                         return;
                     }
                 }
@@ -848,9 +866,19 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
 
             if (audioInput && audioOutput) {
                 [audioInput requestMediaDataWhenReadyOnQueue:pump usingBlock:^{
+                    if (audioFinished) return;
                     while (audioInput.readyForMoreMediaData) {
+                        if (writer.status != AVAssetWriterStatusWriting) {
+                            abortAll();
+                            return;
+                        }
                         CMSampleBufferRef sample = [audioOutput copyNextSampleBuffer];
                         if (!sample) {
+                            if (audioReader.status == AVAssetReaderStatusFailed || audioReader.status == AVAssetReaderStatusCancelled) {
+                                readFailed = YES;
+                                abortAll();
+                                return;
+                            }
                             [audioInput markAsFinished];
                             audioFinished = YES;
                             signalIfDone();
@@ -859,34 +887,44 @@ BOOL ThetaTranscodeWithAssetReaderWriter(NSString *videoPath, NSString *audioPat
                         BOOL appended = [audioInput appendSampleBuffer:sample];
                         CFRelease(sample);
                         if (!appended) {
-                            [audioInput markAsFinished];
-                            audioFinished = YES;
-                            signalIfDone();
+                            abortAll();
                             return;
                         }
                     }
                 }];
             }
 
+            // No timeout: the blocks above always finish both inputs, on success and on failure.
             dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
 
-            dispatch_semaphore_t finishSem = dispatch_semaphore_create(0);
-            [writer finishWritingWithCompletionHandler:^{
-                dispatch_semaphore_signal(finishSem);
-            }];
-            dispatch_semaphore_wait(finishSem, DISPATCH_TIME_FOREVER);
+            if (readFailed) {
+                THDebugLog(@"ThetaReaderWriter: reader failed video=%@ audio=%@", videoReader.error, audioReader.error);
+                [videoReader cancelReading];
+                [audioReader cancelReading];
+                if (writer.status == AVAssetWriterStatusWriting) [writer cancelWriting];
+                [fm removeItemAtPath:outputPath error:nil];
+                return NO;
+            }
+
+            if (writer.status == AVAssetWriterStatusWriting) {
+                dispatch_semaphore_t finishSem = dispatch_semaphore_create(0);
+                [writer finishWritingWithCompletionHandler:^{
+                    dispatch_semaphore_signal(finishSem);
+                }];
+                dispatch_semaphore_wait(finishSem, DISPATCH_TIME_FOREVER);
+            }
 
             NSDictionary *attrs = [fm attributesOfItemAtPath:outputPath error:nil];
             if (writer.status == AVAssetWriterStatusCompleted && attrs.fileSize > 0) {
                 THDebugLog(@"ThetaReaderWriter: wrote %@ (%llu bytes) pix=%@", outputPath, (unsigned long long)attrs.fileSize, pixelFormat);
                 return YES;
             }
-            NSLog(@"ThetaReaderWriter: write failed status=%ld err=%@ pix=%@", (long)writer.status, writer.error, pixelFormat);
+            THDebugLog(@"ThetaReaderWriter: write failed status=%ld err=%@ pix=%@", (long)writer.status, writer.error, pixelFormat);
             [fm removeItemAtPath:outputPath error:nil];
         }
         return NO;
     } @catch (NSException *e) {
-        NSLog(@"ThetaReaderWriter threw %@: %@", e.name, e.reason);
+        THDebugLog(@"ThetaReaderWriter threw %@: %@", e.name, e.reason);
         return NO;
     }
 }
@@ -932,7 +970,7 @@ BOOL ThetaExportPhotosCompatibleMP4(NSString *videoPath, NSString *audioPath, BO
     if (!CMTIME_IS_NUMERIC(videoDur) || CMTIME_COMPARE_INLINE(videoDur, <=, kCMTimeZero)) return NO;
     NSError *insertErr = nil;
     if (![compVideo insertTimeRange:CMTimeRangeMake(kCMTimeZero, videoDur) ofTrack:videoTrack atTime:kCMTimeZero error:&insertErr]) {
-        NSLog(@"ThetaExportPhotosCompatibleMP4: video insert failed %@", insertErr);
+        THDebugLog(@"ThetaExportPhotosCompatibleMP4: video insert failed %@", insertErr);
         return NO;
     }
     NSString *preparedAudio = nil;
@@ -949,10 +987,10 @@ BOOL ThetaExportPhotosCompatibleMP4(NSString *videoPath, NSString *audioPath, BO
             CMTime mergeDur = CMTIME_IS_NUMERIC(audioDur) ? CMTimeMinimum(videoDur, audioDur) : videoDur;
             NSError *audioErr = nil;
             if (![compAudio insertTimeRange:CMTimeRangeMake(kCMTimeZero, mergeDur) ofTrack:audioTrack atTime:kCMTimeZero error:&audioErr] || audioErr) {
-                NSLog(@"ThetaExportPhotosCompatibleMP4: audio insert failed %@", audioErr);
+                THDebugLog(@"ThetaExportPhotosCompatibleMP4: audio insert failed %@", audioErr);
             }
         } else {
-            NSLog(@"ThetaExportPhotosCompatibleMP4: prepared audio has no track");
+            THDebugLog(@"ThetaExportPhotosCompatibleMP4: prepared audio has no track");
         }
     }
 
@@ -996,7 +1034,7 @@ BOOL ThetaExportPhotosCompatibleMP4(NSString *videoPath, NSString *audioPath, BO
             __block BOOL ok = NO;
             [session exportAsynchronouslyWithCompletionHandler:^{
                 ok = (session.status == AVAssetExportSessionStatusCompleted);
-                if (!ok) NSLog(@"ThetaExportPhotosCompatibleMP4 preset %@ failed: %@ status %ld", preset, session.error, (long)session.status);
+                if (!ok) THDebugLog(@"ThetaExportPhotosCompatibleMP4 preset %@ failed: %@ status %ld", preset, session.error, (long)session.status);
                 dispatch_semaphore_signal(sem);
             }];
             dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
@@ -1004,13 +1042,13 @@ BOOL ThetaExportPhotosCompatibleMP4(NSString *videoPath, NSString *audioPath, BO
             if (ok && attrs && [attrs fileSize] > 0) return YES;
             [fm removeItemAtPath:outputPath error:nil];
         } @catch (NSException *e) {
-            NSLog(@"ThetaExportPhotosCompatibleMP4 preset %@ threw %@: %@", preset, e.name, e.reason);
+            THDebugLog(@"ThetaExportPhotosCompatibleMP4 preset %@ threw %@: %@", preset, e.name, e.reason);
             [fm removeItemAtPath:outputPath error:nil];
         }
     }
     return NO;
     } @catch (NSException *e) {
-        NSLog(@"ThetaExportPhotosCompatibleMP4 threw %@: %@", e.name, e.reason);
+        THDebugLog(@"ThetaExportPhotosCompatibleMP4 threw %@: %@", e.name, e.reason);
         return NO;
     }
 }

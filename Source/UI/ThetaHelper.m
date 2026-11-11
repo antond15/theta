@@ -12,6 +12,7 @@ NSString *const ThetaSaveErrorDomain = @"ThetaSave";
 @implementation ThetaHelper
 
 static volatile BOOL sGlobalDownloadInProgress = NO;
+static UIBackgroundTaskIdentifier sGlobalDownloadBackgroundTask; // zero-initialised: UIBackgroundTaskInvalid
 
 #pragma mark - Constants
 
@@ -271,6 +272,16 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
             return NO;
         }
         sGlobalDownloadInProgress = YES;
+        // One background task per save, paired with the lock: leaving Instagram mid-save gets the
+        // conversion the usual extra time instead of an immediate suspend.
+        sGlobalDownloadBackgroundTask = [[UIApplication sharedApplication] beginBackgroundTaskWithName:@"theta.save" expirationHandler:^{
+            @synchronized([ThetaHelper class]) {
+                if (sGlobalDownloadBackgroundTask != UIBackgroundTaskInvalid) {
+                    [[UIApplication sharedApplication] endBackgroundTask:sGlobalDownloadBackgroundTask];
+                    sGlobalDownloadBackgroundTask = UIBackgroundTaskInvalid;
+                }
+            }
+        }];
         return YES;
     }
 }
@@ -278,6 +289,10 @@ static NSUInteger ThetaRemoveTemporaryItems(unsigned long long *bytes) {
 + (void)endGlobalDownload {
     @synchronized(self) {
         sGlobalDownloadInProgress = NO;
+        if (sGlobalDownloadBackgroundTask != UIBackgroundTaskInvalid) {
+            [[UIApplication sharedApplication] endBackgroundTask:sGlobalDownloadBackgroundTask];
+            sGlobalDownloadBackgroundTask = UIBackgroundTaskInvalid;
+        }
     }
 }
 
