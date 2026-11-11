@@ -64,7 +64,7 @@ ln -s ../../scripts/pre-push.sh .git/hooks/pre-push
 It does two things:
 
 1. **Hook coverage.** It runs `compat.py` against `input/Payload/Instagram.app`, or skips this step with a notice if the app isn't there. A current Instagram build already has a few misses (dead fallbacks), so the exit code alone is useless. The script compares the MISSING and UNRESOLVED entries (file, class, selector; line numbers ignored) against a baseline in `.git/theta-compat-baseline.txt`, and fails only on entries that are not in the baseline. The first run creates the baseline. Entries that disappear are listed but don't fail. After switching to a new Instagram version, or after deciding a new miss is fine, record the current state with `./scripts/pre-push.sh --update-baseline`.
-2. **Compile.** It runs `gmake clean && gmake`, the same compile `./build.sh` does, and fails on a compile error. More than the usual six warnings are printed but don't fail the push.
+2. **Compile.** It runs `gmake clean && gmake`, the same compile `./build.sh` does, and fails on a compile error. More than the usual six warnings fails it too, and prints them.
 
 The check compiles the working tree, including uncommitted changes, so commit or stash before pushing if they differ. `git push --no-verify` skips it.
 

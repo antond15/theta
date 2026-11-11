@@ -290,7 +290,7 @@ def trace(text, pos, expr, extract, depth=0):
 def theta_own_classes():
     names = set()
     for p in source_files():
-        names |= set(re.findall(r"@(?:interface|implementation)\s+([A-Za-z_]\w*)\b(?!\s*\()",
+        names |= set(re.findall(r"@implementation\s+([A-Za-z_]\w*)\b(?!\s*\()",
                                 read_source(p)))
     return names
 

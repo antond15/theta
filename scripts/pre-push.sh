@@ -11,7 +11,7 @@
 # .git/theta-compat-baseline.txt and fails only on new ones. The first run creates the baseline.
 #
 # Compile: `gmake clean && gmake` of the working tree, the same compile ./build.sh runs. Fails on
-# a compile error. The decrypted IPA never leaves this machine.
+# a compile error or on more than the known warnings. The decrypted IPA never leaves this machine.
 set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -88,7 +88,8 @@ if ! $make_cmd > "$tmp/build.log" 2>&1; then
 fi
 warnings="$(grep -c "warning:" "$tmp/build.log" || true)"
 if [[ "$warnings" -gt "$EXPECTED_WARNINGS" ]]; then
-	log "Note: $warnings warnings (a clean build has $EXPECTED_WARNINGS):"
 	sed 's/\x1b\[[0-9;]*m//g' "$tmp/build.log" | grep "warning:" | sed 's/^/[pre-push]   /'
+	log "FAIL: $warnings warnings (a clean build has $EXPECTED_WARNINGS)"
+	exit 1
 fi
 log "OK"
