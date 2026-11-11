@@ -73,6 +73,37 @@ static BOOL THIsWebURL(NSURL *url) {
     return [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"];
 }
 
+// Rewrite an object's URL request ivar to the cleaned URL, keeping the request's other fields.
+static void THStripTrackingInRequestIvar(id obj, const char *name) {
+    if (!obj || !ENABLED(THLinksStripTracking)) return;
+    Ivar ivar = class_getInstanceVariable([obj class], name);
+    if (!ivar) return;
+    id req = object_getIvar(obj, ivar);
+    if (![req isKindOfClass:[NSURLRequest class]]) return;
+    NSURL *url = [(NSURLRequest *)req URL];
+    NSURL *cleaned = THCleanBrowserURL(url);
+    if (!url || !THIsWebURL(cleaned) || [cleaned isEqual:url]) return;
+    NSMutableURLRequest *clean = [(NSURLRequest *)req mutableCopy];
+    clean.URL = cleaned;
+    object_setIvar(obj, ivar, [clean copy]);
+    THDebugLog(@"[Theta] links: stripped %s on %@", name, NSStringFromClass([obj class]));
+}
+
+// Instagram 451 builds every in-app browser session through IGBrowserSessionBuilder and sends -build
+// and -[IGBrowserViewController initWithBrowserSession:] through objc_msgSend. The browser reads the
+// request when it is created, so the old swap in -viewWillAppear: came too late.
+static id (*orig_browserSessionBuild)(id self, SEL _cmd);
+static id hook_browserSessionBuild(id self, SEL _cmd) {
+    @try { THStripTrackingInRequestIvar(self, "_urlRequest"); } @catch (__unused NSException *e) {}
+    return orig_browserSessionBuild(self, _cmd);
+}
+
+static id (*orig_browserVCInitWithSession)(id self, SEL _cmd, id session);
+static id hook_browserVCInitWithSession(id self, SEL _cmd, id session) {
+    @try { THStripTrackingInRequestIvar(session, "_urlRequest"); } @catch (__unused NSException *e) {}
+    return orig_browserVCInitWithSession(self, _cmd, session);
+}
+
 static void (*orig_viewWillAppear_Browser)(id self, SEL _cmd, BOOL animated);
 static void hook_viewWillAppear_Browser(id self, SEL _cmd, BOOL animated) {
     @try {
@@ -91,14 +122,7 @@ static void hook_viewWillAppear_Browser(id self, SEL _cmd, BOOL animated) {
             }
         }
 
-        // Strip tracking params in the in-app browser too
-        if (url && ENABLED(THLinksStripTracking) && urlIvar) {
-            NSURL *cleaned = THCleanBrowserURL(url);
-            if (THIsWebURL(cleaned) && ![cleaned isEqual:url]) {
-                NSURLRequest *cleanReq = [NSURLRequest requestWithURL:cleaned];
-                object_setIvar(session, urlIvar, cleanReq);
-            }
-        }
+        // The in-app browser strip runs earlier, at the builder and the browser's init (below).
     } @catch (__unused NSException *e) {}
 
     orig_viewWillAppear_Browser(self, _cmd, animated);
@@ -107,4 +131,8 @@ static void hook_viewWillAppear_Browser(id self, SEL _cmd, BOOL animated) {
 void THRegisterExternalBrowserHooks(void) {
     Class cls = objc_getClass("IGBrowserNavigationController");
     NullHookMessageEx(cls, @selector(viewWillAppear:), (void *)hook_viewWillAppear_Browser, &orig_viewWillAppear_Browser);
+    NullHookMessageEx(objc_getClass("IGBrowserSessionBuilder"), @selector(build),
+                      (void *)hook_browserSessionBuild, &orig_browserSessionBuild);
+    NullHookMessageEx(objc_getClass("IGBrowserViewController"), @selector(initWithBrowserSession:),
+                      (void *)hook_browserVCInitWithSession, &orig_browserVCInitWithSession);
 }
