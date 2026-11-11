@@ -230,15 +230,22 @@ void ThetaSettingsPrepare(void) {
     if (!atomic_compare_exchange_strong(&sThetaSettingsState, &expected, 1)) return;
 
     sThetaSettingsCache = [NSMutableDictionary dictionary];
-    [[NSNotificationCenter defaultCenter] addObserverForName:NSUserDefaultsDidChangeNotification
-                                                      object:nil
-                                                       queue:nil
-                                                  usingBlock:^(__unused NSNotification *note) {
+    void (^clearCache)(NSNotification *) = ^(__unused NSNotification *note) {
         os_unfair_lock_lock(&sThetaSettingsLock);
         sThetaSettingsGeneration++;
         [sThetaSettingsCache removeAllObjects];
         os_unfair_lock_unlock(&sThetaSettingsLock);
-    }];
+    };
+    [[NSNotificationCenter defaultCenter] addObserverForName:NSUserDefaultsDidChangeNotification
+                                                      object:nil
+                                                       queue:nil
+                                                  usingBlock:clearCache];
+    /* A background launch before the first unlock can't read the defaults file, so every read
+       returns the default; drop those once the file is readable. */
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationProtectedDataDidBecomeAvailable
+                                                      object:nil
+                                                       queue:nil
+                                                  usingBlock:clearCache];
 
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     if ([d integerForKey:kSettingsVersionKey] < kSettingsVersion) {
