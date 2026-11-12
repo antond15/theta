@@ -18,6 +18,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - **Story seen receipts stay on the phone** on 451. The eye button (one story, or Mark All Seen) still marks the stories you pick as seen. Receipts queued while the setting is on are never sent, even after you turn it off.
 - **Only seen calls are blocked**, for stories and Instants alike. The old match dropped any request containing words like `story_seen`, including a DM with that text.
 - **Disappearing Media Ghost** marks the current photo or video as seen, not the next one, and works for videos. "Marked as seen!" appears only when something was sent. Ordinary story photos load normally with the setting on.
+- **Disable Auto-Advance** works on 451, for photos and videos: a story stays on screen when it ends.
 - **Always Mark Seen** no longer skips past those accounts' stories when Skip After Marking Seen is on.
 
 ## Messages and notifications

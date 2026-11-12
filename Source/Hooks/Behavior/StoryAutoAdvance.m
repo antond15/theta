@@ -1,12 +1,27 @@
-static void (*orig_storyAutoAdvance)(id self, SEL _cmd, NSInteger arg1);
-static void hook_storyAutoAdvance(id self, SEL _cmd, NSInteger arg1) {
-    if (arg1 == 6 && ENABLED(THStoryDisableAutoAdvance)) {
+// Story auto-advance: the media view (photo timer or video end) reports the end through
+// -storyPlayerMediaViewDidPlayToEnd: on the section controller, which then advances with
+// navigation action 6. The Swift controller (IGStoryFullscreenSectionControllerSwift, used on
+// newer builds) calls its advance code Swift-direct, so the end callback is the hookable point.
+static void (*orig_storyDidPlayToEnd)(id self, SEL _cmd, id mediaView);
+static void hook_storyDidPlayToEnd(id self, SEL _cmd, id mediaView) {
+    if (ENABLED(THStoryDisableAutoAdvance)) {
         return;
     }
 
-    return orig_storyAutoAdvance(self, _cmd, arg1);
+    orig_storyDidPlayToEnd(self, _cmd, mediaView);
+}
+
+static void (*orig_storySwiftDidPlayToEnd)(id self, SEL _cmd, id mediaView);
+static void hook_storySwiftDidPlayToEnd(id self, SEL _cmd, id mediaView) {
+    if (ENABLED(THStoryDisableAutoAdvance)) {
+        return;
+    }
+
+    orig_storySwiftDidPlayToEnd(self, _cmd, mediaView);
 }
 
 void THRegisterStoryAutoAdvanceHooks(void) {
-    NullHookMessageEx(objc_getClass("IGStoryFullscreenSectionController"), @selector(advanceToNextItemWithNavigationAction:), (void *)hook_storyAutoAdvance, &orig_storyAutoAdvance);
+    SEL endSel = @selector(storyPlayerMediaViewDidPlayToEnd:);
+    NullHookMessageIfPresent(ThetaFirstClass(@[ @"_TtC39IGStoryFullscreenSectionControllerSwift39IGStoryFullscreenSectionControllerSwift" ]), endSel, (void *)hook_storySwiftDidPlayToEnd, &orig_storySwiftDidPlayToEnd);
+    NullHookMessageIfPresent(objc_getClass("IGStoryFullscreenSectionController"), endSel, (void *)hook_storyDidPlayToEnd, &orig_storyDidPlayToEnd);
 }
