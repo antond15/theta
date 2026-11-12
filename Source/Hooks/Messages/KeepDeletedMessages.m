@@ -1,6 +1,5 @@
-static char kThetaOriginalBackgroundColorKey;
-static char kThetaProcessedMessageIdKey;
-static char kThetaOverlayViewKey;
+static char kThetaPaintedBubbleKey;
+static char kThetaOriginalShapeColorsKey;
 
 static UIView *thetaFindMessageBubble(UIView *root) {
 	if (!root) return nil;
@@ -48,13 +47,77 @@ static UIView *thetaFindInnerTextMessageBubble(UIView *root) {
 	return inner ?: nil;
 }
 
+static id ThetaNullable(id value) { return value ?: [NSNull null]; }
+static id ThetaUnNull(id value) { return value == [NSNull null] ? nil : value; }
+
+// Puts back what ThetaPaintDeletedBubble changed, but only where the value is still our
+// paint: anything Instagram set since (a theme, a new message's style) is left alone.
+static void ThetaRestoreDeletedBubble(UIView *bubble) {
+	NSDictionary *saved = objc_getAssociatedObject(bubble, &kThetaPaintedBubbleKey);
+	if (!saved) return;
+	CGColorRef painted = (__bridge CGColorRef)saved[@"painted"];
+
+	if (CGColorEqualToColor(bubble.backgroundColor.CGColor, painted)) {
+		bubble.backgroundColor = ThetaUnNull(saved[@"viewBackground"]);
+	}
+	if (CGColorEqualToColor(bubble.layer.backgroundColor, painted)) {
+		bubble.layer.backgroundColor = (__bridge CGColorRef)ThetaUnNull(saved[@"layerBackground"]);
+	}
+	for (CALayer *sublayer in bubble.layer.sublayers ?: @[]) {
+		if (![sublayer isKindOfClass:[CAShapeLayer class]]) continue;
+		CAShapeLayer *shape = (CAShapeLayer *)sublayer;
+		NSDictionary *colors = objc_getAssociatedObject(shape, &kThetaOriginalShapeColorsKey);
+		if (!colors) continue;
+		if (CGColorEqualToColor(shape.fillColor, painted)) shape.fillColor = (__bridge CGColorRef)ThetaUnNull(colors[@"fill"]);
+		if (CGColorEqualToColor(shape.backgroundColor, painted)) shape.backgroundColor = (__bridge CGColorRef)ThetaUnNull(colors[@"background"]);
+		objc_setAssociatedObject(shape, &kThetaOriginalShapeColorsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+	}
+	[(UIView *)saved[@"overlay"] removeFromSuperview];
+	objc_setAssociatedObject(bubble, &kThetaPaintedBubbleKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static void ThetaPaintDeletedBubble(UIView *bubble, UIColor *color) {
+	NSDictionary *saved = objc_getAssociatedObject(bubble, &kThetaPaintedBubbleKey);
+	if (saved && CGColorEqualToColor((__bridge CGColorRef)saved[@"painted"], color.CGColor)) return;
+	ThetaRestoreDeletedBubble(bubble);
+
+	UIView *overlay = [[UIView alloc] initWithFrame:bubble.bounds];
+	overlay.userInteractionEnabled = NO;
+	overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+	overlay.layer.cornerRadius = bubble.layer.cornerRadius;
+	overlay.layer.masksToBounds = YES;
+	overlay.backgroundColor = color;
+
+	objc_setAssociatedObject(bubble, &kThetaPaintedBubbleKey, @{
+		@"painted": (__bridge id)color.CGColor,
+		@"viewBackground": ThetaNullable(bubble.backgroundColor),
+		@"layerBackground": ThetaNullable((__bridge id)bubble.layer.backgroundColor),
+		@"overlay": overlay,
+	}, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+	bubble.backgroundColor = color;
+	bubble.layer.backgroundColor = color.CGColor;
+	// Tint the shape layers that draw the bubble
+	for (CALayer *sublayer in bubble.layer.sublayers ?: @[]) {
+		if (![sublayer isKindOfClass:[CAShapeLayer class]]) continue;
+		CAShapeLayer *shape = (CAShapeLayer *)sublayer;
+		objc_setAssociatedObject(shape, &kThetaOriginalShapeColorsKey, @{
+			@"fill": ThetaNullable((__bridge id)shape.fillColor),
+			@"background": ThetaNullable((__bridge id)shape.backgroundColor),
+		}, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+		shape.fillColor = color.CGColor;
+		shape.backgroundColor = color.CGColor;
+	}
+	// Behind the content but inside the bubble, for bubbles drawn some other way
+	[bubble insertSubview:overlay atIndex:0];
+}
+
 static void ThetaColorDeletedMessageCell(id self, id viewModel) {
 	if (!ENABLED(THDMKeepDeleted)) return;
 	if (![viewModel conformsToProtocol:@protocol(IGDirectMessageViewModelProtocol)]) return;
 
 	IGDirectUIMessageMetadata *metadata = [(id<IGDirectMessageViewModelProtocol>)viewModel messageMetadata];
 	NSString *serverId = metadata.key.serverId;
-	if (serverId.length == 0) return;
 
 	UIView *container = nil;
 	if ([self respondsToSelector:@selector(contentViewForVisualMessageViewerPresentation)]) {
@@ -75,61 +138,15 @@ static void ThetaColorDeletedMessageCell(id self, id viewModel) {
 	if (!bubble) bubble = thetaFindMessageBubble(container);
 	if (!bubble) bubble = container;
 
-	UIColor *originalBackgroundColor = objc_getAssociatedObject(bubble, &kThetaOriginalBackgroundColorKey);
-	if (!originalBackgroundColor) {
-		@try {
-			originalBackgroundColor = [bubble valueForKey:@"backgroundColor"];
-			if (originalBackgroundColor) {
-				objc_setAssociatedObject(bubble, &kThetaOriginalBackgroundColorKey, originalBackgroundColor, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-			}
-		} @catch (__unused NSException *e) {}
-	}
-
-	NSString *processedServerId = objc_getAssociatedObject(bubble, &kThetaProcessedMessageIdKey);
-	if ([processedServerId isKindOfClass:[NSString class]] && [processedServerId isEqualToString:serverId]) {
+	// Cells are reused: paint only deleted messages, and undo the paint when a reused
+	// bubble shows a message that isn't deleted (Instagram doesn't reset what we changed).
+	if (serverId.length == 0 || ![[MessagesManager sharedManager] messageExistsWithID:serverId]) {
+		ThetaRestoreDeletedBubble(bubble);
 		return;
 	}
-
-	BOOL exists = [[MessagesManager sharedManager] messageExistsWithID:serverId];
-	UIColor *targetColor = nil;
-	if (exists) {
-		targetColor = ThetaSettingColor(THDMDeletedColor);
-	} else if (originalBackgroundColor) {
-		targetColor = originalBackgroundColor;
-	}
-
-	if (targetColor) {
-		@try {
-			// 1) Attempt direct background set
-			[bubble setValue:targetColor forKey:@"backgroundColor"];
-			if ([bubble layer]) {
-				bubble.layer.backgroundColor = targetColor.CGColor;
-			}
-			// 2) Try tinting common shape layers that render the bubble
-			CALayer *layer = bubble.layer;
-			for (CALayer *sublayer in layer.sublayers ?: @[]) {
-				if ([sublayer isKindOfClass:[CAShapeLayer class]]) {
-					((CAShapeLayer *)sublayer).fillColor = targetColor.CGColor;
-					((CAShapeLayer *)sublayer).backgroundColor = targetColor.CGColor;
-				}
-			}
-			// 3) Ensure a persistent visual using an overlay if needed
-			UIView *overlay = objc_getAssociatedObject(bubble, &kThetaOverlayViewKey);
-			if (!overlay) {
-				overlay = [[UIView alloc] initWithFrame:bubble.bounds];
-				overlay.userInteractionEnabled = NO;
-				overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-				overlay.layer.cornerRadius = bubble.layer.cornerRadius;
-				overlay.layer.masksToBounds = YES;
-				objc_setAssociatedObject(bubble, &kThetaOverlayViewKey, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-				// Put behind content but inside bubble
-				[bubble insertSubview:overlay atIndex:0];
-			}
-			overlay.backgroundColor = targetColor;
-		} @catch (__unused NSException *e) {}
-	}
-
-	objc_setAssociatedObject(bubble, &kThetaProcessedMessageIdKey, serverId, OBJC_ASSOCIATION_COPY_NONATOMIC);
+	UIColor *color = ThetaSettingColor(THDMDeletedColor);
+	if (!color) return;
+	ThetaPaintDeletedBubble(bubble, color);
 }
 
 // 451 renamed the last argument (launcherSet: -> mobileConfig:); each selector keeps its own original.
