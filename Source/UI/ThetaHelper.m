@@ -375,24 +375,44 @@ static BOOL ThetaPhotosStatusAllowsWrite(PHAuthorizationStatus status) {
     return [fm moveItemAtPath:path toPath:dest error:error] ? dest : nil;
 }
 
+/// Runs `block` on the main queue once Instagram is active. A failure that ends while the app is in the
+/// background (a conversion stopped by iOS) would otherwise auto-hide before the user comes back.
+static void theta_runWhenActive(void (^block)(void)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
+            block();
+            return;
+        }
+        __block id observer = [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                                                object:nil
+                                                                                 queue:[NSOperationQueue mainQueue]
+                                                                            usingBlock:^(__unused NSNotification *note) {
+            [[NSNotificationCenter defaultCenter] removeObserver:observer];
+            observer = nil;
+            block();
+        }];
+    });
+}
+
 + (void)finishProgressToast:(CustomToastView *)toast success:(BOOL)success title:(NSString *)title subtitle:(NSString *)subtitle icon:(UIImage *)icon url:(NSURL *)url {
     if (!toast) return;
     void (^finish)(void) = ^{
         if (success && !ENABLED(THAppShowBanners)) [toast hideWithAnimation];
         else [toast completeProgressWithTitle:title subtitle:subtitle icon:icon url:url];
     };
-    if ([NSThread isMainThread]) finish();
+    if (!success) theta_runWhenActive(finish);
+    else if ([NSThread isMainThread]) finish();
     else dispatch_async(dispatch_get_main_queue(), finish);
 }
 
 + (void)showFailureToastWithTitle:(NSString *)title subtitle:(NSString *)subtitle openURL:(NSURL *)openURL {
     UIImage *icon = [UIImage systemImageNamed:@"exclamationmark.triangle"];
-    if (ENABLED(THAppShowBanners)) {
-        [self showToastWithTitle:title subtitle:subtitle icon:icon autoHide:4 openURL:openURL];
-        return;
-    }
-    // Show Banners off still shows a failure (without haptics): a save must never fail silently.
-    dispatch_async(dispatch_get_main_queue(), ^{
+    theta_runWhenActive(^{
+        if (ENABLED(THAppShowBanners)) {
+            [self showToastWithTitle:title subtitle:subtitle icon:icon autoHide:4 openURL:openURL];
+            return;
+        }
+        // Show Banners off still shows a failure (without haptics): a save must never fail silently.
         CustomToastView *toast = [[CustomToastView alloc] initWithTitle:title subtitle:subtitle icon:icon autoHide:4 openURL:openURL];
         [toast presentToast];
     });
