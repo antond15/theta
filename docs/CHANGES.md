@@ -1,101 +1,81 @@
 # Changes in this fork
 
-Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/theta) 1.0.1. Ported work is credited in the [README](../README.md#credits) and in the commit messages.
+Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/theta) 1.0.1. Ported work is credited in the [README](../README.md#credits) and in the commit messages. How the less obvious parts work is in [DEVELOPMENT.md](DEVELOPMENT.md#how-it-works).
 
-## Instagram 451 fixes
+## Instagram 451 and sideload compatibility
 
-- **Swift class renames.** Hooks look up the Swift mangled class name first and the old ObjC name after, for the classes Instagram 451 moved into Swift modules.
-- **Navigation** (tab order, swipe between tabs, launch tab, hide tabs, Messenger Mode). Tab hooks now also install from the constructor, because Instagram builds the tab bar before Theta's normal hook pass. Hidden tabs are filtered where Instagram builds the tab list, which covers the iOS 26 system tab bar.
-- **Story seen receipts stay local.** The 451 Swift pending-seen store sends `/media/seen/` through a direct (unhookable) `IGAPIRequest` call. Theta now hooks the one ObjC call on that path, `-[IGStorySeenStateUploader networker]`, and returns nil while receipts are blocked. Instagram queues every receipt and uploads the whole queue later, so that gate also checks the queue: the eye button (one story, or Mark All Seen) allows its own stories for 15 minutes, every other queued receipt is removed and that upload is blocked, and an upload holding only the eye's receipts goes through. Receipts queued while the setting is on are never sent, not even after it is turned off (the first upload after turning it off drops the queue once). A queue Theta can't read blocks the upload.
-- **Seen-request dropping** for stories and Instants moved to `-[IGTigonNetworkLayer startRequest:policy:callbacks:]`, the bottom of Instagram's network-layer chain, with NSURLSession as a backstop. A dropped request fails the same way Tigon fails a request it won't start. Only requests to Instagram or Facebook hosts are dropped, and only the story `/media/seen/` call and the Instants seen mutation (`IGQuickSnapUpdateSeenStateMutation`, by its GraphQL name header, or in a GraphQL body of at most 16 KB). The old match dropped any request whose URL or body contained words such as `story_seen`, including a DM with that text, and decoded upload bodies of any size. One set of hooks serves both settings; the Instants hooks on every request's body and headers are gone.
-- Removed the story-viewer ivar walk that cleared seen networkers on each mark, the section-controller seen hooks and their fallbacks: none of their targets exist in 451, and the `networker` hook above does the job.
-- **Hide Create Button** works on the Swift profile header again. Its `leftButtons` is a Swift array with no getter, so it is read from the ivar directly.
-- **DBB:** the forced-logout push hook also looks on `IGPushCoordinator`, where the method moved.
-- **Liquid Glass**
-  - The toggles no longer force Instagram's "homecoming" experiment, which on 451 replaces the home feed with an All / Friends / Following feed.
-  - "Enable Liquid Glass Buttons" now sets Instagram's stored glass flag through its own `overrideIsEnabled:` / `setIsEnabled:` setters. Instagram reads the flag directly from Swift, so swizzling the getter alone had no visible effect.
-- **Profile pictures:** the save / fullscreen menu opens on a long press of the large avatar in a profile header only. Avatars elsewhere keep their normal behaviour.
-- Removed hooks and fallbacks for classes and selectors that no longer exist in 451 (old reaction, voice-message and cache-update variants, `LSKeychainItemController`, several Liquid Glass experiment switches).
+- **Tabs.** Tab order, swipe between tabs, launch tab, hidden tabs and Messenger Mode work on 451, including the iOS 26 system tab bar.
+- **Hide Create Button** works on the new profile header.
+- **Liquid Glass.** No longer crashes a sideloaded app at launch. The toggles no longer switch on Instagram's All / Friends / Following home feed, and "Enable Liquid Glass Buttons" has a visible effect again.
+- **Follow Confirmation** works on 451.
+- **DBB** blocks the forced-logout push on 451.
+- **Profile pictures.** The save / fullscreen menu opens on a long press of the large avatar in a profile header only; avatars elsewhere behave normally.
+- **AV1 reels** convert on a sideload: Theta's FFmpeg no longer clashes with the stripped copy Instagram ships. A failed conversion says why.
+- **Background launches.** Seen-receipt and Instants seen blocking, Keep Deleted Messages and the forced-logout block are active even when iOS starts Instagram in the background. Settings read before the first unlock after a reboot are re-read once the phone is unlocked.
 
-## Sideload fixes
+## Stories and Instants
 
-- **Inline-patch crashes.** Theta no longer inline-patches `__TEXT` in sideload builds: the Liquid Glass C-symbol hooks (a launch crash) and the Instants Swift hooks. A patched page no longer matches the app's code signature, and iOS kills the app the first time it runs that code.
-- **Reel saving.** Export sessions are guarded against unsupported file types, downloads use precise timing, and the single-reel path refuses to save a raw DASH segment.
-- **Follow Confirmation** works again. Instagram 451 moved the controller to `_TtC11IGFollowing18IGFollowController` and replaced `_didPressFollowButton` with two button actions, `didPressFollowButtonFromControlEvent` and `didPressFollowButtonWith:`; both are hooked now, the old selector as a fallback. The profile is read from the controller's `_user` ivar inside a `@try`; a user Theta can't read follows without a prompt, so an unfollow is never asked about.
-- **Deleted Message Color** works again on text messages. The message cell's configure selector became `configureWithViewModel:ringViewSpecFactory:mobileConfig:` (the old `launcherSet:` one stays as a fallback). Photo, video, post and the other cell subclasses override it and are not coloured. Kept message ids now live in memory behind one serial queue instead of reloading the plist from disk on every cell configure, and the cache-update thread and the main thread no longer race on the file.
-- **FFmpeg / AV1.** Instagram ships its own stripped `libavcodec` and `libavutil` with the same install names as Theta's FFmpeg. The sideload build therefore moves Theta's libraries to `ffmpeg.framework/dylibs/<name>.dylib`, rewrites their install names to `@loader_path/<name>.dylib` and ad-hoc signs them, so re-signers sign them and they can't bind to Instagram's copies. When a conversion fails, the toast says why.
-- **DMs opened from a notification on a cold launch** no longer stay on "Loading...". Instagram swaps its loading screen for the thread once, from `viewDidAppear:`, and on a cold launch that swap landed while its TestFlight update nudge was being presented and dismissed, so it was lost. Theta retries the same swap once the navigation controller settles.
-- **Keep Deleted Messages** no longer drops whole DM update batches or leaves threads loading. It used to swallow every batch that contained an unsend, including new messages and other threads, and never called Instagram's completion. Theta now removes only the unsent message keys from the batch and passes the rest on.
-- **App-group containers** are probed once per group instead of writing a probe file on every lookup.
-- **Privacy hooks on a background launch.** When iOS starts Instagram in the background (a push, background refresh), Theta's normal hooks wait for the foreground. The seen-receipt and Instants seen blocking, Keep Deleted Messages and the forced-logout block now install as soon as Theta loads, so they are in place in that window too. A hook also stores its original before it goes live, so a call from another thread during install can't jump to a null pointer. Settings read before the first unlock after a reboot (when iOS can't read them yet and returns the defaults) are re-read once the phone is unlocked.
-- **Notification keys and the keychain.** Theta copies Instagram's notification decryption keys (keychain service `com.instagram.notifications.hpke`) into one file in the shared app group, `ThetaHPKE/keys.plist`, so the notification extension can still decrypt a banner when it can't read the keychain. The file now holds only that service, matched exactly, instead of anything whose name contained "notif". It holds every account's key. It is only written after a keychain call succeeded, never without the key itself, and only when something changed. A key deleted from the keychain, or gone at the next launch, leaves the file too. It stays readable while the phone is locked after the first unlock. The file answers queries in the shape the keychain would, including the array that `kSecMatchLimitAll` asks for. The older per-key and alias files are folded into it once, then deleted. A keychain add that hits an existing password now stores the new value instead of reporting success and keeping the old one.
-- **Notification extension.** The HPKE key-type argument is handled as the integer it is, so a key type other than 0 can no longer crash the extension and leave the banner generic. The two-argument key lookup uses Instagram's own accessibility value. The per-push rebind scan and the `FBSDKKeychainStore` swizzle (absent from the extension) are gone.
+- **Story seen receipts stay on the phone** on 451. The eye button (one story, or Mark All Seen) still marks the stories you pick as seen. Receipts queued while the setting is on are never sent, even after you turn it off.
+- **Only seen calls are blocked**, for stories and Instants alike. The old match dropped any request containing words like `story_seen`, including a DM with that text.
+- **Disappearing Media Ghost** marks the current photo or video as seen, not the next one, and works for videos. "Marked as seen!" appears only when something was sent. Ordinary story photos load normally with the setting on.
+- **Always Mark Seen** no longer skips past those accounts' stories when Skip After Marking Seen is on.
 
-- **Media saves.** Save To is honoured by every reel and video save: with Saved Media the merged file goes into Saved Media (`Video-<time>.mp4`, never overwriting) instead of always going to Photos, and every Photos outcome (access off, allowed at the prompt, write error) ends the progress toast. With Photos access off, a save shows one "Photos access is off" toast that opens Settings, saves nothing and never falls back to Saved Media; the picker and the reel save check first, so nothing is downloaded or converted. "Add Photos Only" access is enough, and a save that has to ask asks only for that.
-- **One download lock.** Single saves and the picker's bulk save share one lock, so a reel save can no longer delete a running bulk save's files, and a bulk save can't be started twice. The per-save sweep of `theta_` files is gone (the launch cleanup stays), and a save started from a reels carousel, a story, a view-once photo, a profile or an Instant takes the lock too.
-- **Photo saves report the real result.** Feed, reels, story, view-once, profile and Instant photo saves show "Saved" only when the photo was saved, and the failure otherwise. The picker counts failed photos ("2 saved, 1 failed"), and its "camera roll" wording appears only when saving to Photos. Photos are saved once, from the downloaded file with its original bytes and metadata, instead of re-encoded and saved a second time (which left `media-<id>-<id>` files in Saved Media and double copies in Photos for a single profile post). The file's own bytes decide its type (a CDN path can say `.jpg` for another format); a photo Photos rejects is decoded and saved once more before the save fails. A view-once video saves only the video, not its cover photo as well.
-- **Save failures always show.** "Save failed", "Photos access is off" and the audio message failures appear even with Show Banners off, so a save never fails silently. One rule for every save: progress and failures always show, a success banner only with Show Banners on (a reel, bulk or audio-note save then just closes its progress toast).
-- **Saving a voice message** asks again each time the message plays to the end, also after it was saved once; it used to ask again only after reopening the chat.
-- **Downloads check the HTTP status.** An expired CDN link (HTTP 403) now fails with "Download failed (HTTP 403)" instead of saving the error page or failing in the converter. A video whose audio track can't be downloaded fails the save, single and bulk, instead of silently saving without sound.
-- **Bulk save** ends when its last video fails before it starts downloading (no manifest or URL) instead of leaving the progress toast spinning and the picker locked. A reels carousel opens one picker instead of two.
-- **Interrupted conversions fail instead of saving a truncated video.** Leaving Instagram, a full disk or an encoder error mid-conversion used to save whatever had been written; the FFmpeg path now checks every encoder, muxer, trailer and close result, the Reader/Writer path checks the reader and writer status (and can no longer wait forever on a failed writer), and a failure deletes the output and shows "Save failed, Conversion was interrupted". Each save holds one background task, taken and released with the download lock, so a short trip to another app no longer kills it.
-- **Bulk save** feeds its videos through one serial feeder with at most three videos in flight, instead of parking one thread per selected video. A video without an audio track no longer hands FFmpeg the undecodable audio file, an unknown container duration no longer breaks the progress estimate, and a failed frame buffer allocation fails the conversion instead of crashing.
-- The unreachable AV1 re-check after the reel merge export, and its ALAssetsLibrary save, are removed. Bulk videos go to Photos through the same import as a single save, without a second copy in Caches.
+## Messages and notifications
 
-## Privacy and data
+- **Keep Deleted Messages** no longer drops new messages or leaves threads loading; it used to swallow every update batch that contained an unsend.
+- **Deleted Message Color** works on text messages again (not on photos, videos or shared posts).
+- **DMs opened from a notification** on a cold launch no longer stay on "Loading...".
+- **Notification banners decrypt reliably.** Theta keeps a copy of Instagram's notification keys, and only those, in the shared app group, so the notification extension can show the message when it can't read the keychain, also while the phone is locked. The extension no longer crashes on some keys and falls back to a generic banner.
+- **Saving a voice message** asks each time the message plays to the end, also after it was saved once.
 
-- **Disappearing Media Ghost.** The eye button marked the next disappearing photo or video as seen instead of the current one. It no longer leaves a "seen" flag behind for the next media. It calls Instagram's own seen callbacks directly, and finds the 451 video view (`IGStoryVideoView`), so videos are marked too. The "Marked as seen!" banner shows only when something was sent; an unknown media view shows "Couldn't mark as seen". The photo ghost now applies only to photos in the disappearing-media viewer, so ordinary story photos load normally with the setting on. The viewer and the media it holds are no longer leaked by the button actions.
-- **Diagnostic logging only in debug builds.** Notification-extension traces, hook-install misses, the keychain access group and trace logs are compiled in only by `./build.sh debug`. Normal builds don't write them to the device log.
-- **Profile Analyzer** fetches your avatar only when you open it, not on every app launch. Its fallback API request sends Instagram's own user agent instead of a hard-coded, outdated one.
-- **Media preview downloads** (Save Profile Posts, bulk save) no longer pretend to be Safari.
-- **Open Links in External Browser** only opens http/https links. Other schemes inside an `l.instagram.com` redirect are left to Instagram. Redirect targets are no longer percent-decoded twice, which used to break links with encoded characters.
-- **Strip Tracking from Links** also removes `gclid`, `ttclid` and `mc_eid`, and unwraps `lm.instagram.com` and `l.facebook.com` redirects. A link is rebuilt only when a parameter was removed, and the rest of its query stays encoded as it was, so a signature like `%2B` no longer turns into `+`. In the in-app browser the link is cleaned when Instagram builds the browser session, before the page loads; on Instagram 451 the old swap on the browser's appearance came too late and left the parameters in.
-- **Clear App Cache** clears `Library/Caches` and Theta's own temp files only. It used to delete almost all of `Documents/`, including media saved with Save Method = Folder and, on sideload, Instagram's app-group data. It refuses with the usual "Download in progress" toast while a save is running, so it can't delete a save's files under it.
-- **Launch cleanup** deletes only Theta's own leftover temp files. It used to delete every audio and video file in `Documents/`.
-- Bulk-save and thumbnail temp files have unique names, so overlapping saves can't overwrite each other.
-- **Picker speed.** The picker previews each photo from its smallest image version, fetched in parallel by the picker, instead of downloading every full-size original one after another before it opens (a single photo no longer downloads twice). Only saved items download the original. Video previews are ready as soon as the player is, with a 3 s cap, instead of a fixed 3 s wait. Bulk and photo downloads are staged in the temp directory, not `Documents/`.
-- **Failures wait for the app.** A save that fails while Instagram is in the background (iOS stops the hardware video encoder there, so a conversion ends as "Conversion was interrupted") shows its failure when you come back, instead of hiding it before you return.
-- **Reel download menu follows the reel on screen.** Instagram reuses the reels button bar for the next reels, and the download menu cached the first reel it was opened on, so saving a later reel saved an earlier one. The menu is now built on every tap (and rebuilt whenever the bar gets a new reel). Bulk save fills a video's progress bar when it finishes instead of leaving it at its last value until the whole save ends.
-- **Faster reel merges.** DASH audio that is already AAC-LC in an MP4 container is merged as it is, without an AAC re-export. The DASH manifest parser caches its attribute regexes and searches a representation's `BaseURL` only inside that representation. The dead software-encoder branch (the bundled FFmpeg only has VideoToolbox H.264) and unused thumbnail and cleanup helpers are gone. A bulk save that throws while it is being set up now ends the job (all videos failed, lock released).
+## Downloads and saving
 
-## Settings storage
+- **Save To is respected** by every reel and video save, and Saved Media files never overwrite each other. With Photos access off, a save shows one toast that opens Settings and downloads nothing. "Add Photos Only" access is enough.
+- **Results are honest.** "Saved" appears only when the file was saved, and the picker counts failures ("2 saved, 1 failed"). Progress and failures always show, even with Show Banners off; a failure while Instagram is in the background shows when you come back.
+- **No broken files.** An expired link (HTTP 403), a missing audio track or an interrupted conversion fails the save instead of saving an error page, a silent video or a truncated one. Photos are saved once, with their original bytes, and a view-once video saves without its cover photo.
+- **Saves don't collide.** Single and bulk saves share one lock, so one can't delete another's files or start twice, and Clear App Cache waits until they finish.
+- **The reel download menu saves the reel on screen**, not the first reel it was opened on. A reels carousel opens one picker instead of two.
+- **Bulk save** always finishes: a video that fails before downloading no longer leaves the toast spinning, and each video's bar fills when it is done.
+- **Faster.** The picker loads small previews in parallel and opens without downloading every original, bulk saves run three videos at a time, and reel audio that is already AAC is merged without re-encoding.
 
-- **Fixed setting keys.** Settings used to be stored under their on-screen title (`Story Ghost_Enabled`), so rewording a title reset the setting. Each setting now has a fixed key such as `story.ghost`, stored as `theta.story.ghost`. The `theta.` prefix keeps Theta's values apart from Instagram's, which live in the same user defaults. On first launch, existing values are moved to the new keys, including the older "Strip …" feed titles and the two auto-mark user lists.
-- **Choices are stored by name** (`folder`, `messages`), not by their position in the list, so reordering options can't change what was picked.
-- **Export and import.** Exports use a versioned format keyed by setting key, and include choices, colors and user lists. Older exports still import. "Import from Clipboard" now accepts what "Export to Clipboard" copies; before, they used different formats. Importing a QR code from the camera now restores choices too.
-- **Reset Settings** also resets choices. User lists are kept.
-- Opening an auto-mark list from search results shows the list. It used to open an empty, unnamed editor.
+## Links and privacy
 
-## Settings screen
+- **Open Links in External Browser** only opens http/https links and no longer breaks links with encoded characters.
+- **Strip Tracking from Links** also removes `gclid`, `ttclid` and `mc_eid`, unwraps `lm.instagram.com` and `l.facebook.com` redirects, and leaves the rest of a link untouched. In the in-app browser the link is cleaned before the page loads.
+- **Clear App Cache** clears only caches and Theta's temp files. It used to delete almost all of `Documents/`, including media saved to a folder and, on sideload, Instagram's app-group data. The launch cleanup likewise deletes only Theta's own leftovers, not every audio and video file in `Documents/`.
+- **No fake user agents.** Profile Analyzer and media previews send Instagram's own user agent instead of an outdated one or Safari's. Profile Analyzer fetches your avatar only when you open it.
+- **No device logging.** Diagnostic logs are compiled in only by `./build.sh debug`.
 
-- **New layout.** Pages follow the part of Instagram a setting affects: Feed & Explore, Stories, Reels, Messages and Profiles, then Downloads, Privacy, Confirmations, Navigation, Appearance and Theta. Pages are split into sections with headers and footers, and sub-options are indented under their parent.
-- **Rewritten text.** Every title, description, banner and alert was reworded, and descriptions that no longer matched what a setting does were corrected.
-- **Restart-required settings** say so on their row. Choices use a pop-up menu, so all seven date formats fit and show an example.
-- **Clear Cache and Reset Colors** ask before running.
-- **Always Mark Seen (stories)** no longer skips past those accounts' stories when Skip After Marking Seen is on.
+## Settings
+
+- **Fixed setting keys.** Settings used to be stored under their on-screen title, so rewording a title reset them. Each now has a fixed key (`theta.story.ghost`); existing values move over on first launch.
+- **Choices are stored by name**, so reordering options can't change what was picked.
+- **Export and import** use one versioned format that includes choices, colors and user lists. Older exports still import, "Import from Clipboard" accepts what "Export to Clipboard" copies, and a QR import restores choices too.
+- **Reset Settings** also resets choices; user lists are kept.
+- **New layout.** Pages follow the part of Instagram a setting affects (Feed & Explore, Stories, Reels, Messages, Profiles, then Downloads, Privacy, Confirmations, Navigation, Appearance, Theta), with sections and indented sub-options.
+- **Rewritten text** for every title, description, banner and alert, with wrong descriptions corrected.
+- Restart-required settings say so on their row, choices use a pop-up menu, and Clear Cache and Reset Colors ask first.
+- Opening an auto-mark list from search shows the list instead of an empty editor.
 - The links section points to this fork's repository.
 
 ## New settings
 
-- **Hide Shared Reel Thumbnails** (Messages). Replaces the preview image while preserving Instagram’s rounded corners, play button, reel icon and account details. The message remains tappable.
-- **Hide Shared Post Thumbnails** (Messages). Replaces shared-post preview images and hides their caption previews while preserving account details, icons and tap actions.
-- **Mute Shared Reel Notifications** (Messages). A DM that shares a reel is delivered without sound at the passive level, then removed from Notification Center, and it doesn't add to the app icon badge. iOS may suspend the extension before that removal runs, so every push also clears any muted reel share still in Notification Center first. The notification extension does this, keyed on Instagram's `direct_v2_clips_share` category, and reads the toggle from a settings file the app writes next to the notification key file in the shared app group (the shared defaults suite, which read as off in the extension on Instagram 451, is only a fallback). A sideload can't drop a push outright: that needs Apple's notification-filtering entitlement.
+- **Hide Shared Reel Thumbnails** (Messages) replaces the preview image, keeping the play button, account details and tap action.
+- **Hide Shared Post Thumbnails** (Messages) replaces shared-post previews and hides their captions, keeping account details and tap action.
+- **Mute Shared Reel Notifications** (Messages) delivers a DM that shares a reel silently, removes it from Notification Center and keeps it off the badge. A sideload can't drop a push outright; that needs Apple's notification-filtering entitlement.
 
 ## Removed
 
-- **Jailbreak builds.** The rootful and rootless `.deb` targets, `control`, `layout/` and the `SIDELOAD` switch are gone; `./build.sh` builds the sideload IPA. The jailbreak-only code went with them: the Liquid Glass C-symbol and Instants inline hooks, the keychain blocking path, and the `/var/jb` lookups. FFmpeg now lives in `vendor/ffmpeg.framework`.
-- **Cydia Substrate.** Nothing used it once the jailbreak-only inline hooks were gone, so the IPA no longer bundles `CydiaSubstrate.framework` and the build no longer links it.
+- **Jailbreak builds** (rootful and rootless `.deb`) and their code, including Cydia Substrate: `./build.sh` builds the sideload IPA.
 - The "Easter Eggs" setting (random creepy usernames in the feed).
-- The unused GIF name overlay. "Copy GIF Name" on a comment GIF still works.
-- Suggested-posts hooks that had no setting and could never run.
-- The hidden long-press sort on profile grids (it had no setting and hooked every collection view's layout).
-- The settings gear on the home feed header. It never appeared on Instagram 451 (the header has a different layout); Theta opens with a long press on the home tab, or a shake with Shake to Open on.
-- Unused hook helpers, the unused native toast helpers and the never-registered first-launch welcome alert.
+- The unused GIF name overlay; "Copy GIF Name" on a comment GIF still works.
+- The settings gear on the home feed header, which never appeared on 451. Theta opens with a long press on the home tab, or a shake with Shake to Open on.
+- Hooks with no setting (suggested posts, the hidden long-press sort on profile grids), hooks for classes gone in 451, and unused helpers.
 
 ## Tooling
 
-- `scripts/setup-toolchain.sh` sets up Theos, the patched SDK and the toolchain on a Mac with only the command-line tools. It installs Theos at a pinned, tested commit and warns when an existing checkout differs.
+- `scripts/setup-toolchain.sh` sets up Theos at a pinned commit, the patched SDK and the toolchain on a Mac with only the command-line tools.
 - `scripts/compat.py` checks every hook against an unpacked Instagram build (see [Checking a new Instagram version](DEVELOPMENT.md#checking-a-new-instagram-version)).
+- `scripts/pre-push.sh` is the release gate: it fails a push on new `compat.py` misses or a compile error (see [Pre-push check](DEVELOPMENT.md#pre-push-check)).
 - `./build.sh debug` builds with diagnostic logging (`THETA_DEBUG=1`).
 - `scripts/assemble.py` builds the single translation unit in the same order on every machine.
-- `scripts/pre-push.sh` is an optional git pre-push hook that fails on new `compat.py` misses and on compile errors (see [DEVELOPMENT.md](DEVELOPMENT.md#pre-push-check)).

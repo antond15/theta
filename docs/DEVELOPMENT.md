@@ -40,7 +40,7 @@ This compiles in diagnostic logging (`THETA_DEBUG=1`): hook-install misses, keyc
 
 ### FFmpeg
 
-FFmpeg headers and frameworks live in `vendor/ffmpeg.framework`. The Makefile compiles against its headers. Theta loads the libraries at runtime with `dlopen`. `build.sh` copies the framework into the app, then runs `scripts/isolate-ffmpeg-dylibs.py` and ad-hoc signs the result (see [Sideload fixes](CHANGES.md#sideload-fixes)). Reel save still works without FFmpeg through a native AVFoundation fallback, but AV1 reels need FFmpeg.
+FFmpeg headers and frameworks live in `vendor/ffmpeg.framework`. The Makefile compiles against its headers. Theta loads the libraries at runtime with `dlopen`. `build.sh` copies the framework into the app, then runs `scripts/isolate-ffmpeg-dylibs.py` and ad-hoc signs the result: Instagram ships its own stripped `libavcodec` and `libavutil` with the same install names, so Theta's copies move to `ffmpeg.framework/dylibs/<name>.dylib` with install names `@loader_path/<name>.dylib`, which re-signers sign and which can't bind to Instagram's. Reel save still works without FFmpeg through a native AVFoundation fallback, but AV1 reels need FFmpeg.
 
 ## Checking a new Instagram version
 
@@ -80,6 +80,18 @@ Every setting is declared once and read through a constant, never a string:
 Every screen draws a setting with `THSettingCell` (`Source/UI/THSettingCell.m`), which reads and writes the value itself, so adding a setting needs no UI code.
 
 Titles, details and pages can change freely. Keys and choice option ids are stored on devices and in exported settings, so never rename one; add a migration in `Source/UI/ThetaSettings.m` and bump `kSettingsVersion` instead. Values are stored in the standard user defaults under `theta.<key>`.
+
+## How it works
+
+The parts below are not obvious from the code alone.
+
+- **Story seen receipts.** The 451 pending-seen store sends `/media/seen/` through a Swift-direct `IGAPIRequest` call. The one ObjC call on that path, `-[IGStorySeenStateUploader networker]`, returns nil while receipts are blocked. Instagram queues receipts and uploads the whole queue later, so the gate inspects it: the eye button allows its own stories for 15 minutes, every other queued receipt is removed and that upload blocked, and an upload holding only the eye's receipts goes through. The first upload after the setting is turned off drops the queue once. A queue Theta can't read blocks the upload.
+- **Seen-request dropping** (stories and Instants) hooks `-[IGTigonNetworkLayer startRequest:policy:callbacks:]`, with NSURLSession as a backstop, and fails a request the way Tigon fails one it won't start. It drops only requests to Instagram or Facebook hosts that are the story `/media/seen/` call or the Instants seen mutation (`IGQuickSnapUpdateSeenStateMutation`, by its GraphQL name header or in a GraphQL body of at most 16 KB).
+- **Constructor hooks.** The tab bar is built before the normal hook pass, and the privacy and protection hooks (seen receipts, Instants seen, Keep Deleted Messages, DBB) must hold on a background launch, so they install from the constructor. A hook stores its original before it goes live, so a call from another thread during install can't reach a null pointer.
+- **Notification keys.** Theta copies the keychain service `com.instagram.notifications.hpke` (matched exactly, every account's key) into `ThetaHPKE/keys.plist` in the shared app group, readable after first unlock. It writes only after a successful keychain call that returned the key, and only on a change; a key deleted from the keychain, or gone at the next launch, leaves the file. The file answers queries in keychain shape, including the array for `kSecMatchLimitAll`. Older per-key and alias files are folded in once and deleted.
+- **Mute Shared Reel Notifications.** The notification extension matches Instagram's `direct_v2_clips_share` category, delivers the push silently at the passive level without a badge, then removes it. iOS may suspend the extension before the removal, so every push first clears any muted reel share still in Notification Center. The toggle is read from a settings file the app writes next to `keys.plist`; the shared defaults suite, which read as off in the extension on 451, is only a fallback.
+- **Keep Deleted Messages** removes only the unsent message keys from an update batch and passes the rest to Instagram's completion. Kept message ids live in memory behind one serial queue.
+- **Saves** share one download lock and one background task per save. A failed FFmpeg encoder, muxer, trailer or close result, or a failed Reader/Writer status, deletes the output. Bulk save feeds videos through one serial feeder with at most three in flight.
 
 ## Layout
 
