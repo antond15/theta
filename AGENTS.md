@@ -110,8 +110,10 @@ These come on top of the working rules above.
    `README.md`) land in the same commit. Claude Code reads the skills through the per-skill
    links in `.claude/skills/`. A `docs/CHANGES.md` entry is one or two sentences on what the
    user sees, with no selectors or mechanisms (those go in `DEVELOPMENT.md#how-it-works`), in
-   its feature's section, merged into that feature's existing bullet; skip changes the user
-   can't notice.
+   its feature's section, merged into that feature's existing bullet. It records only what
+   differs from upstream and is worth telling a user: skip changes the user can't notice, fixes
+   to bugs this fork introduced (the existing entry already promises the feature works) and
+   details an existing entry already implies. When unsure, leave `CHANGES.md` alone.
 6. **Backlog.** `docs/backlog.md` is gitignored and never committed: wherever a kit skill says to
    commit the backlog (a handoff, a CI-failure note, the final commit), update the file and skip
    that commit. Read its "In progress" section at session start. Every change committed without a
