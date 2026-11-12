@@ -89,6 +89,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - The unused GIF name overlay. "Copy GIF Name" on a comment GIF still works.
 - Suggested-posts hooks that had no setting and could never run.
 - The hidden long-press sort on profile grids (it had no setting and hooked every collection view's layout).
+- The settings gear on the home feed header. It never appeared on Instagram 451 (the header has a different layout); Theta opens with a long press on the home tab, or a shake with Shake to Open on.
 - Unused hook helpers, the unused native toast helpers and the never-registered first-launch welcome alert.
 
 ## Tooling

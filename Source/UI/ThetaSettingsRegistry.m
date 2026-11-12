@@ -111,7 +111,7 @@ static THSettingDefinition *Page(NSString *key, NSString *title, NSString *detai
     dispatch_once(&once, ^{
         all = @[
             // Theta itself
-            Toggle(THAppShakeToOpen, @"Shake to Open", @"Shake your phone to open Theta. Replaces the gear button on the home feed.", nil),
+            Toggle(THAppShakeToOpen, @"Shake to Open", @"Shake your phone to open Theta, as well as long-pressing the home tab.", nil),
             Toggle(THAppShowBanners, @"Show Banners", @"Shows a banner to confirm actions such as saving or marking as seen.", nil),
             Toggle(THAppHaptics, @"Haptic Feedback", @"Vibrates briefly when a banner appears.", @{kParent: THAppShowBanners}),
             Toggle(THAppLoadBanner, @"Startup Banner", @"Shows the Theta and Instagram versions when Instagram opens.", nil),

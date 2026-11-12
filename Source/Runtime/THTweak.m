@@ -42,7 +42,6 @@ static void InitializeHooks(void) {
     THRegisterBypassCharacterLimitHooks();
     THRegisterMarkAsSeenSeenOnSendHook();
     THRegisterShakeToOpenHooks();
-    THRegisterSettingsButtonHooks();
     THRegisterCreateGroupConfirmationHooks();
     THRegisterHideCreateGroupButtonHooks();
     THRegisterBypassReelPasswordHooks();

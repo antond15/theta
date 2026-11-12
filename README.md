@@ -1,6 +1,6 @@
 # Theta
 
-Instagram tweak. Open Theta from the settings gear on the home feed, or by long-pressing the home tab.
+Instagram tweak. Open Theta by long-pressing the home tab (or shake the phone, with Shake to Open on).
 
 This is [antond15/theta](https://github.com/antond15/theta), a fork of [objcmsgSend/theta](https://github.com/objcmsgSend/theta) based on upstream 1.0.1. It is maintained as often as my own casual Instagram use shows me that something is broken or missing, so expect fixes in bursts rather than on a schedule.
 
@@ -70,7 +70,7 @@ It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the
 1. Install `output/Instagram_patched.ipa`:
    - **Sideloadly / AltStore / SideStore:** open the IPA and let the tool re-sign it with your Apple ID.
    - **TrollStore:** install the IPA on the device.
-2. Open Instagram, then open Theta from the settings gear on the home feed or by long-pressing the home tab.
+2. Open Instagram, then open Theta by long-pressing the home tab.
 
 `ThetaNSE` lets the notification extension decrypt banners. `Source/SideloadNSE/keychain-sharing.plist` is **optional** and is not applied by the build. Skip it unless notifications break because the extension cannot read Instagram’s keychain. In that case, merge those entitlements onto `Instagram.app` and `InstagramNotificationExtension.appex` only (never onto `ThetaNSE` or other dylibs), and replace `TEAMID` with your signing Team ID. Theta already probes wildcard keychain groups at runtime, so most installs do not need this plist.
 
