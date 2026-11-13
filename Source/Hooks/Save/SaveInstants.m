@@ -448,22 +448,45 @@ static UIImage *thetaInstantRenderView(UIView *view) {
     return image;
 }
 
+// YES when a is drawn above b: higher layer zPosition, else later in the subview order of their
+// nearest common ancestor. The Instants viewer stacks the next card full-size under the current one.
+static BOOL thetaInstantViewIsAbove(UIView *a, UIView *b) {
+    if (!a || !b || a == b) return NO;
+    if ([a isDescendantOfView:b]) return YES;
+    if ([b isDescendantOfView:a]) return NO;
+    for (UIView *childA = a; childA.superview; childA = childA.superview) {
+        UIView *ancestor = childA.superview;
+        if (![b isDescendantOfView:ancestor]) continue;
+        UIView *childB = b;
+        while (childB.superview != ancestor) childB = childB.superview;
+        CGFloat za = childA.layer.zPosition, zb = childB.layer.zPosition;
+        if (za != zb) return za > zb;
+        NSArray *subs = ancestor.subviews;
+        return [subs indexOfObjectIdenticalTo:childA] > [subs indexOfObjectIdenticalTo:childB];
+    }
+    return NO;
+}
+
+static CGFloat thetaInstantSnapVisibleArea(UIView *view) {
+    if (view.hidden || view.alpha < 0.2) return -1;
+    if (!thetaInstantIsLikelySnapHost(view)) return -1;
+    UIView *ref = view.window ?: view.superview;
+    CGRect bounds = ref ? ref.bounds : view.bounds;
+    CGRect frame = ref ? [view convertRect:view.bounds toView:ref] : view.bounds;
+    CGRect vis = CGRectIntersection(frame, bounds);
+    if (CGRectIsNull(vis) || vis.size.width < 40 || vis.size.height < 40) return -1;
+    return vis.size.width * vis.size.height;
+}
+
+// The front-most snap view among those close to the largest visible one.
 static UIView *thetaInstantBestSnapView(NSArray<UIView *> *views) {
+    CGFloat maxScore = -1;
+    for (UIView *view in views) maxScore = MAX(maxScore, thetaInstantSnapVisibleArea(view));
+    if (maxScore <= 0) return nil;
     UIView *best = nil;
-    CGFloat bestScore = -1;
     for (UIView *view in views) {
-        if (view.hidden || view.alpha < 0.2) continue;
-        if (!thetaInstantIsLikelySnapHost(view)) continue;
-        UIView *ref = view.window ?: view.superview;
-        CGRect bounds = ref ? ref.bounds : view.bounds;
-        CGRect frame = ref ? [view convertRect:view.bounds toView:ref] : view.bounds;
-        CGRect vis = CGRectIntersection(frame, bounds);
-        if (CGRectIsNull(vis) || vis.size.width < 40 || vis.size.height < 40) continue;
-        CGFloat score = vis.size.width * vis.size.height;
-        if (score > bestScore) {
-            bestScore = score;
-            best = view;
-        }
+        if (thetaInstantSnapVisibleArea(view) < maxScore * 0.75) continue;
+        if (!best || thetaInstantViewIsAbove(view, best)) best = view;
     }
     return best;
 }
@@ -842,8 +865,20 @@ static NSString *thetaInstantIdFromSpecifier(id specifier) {
     return fromMedia.length > 6 ? fromMedia : nil;
 }
 
-static NSString *thetaInstantVisibleMediaId(UIView *host, id viewController) {
-    NSArray<UIView *> *views = thetaInstantAllViews(host, viewController);
+static void thetaInstantCollectHostMedia(id viewController, NSMutableArray *medias, NSMutableSet *seen) {
+    thetaInstantCollectSnapMedia(viewController, medias, seen, 0);
+    thetaInstantCollectSnapMedia(thetaInstantIvarObject(viewController, "context"), medias, seen, 0);
+    if ([viewController isKindOfClass:[UIViewController class]]) {
+        UIViewController *parent = [(UIViewController *)viewController parentViewController];
+        while (parent && medias.count < 40) {
+            thetaInstantCollectSnapMedia(parent, medias, seen, 0);
+            thetaInstantCollectSnapMedia(thetaInstantIvarObject(parent, "context"), medias, seen, 0);
+            parent = parent.parentViewController;
+        }
+    }
+}
+
+static NSString *thetaInstantVisibleMediaIdInViews(NSArray<UIView *> *views, id viewController) {
     NSString *fromStack = thetaInstantIdFromStack(views);
     if (fromStack.length) return fromStack;
 
@@ -862,16 +897,7 @@ static NSString *thetaInstantVisibleMediaId(UIView *host, id viewController) {
     NSMutableSet *seen = [NSMutableSet set];
     thetaInstantCollectSnapMedia(snap, medias, seen, 0);
     NSUInteger snapCount = medias.count;
-    thetaInstantCollectSnapMedia(viewController, medias, seen, 0);
-    thetaInstantCollectSnapMedia(thetaInstantIvarObject(viewController, "context"), medias, seen, 0);
-    if ([viewController isKindOfClass:[UIViewController class]]) {
-        UIViewController *parent = [(UIViewController *)viewController parentViewController];
-        while (parent && medias.count < 40) {
-            thetaInstantCollectSnapMedia(parent, medias, seen, 0);
-            thetaInstantCollectSnapMedia(thetaInstantIvarObject(parent, "context"), medias, seen, 0);
-            parent = parent.parentViewController;
-        }
-    }
+    thetaInstantCollectHostMedia(viewController, medias, seen);
 
     if (visibleURL) {
         NSString *cacheKey = thetaInstantCacheKey(visibleURL);
@@ -898,10 +924,39 @@ static NSString *thetaInstantVisibleMediaId(UIView *host, id viewController) {
     return nil;
 }
 
+static NSString *thetaInstantVisibleMediaId(UIView *host, id viewController) {
+    return thetaInstantVisibleMediaIdInViews(thetaInstantAllViews(host, viewController), viewController);
+}
+
+// The front-most snap view whose own media is the visible Instant.
+static UIView *thetaInstantSnapViewForMediaId(NSArray<UIView *> *views, NSString *mediaId) {
+    if (!mediaId.length) return nil;
+    UIView *best = nil;
+    for (UIView *view in views) {
+        if (thetaInstantSnapVisibleArea(view) <= 0) continue;
+        if (![thetaInstantMediaId(thetaInstantMediaFromHost(nil, view)) isEqualToString:mediaId]) continue;
+        if (!best || thetaInstantViewIsAbove(view, best)) best = view;
+    }
+    return best;
+}
+
+static id thetaInstantMediaWithId(UIView *snap, id viewController, NSString *mediaId) {
+    if (!mediaId.length) return nil;
+    NSMutableArray *medias = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    thetaInstantCollectSnapMedia(snap, medias, seen, 0);
+    thetaInstantCollectHostMedia(viewController, medias, seen);
+    for (id media in medias) {
+        if ([thetaInstantMediaId(media) isEqualToString:mediaId] && thetaInstantURLFromMedia(media)) return media;
+    }
+    return nil;
+}
+
 static void thetaInstantSaveFromHost(UIView *host, id viewController) {
     @try {
         NSArray<UIView *> *views = thetaInstantAllViews(host, viewController);
-        UIView *snap = thetaInstantBestSnapView(views);
+        NSString *visibleId = thetaInstantVisibleMediaIdInViews(views, viewController);
+        UIView *snap = thetaInstantSnapViewForMediaId(views, visibleId) ?: thetaInstantBestSnapView(views);
         UIView *photoView = thetaInstantPhotoSurfaceInView(snap);
         if (!photoView) {
             Class igImageViewCls = NSClassFromString(@"IGImageView");
@@ -930,8 +985,23 @@ static void thetaInstantSaveFromHost(UIView *host, id viewController) {
         if (!videoURL) videoURL = thetaInstantURLFromPlayer(videoView);
         NSURL *imageURL = thetaInstantURLFromImageView(photoView);
         id media = thetaInstantMediaFromHost(viewController, snap);
+        BOOL verified = NO;
+        if (visibleId.length) {
+            if ([thetaInstantMediaId(media) isEqualToString:visibleId]) {
+                verified = YES;
+            } else {
+                media = thetaInstantMediaWithId(snap, viewController, visibleId);
+                verified = media != nil;
+            }
+        }
         NSURL *fromMedia = thetaInstantURLFromMedia(media);
-        if (fromMedia) {
+        BOOL trustMedia = fromMedia && verified;
+        if (trustMedia) {
+            // The visible Instant's own media wins over whatever the card views hold.
+            BOOL isVideo = thetaInstantLooksVideoURL(fromMedia);
+            videoURL = isVideo ? fromMedia : nil;
+            imageURL = isVideo ? nil : fromMedia;
+        } else if (fromMedia) {
             if (thetaInstantLooksVideoURL(fromMedia)) {
                 if (!videoURL) videoURL = fromMedia;
             } else {
@@ -945,6 +1015,7 @@ static void thetaInstantSaveFromHost(UIView *host, id viewController) {
         thetaInstantHarvestObject(videoView, urls, images, seen, 0);
         thetaInstantHarvestObject(photoView, urls, images, seen, 0);
         for (NSURL *url in urls) {
+            if (trustMedia) break;
             if (![url isKindOfClass:[NSURL class]]) continue;
             NSString *scheme = url.scheme.lowercaseString;
             if (![scheme hasPrefix:@"http"] && ![scheme isEqualToString:@"file"]) continue;
