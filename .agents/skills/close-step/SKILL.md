@@ -77,6 +77,12 @@ when the session changed something; **Clean up** whenever it started a server or
      to exactly that commit only when it passed (no branch switch, no merge commit). It prints
      the failed-log tail on red and a one-line summary at the end. Use `--dev-only` for
      **Push dev only**.
+     Whenever it moves `origin/main` it also brings the local `main` ref to that commit: moved
+     directly, or fast-forwarded in the worktree that has `main` checked out when that worktree
+     has no tracked changes. A missing local `main` stays missing. A local `main` with commits
+     that are not on the commit, or checked out with local changes, is left where it is; the
+     `local main:` line says so, and you report it in the summary without fixing it yourself.
+     Local `dev` is never moved; a `dev:` line counts its later commits, which stay unpushed.
      `--skip-ci` moves `main` to the commit without a CI result; use it only for the explicit
      order described under the Release question, and record it in the summary ("main moved
      without CI, as the user ordered").

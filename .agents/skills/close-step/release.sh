@@ -5,6 +5,11 @@
 # Only the run of the one workflow named in CI_WORKFLOW gates main; other workflows are ignored.
 # --skip-ci moves main to <sha> without a CI result: only when the user ordered it in this
 # session, and also the only way to release a project that has no CI workflow file.
+# After origin/main moves, the local main ref follows to <sha>: moved directly when no worktree has
+# main checked out, fast-forwarded in that worktree when it has no tracked changes, otherwise left
+# alone. A missing local main stays missing; a local main with commits not on <sha> is never moved.
+# Each case prints a `local main:` line. Local dev is never moved: <sha> is on it, so it is level
+# with origin/dev or ahead of it by the later commits, which a `dev:` line counts.
 # The last line says what happened: `release: ci.yml run <id> <passed|failed> for <sha>; main
 # moved to <sha>` or `main not moved` (the progress frames of `gh run watch` are hidden).
 # Run it once as a background command and wait for it; it blocks until the CI result is known.
@@ -44,11 +49,45 @@ fi
 # An explicit refspec pushes exactly <sha>, also when origin/dev does not exist yet.
 git push origin "$sha:refs/heads/dev" || { echo "release.sh: push of dev failed" >&2; exit 3; }
 echo "dev pushed at ${sha:0:12}"
+later="$(git rev-list --count "$sha..dev")"
+((later == 0)) || echo "dev: $later later commit(s) stay local, not pushed"
 if ((dev_only)); then echo "dev only: main not moved"; exit 0; fi
 
 move_main() {
   git push origin "$sha:refs/heads/main" || { echo "release.sh: push of main failed (not a fast-forward?)" >&2; exit 3; }
   echo "main is now ${sha:0:12}"
+  sync_local_main
+}
+
+# Bring the local main ref to <sha> once origin/main is there. Never drops a local commit and never
+# touches a worktree with tracked changes; what it cannot do safely it reports. Never fails the
+# release: origin/main has already moved.
+sync_local_main() {
+  local cur extra wt
+  if ! cur="$(git rev-parse --verify -q refs/heads/main)"; then
+    echo "local main: none, nothing to update"; return 0
+  fi
+  if [[ "$cur" == "$sha" ]]; then echo "local main: already at ${sha:0:12}"; return 0; fi
+  extra="$(git rev-list --count "$sha..$cur" 2>/dev/null || echo "?")"
+  if [[ "$extra" != 0 ]]; then
+    echo "local main: has $extra commit(s) not on ${sha:0:12}; left at ${cur:0:12}, not moved" >&2
+    return 0
+  fi
+  wt="$(git worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} $0=="branch refs/heads/main"{print p; exit}')"
+  if [[ -z "$wt" ]]; then
+    if git branch -f main "$sha" >/dev/null 2>&1; then
+      echo "local main: moved from ${cur:0:12} to ${sha:0:12}"
+    else
+      echo "local main: could not move it (git branch -f refused); left at ${cur:0:12}" >&2
+    fi
+  elif [[ -n "$(git -C "$wt" status --porcelain --untracked-files=no 2>/dev/null || echo x)" ]]; then
+    echo "local main: checked out in $wt with local changes; left at ${cur:0:12}. Later: git -C '$wt' merge --ff-only ${sha:0:12}" >&2
+  elif git -C "$wt" merge --ff-only -q "$sha" >/dev/null 2>&1; then
+    echo "local main: fast-forwarded to ${sha:0:12} in $wt"
+  else
+    echo "local main: fast-forward in $wt failed; left at ${cur:0:12}. Later: git -C '$wt' merge --ff-only ${sha:0:12}" >&2
+  fi
+  return 0
 }
 
 if ((skip_ci)); then
