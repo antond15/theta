@@ -1,20 +1,19 @@
 # Theta
 
-Instagram tweak. Open Theta by long-pressing the home tab (or shake the phone, with Shake to Open on).
+Theta is an Instagram tweak for iOS that adds useful features to the base app. It can limit reels and other distractions, hide ads or suggested content, keep activity like seen receipts private, and save shared media to the phone. Every feature is optional and has its own switch on Theta's settings page.
 
 This is [antond15/theta](https://github.com/antond15/theta), a fork of [objcmsgSend/theta](https://github.com/objcmsgSend/theta) based on upstream 1.0.1. It is maintained as often as my own casual Instagram use shows me that something is broken or missing, so expect fixes in bursts rather than on a schedule.
 
-Tested as a **sideload** build against Instagram **451.0.0** on iOS 26. Sideloading (including TrollStore) is the only supported install; this fork has no jailbreak build.
+Theta supports Instagram **451.0.0** on iOS 26, as a **sideload** build only. There is no jailbreak build. Other Instagram versions may break, and issues about them are not supported.
 
 ## What this fork changes
 
 The full list is in [CHANGES.md](docs/CHANGES.md). In short:
 
-- **Instagram 451 support:** hooks for classes Instagram moved into Swift, plus working navigation, story seen-receipt blocking, Hide Create Button and Liquid Glass on 451 and iOS 26.
-- **Sideload stability:** no inline code patches that crash a re-signed app, safer reel saving, and an FFmpeg build that can't collide with Instagram's own libraries.
-- **Privacy and data:** diagnostic logging only in debug builds, fewer and more honest network requests, safer link handling, and a Clear App Cache that no longer deletes saved media.
-- **Sideload only:** the jailbreak targets and Cydia Substrate are gone.
-- **Tooling:** one-time toolchain setup, a pinned Theos, and `compat.py` for checking hooks against a new Instagram build.
+- **Instagram 451 support:** hooks follow the classes Instagram moved into Swift, so Theta's features work on 451 and iOS 26.
+- **Sideload stability:** no inline code patches that crash a re-signed app, notification banners that decrypt on a sideload, and an FFmpeg build that can't collide with Instagram's own libraries.
+- **Privacy:** seen receipts and other blocked requests stay on the phone, fewer and more honest network requests, and diagnostic logging only in debug builds.
+- **Settings:** fixed setting keys, one versioned export format and a new layout grouped by the part of Instagram a setting affects.
 
 ## Credits
 
@@ -25,10 +24,9 @@ Ported from other forks, credited by author, repo and commit in the commit messa
 
 ## Requirements
 
-- A Mac with the Xcode command-line tools (`xcode-select --install`). Full Xcode also works but is not required.
-- [Homebrew](https://brew.sh), for GNU make (`gmake`; macOS ships make 3.81) and `ldid`
+- A macOS device with the Xcode CLI tools (`xcode-select --install`), which include Python 3. Full Xcode also works but is not required.
+- [Homebrew](https://brew.sh), for GNU make (`gmake`, since macOS ships make 3.81) and `ldid`
 - [Theos](https://theos.dev) and the patched iPhoneOS 14.5 SDK from this repo, both installed by the setup script below
-- Python 3 (used during the build)
 - A **decrypted** Instagram IPA
 
 ### Setup
@@ -43,18 +41,10 @@ It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the
 
 ## Build
 
-1. Get a **decrypted** Instagram IPA and unpack it so the app binary is at:
-
-   ```
-   input/Payload/Instagram.app/Instagram
-   ```
-
-   Example:
+1. Unpack a **decrypted** Instagram IPA into `input/`, so the app binary is at `input/Payload/Instagram.app/Instagram`:
 
    ```sh
-   unzip Instagram.ipa -d /tmp/ig
-   mkdir -p input
-   cp -R /tmp/ig/Payload input/
+   unzip -q Instagram.ipa -d input
    ```
 
    Check that the binary is really decrypted (`cryptid 0`). An encrypted binary builds fine but the tweak will not load:
@@ -67,17 +57,21 @@ It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the
 
 ## Install
 
-1. Install `output/Instagram_patched.ipa`:
-   - **Sideloadly / AltStore / SideStore:** open the IPA and let the tool re-sign it with your Apple ID.
-   - **TrollStore:** install the IPA on the device.
+1. Install `output/Instagram_patched.ipa` with your re-signing or sideloading tool.
 2. Open Instagram, then open Theta by long-pressing the home tab.
 
-`ThetaNSE` lets the notification extension decrypt banners. `Source/SideloadNSE/keychain-sharing.plist` is **optional** and is not applied by the build. Skip it unless notifications break because the extension cannot read Instagram’s keychain. In that case, merge those entitlements onto `Instagram.app` and `InstagramNotificationExtension.appex` only (never onto `ThetaNSE` or other dylibs), and replace `TEAMID` with your signing Team ID. Theta already probes wildcard keychain groups at runtime, so most installs do not need this plist.
+To update, build again and install the new IPA over the existing app. Your settings are kept.
+
+If notification banners stop showing message content, see [Notification extension](docs/DEVELOPMENT.md#notification-extension).
 
 ## Development
 
 Toolchain details, debug builds, checking hooks against a new Instagram version, and the source layout are in [DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-### AI use
+## AI use
 
 The maintainer decides what gets built and how it should work, guides the work step by step, and reviews and approves every change before it is committed. Claude Code writes most of the code and helps with code research, such as tracing how Instagram reaches a feature. Every change is tested on a real device before it ships. The rules the agents follow are in [AGENTS.md](AGENTS.md).
+
+## Disclaimer
+
+Theta is not affiliated with or endorsed by Instagram or Meta. Using a modified client may break Instagram's terms of service and can get an account restricted. Use it at your own risk.

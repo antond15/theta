@@ -68,6 +68,10 @@ It does two things:
 
 The check compiles the working tree, including uncommitted changes, so commit or stash before pushing if they differ. `git push --no-verify` skips it.
 
+## Notification extension
+
+`ThetaNSE` lets the notification extension decrypt banners. `Source/SideloadNSE/keychain-sharing.plist` is **optional** and is not applied by the build. Skip it unless notifications break because the extension cannot read Instagram's keychain. In that case, merge those entitlements onto `Instagram.app` and `InstagramNotificationExtension.appex` only (never onto `ThetaNSE` or other dylibs), and replace `TEAMID` with your signing Team ID. Theta already probes wildcard keychain groups at runtime, so most installs do not need this plist.
+
 ## Settings
 
 Every setting is declared once and read through a constant, never a string:
