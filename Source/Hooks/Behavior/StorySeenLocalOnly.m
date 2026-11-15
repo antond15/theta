@@ -46,7 +46,9 @@ static void hook_sundialAppendSeenState(id self, SEL _cmd, id payload) {
    - an upload whose queue holds only allowed receipts gets the networker, and the network-layer
      backstop (SeenRequestBlock.m) lets one /media/seen/ request through.
    The safety rule: the networker is returned only when the queue was read and held nothing but
-   allowed receipts. An unreadable queue blocks (the eye then doesn't send, nothing leaks). */
+   allowed receipts. An unreadable queue blocks (the eye then doesn't send, nothing leaks).
+   Turning the setting off empties the queue once, at that moment (THStorySeenLocalOnlyChanged); with
+   the setting off the networker is never touched, so receipts flow as in stock Instagram. */
 
 static __weak id s_thetaPendingSeenStore;
 static NSMutableDictionary<NSString *, NSDate *> *s_thetaAllowedSeenMedia; // media pk -> allowed at
@@ -54,9 +56,10 @@ static NSDate *s_thetaVerifiedUploadAt;
 static os_unfair_lock s_thetaSeenAllowLock = OS_UNFAIR_LOCK_INIT;
 static const NSTimeInterval kTHAllowedSeenLifetime = 15 * 60;
 static const NSTimeInterval kTHVerifiedUploadWindow = 30;
-/* Set while receipts are being discarded; on the first upload after the setting is turned off, the
-   queue (filled while it was on) is emptied once more before uploads go through again. */
+/* Older builds emptied the queue on the first upload after the setting went off, and kept blocking
+   uploads while this flag stayed set. Only removed now. */
 static NSString *const kTHStorySeenScrubPendingKey = @"Theta_StorySeenScrubPending";
+static BOOL s_thetaSeenLocalOnlyWasOn;
 
 static NSString *THStorySeenMediaPK(id item) {
     for (id obj in @[ ThetaValueForKey(item, @"media") ?: [NSNull null], item ?: [NSNull null] ]) {
@@ -184,22 +187,9 @@ BOOL THStorySeenConsumeVerifiedUpload(void) {
 
 static id (*orig_uploaderNetworker)(id, SEL);
 static id hook_uploaderNetworker(id self, SEL _cmd) {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     // Not THStorySeenReceiptsBlocked(): the eye's synchronous allow window must not open the queue.
-    if (!ENABLED(THStorySeenLocalOnly)) {
-        if (![defaults boolForKey:kTHStorySeenScrubPendingKey]) return orig_uploaderNetworker(self, _cmd);
-        // First upload after the setting went off: drop what was queued while it was on, once.
-        NSUInteger kept = 0, removed = 0;
-        BOOL readable = THStorySeenScrubQueue(THStorySeenAllowedMedia(), &kept, &removed);
-        if (readable) [defaults removeObjectForKey:kTHStorySeenScrubPendingKey];
-        if (!readable || removed) {
-            THSeenDropLog(@"uploader networker (queue from while it was on)", @"-");
-            return nil;
-        }
-        return orig_uploaderNetworker(self, _cmd);
-    }
+    if (!ENABLED(THStorySeenLocalOnly)) return orig_uploaderNetworker(self, _cmd);
 
-    if (![defaults boolForKey:kTHStorySeenScrubPendingKey]) [defaults setBool:YES forKey:kTHStorySeenScrubPendingKey];
     NSUInteger kept = 0, removed = 0;
     BOOL readable = THStorySeenScrubQueue(THStorySeenAllowedMedia(), &kept, &removed);
     if (readable && !removed && kept) {
@@ -211,6 +201,22 @@ static id hook_uploaderNetworker(id self, SEL _cmd) {
     }
     THSeenDropLog(@"uploader networker", readable ? @"-" : @"(queue unreadable)");
     return nil;
+}
+
+/* Turning the setting off empties the queue filled while it was on, so those receipts are never
+   sent; what is watched afterwards uploads normally. An unreadable queue is left as it is. */
+static void THStorySeenLocalOnlyChanged(void) {
+    // Instagram writes defaults from many threads: only one caller acts on a change.
+    BOOL on = ENABLED(THStorySeenLocalOnly);
+    os_unfair_lock_lock(&s_thetaSeenAllowLock);
+    BOOL turnedOff = s_thetaSeenLocalOnlyWasOn && !on;
+    s_thetaSeenLocalOnlyWasOn = on;
+    os_unfair_lock_unlock(&s_thetaSeenAllowLock);
+    if (!turnedOff) return;
+    NSUInteger kept = 0, removed = 0;
+    BOOL readable = THStorySeenScrubQueue(THStorySeenAllowedMedia(), &kept, &removed);
+    THDebugLog(@"[Theta] seen queue: setting turned off, %@ (discarded %lu)", readable ? @"emptied" : @"unreadable, left as is",
+               (unsigned long)removed);
 }
 
 /* The viewer's flush reads the store through this getter (objc_msgSend), as does an ad toolbox at
@@ -226,6 +232,11 @@ static id hook_reelPendingSeenStateStore(id self, SEL _cmd) {
 }
 
 void THRegisterStorySeenLocalOnlyHooks(void) {
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kTHStorySeenScrubPendingKey];
+    s_thetaSeenLocalOnlyWasOn = ENABLED(THStorySeenLocalOnly);
+    [[NSNotificationCenter defaultCenter] addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
+                                                  usingBlock:^(__unused NSNotification *note) { THStorySeenLocalOnlyChanged(); }];
+
     Class sundialMgr = ThetaFirstClass(@[ @"_TtC23IGSundialSeenStateSwift25IGSundialSeenStateManager", @"IGSundialSeenStateManager" ]);
     if (sundialMgr) {
         NullHookMessageIfPresent(sundialMgr, @selector(uploadSeenStateIfNecessary), (void *)hook_sundialUploadSeenStateIfNecessary,
