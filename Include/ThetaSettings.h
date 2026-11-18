@@ -66,6 +66,7 @@
     X(THDMHideCreateGroupButton,         "dm.hide_create_group_button") \
     X(THDMHideBlendButton,               "dm.hide_blend_button") \
     X(THDMHideCallButtons,               "dm.hide_call_buttons") \
+    X(THDMHideFriendMap,                 "dm.hide_friend_map") \
     X(THDMFullLastActive,                "dm.full_last_active") \
     /* Stories */ \
     X(THStoryGhost,                      "story.ghost") \

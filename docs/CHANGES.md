@@ -63,6 +63,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 
 - **Hide Shared Reel Thumbnails** (Messages) replaces the preview image, keeping the play button, account details and tap action.
 - **Hide Shared Post Thumbnails** (Messages) replaces shared-post previews and hides their captions, keeping account details and tap action.
+- **Hide Map** (Messages) removes the location map bubble from the notes at the top of the DM inbox.
 - **Mute Shared Reel Notifications** (Messages) delivers a DM that shares a reel silently, removes it from Notification Center and keeps it off the badge. A sideload can't drop a push outright; that needs Apple's notification-filtering entitlement.
 
 ## Removed

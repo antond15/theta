@@ -169,6 +169,7 @@ static THSettingDefinition *Page(NSString *key, NSString *title, NSString *detai
             Toggle(THDMFullLastActive, @"Exact Last Active Time", @"Shows when someone was last active, like \"May 13 at 2:45 PM\", instead of \"Active 5m ago\".", nil),
             Toggle(THDMHideCallButtons, @"Hide Call Buttons", @"Removes the audio and video call buttons from the top of chats.", nil),
             Toggle(THDMHideBlendButton, @"Hide Blend Button", @"Removes the Blend button from the top of chats.", nil),
+            Toggle(THDMHideFriendMap, @"Hide Map", @"Removes the map bubble from the notes at the top of your inbox.", @{kRestart: @YES}),
             Toggle(THDMSendFiles, @"Send Files", @"Adds Send File to the + menu in chats, for sending any file.", nil),
             Toggle(THDMUploadAudioMessages, @"Upload Voice Messages", @"Send audio from a video or file as a voice message.", @{
                 kInfo: @"Tapping the microphone in a chat asks whether to use audio from a video in your library, from an audio file, or to record as usual."}),
@@ -352,6 +353,7 @@ static THSettingsSection *Section(NSString *header, NSString *footer, NSArray<NS
                     @[THDMSeenButton, THDMSeenOnTyping, THDMSeenOnReact, THDMSeenOnSend, THDMAutoSeenUsers]),
             Section(@"Privacy", nil, @[THDMHideTypingIndicator, THDMPrivateMediaGhost]),
             Section(@"Unsent Messages", nil, @[THDMKeepDeleted, THDMDeletedColor]),
+            Section(@"Inbox", nil, @[THDMHideFriendMap]),
             Section(@"Chat Screen", nil, @[THDMFullLastActive, THDMHideCallButtons, THDMHideBlendButton]),
             Section(@"Sending", nil, @[THDMSendFiles, THDMUploadAudioMessages, THDMBypassCharLimit]),
             Section(@"Shared Posts and Reels", nil, @[THDMHideSharedReelThumbnails, THDMHideSharedPostThumbnails,
