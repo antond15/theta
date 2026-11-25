@@ -10,7 +10,11 @@
 #if THETA_DEBUG
 #import <os/log.h>
 // One public string: NSLog would redact every %@ argument as <private> in the device log.
-#define THDebugLog(fmt, ...) os_log(OS_LOG_DEFAULT, "%{public}s", [NSString stringWithFormat:(fmt), ##__VA_ARGS__].UTF8String ?: "")
+// Format outside os_log: clang 19 flags an argument-less literal format inside its expansion.
+#define THDebugLog(fmt, ...) do { \
+    NSString *_thDebugMsg = [NSString stringWithFormat:(fmt), ##__VA_ARGS__]; \
+    os_log(OS_LOG_DEFAULT, "%{public}s", _thDebugMsg.UTF8String ?: ""); \
+} while (0)
 #else
 #define THDebugLog(...) do { } while (0)
 #endif
