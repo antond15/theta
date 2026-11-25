@@ -13,15 +13,17 @@
 # Compile: `gmake clean && gmake` of the working tree, the same compile ./build.sh runs. Fails on
 # a compile error or on more than the known warnings. The decrypted IPA never leaves the developer's own machines.
 set -uo pipefail
+# sort and comm must agree byte-wise with the stored baseline on every OS (Linux sorts by locale).
+export LC_ALL=C
 
 REPO_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 cd "$REPO_DIR"
 
 APP="input/Payload/Instagram.app"
 BASELINE="$(git rev-parse --git-path theta-compat-baseline.txt)"
-# Linux (Debian clang 19) has no static-initializer warning for _ThetaNSEInit.
+# Linux (Debian clang 19 + lld) has no `-multiply_defined is obsolete` warnings.
 EXPECTED_WARNINGS=6
-[[ "$(uname -s)" == "Linux" ]] && EXPECTED_WARNINGS=5
+[[ "$(uname -s)" == "Linux" ]] && EXPECTED_WARNINGS=4
 
 log() { echo "[pre-push] $*"; }
 

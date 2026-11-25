@@ -32,7 +32,7 @@ gmake clean && gmake THETA_DEBUG=1    # same, with diagnostic logging
 
 The Makefile runs `scripts/assemble.py` first, which joins `Source/Runtime/` and every file under `Source/Hooks/` into one translation unit, `TweakCOMPILE.xm`, so hook implementations can stay `static`. `Source/UI`, `Source/Media` and `Source/ProfileAnalyzer` are compiled separately. The notification-extension helper `ThetaNSE` is a second library built from `Source/SideloadNSE`.
 
-A clean build currently prints six warnings on macOS: `-multiply_defined is obsolete` (twice), the duplicate `BlockTarget` category on `UIButton` and on `UIGestureRecognizer`, `performSelector may cause a leak`, and the `_ThetaNSEInit` static initializer. On Linux it prints the first five; clang 19 has no static-initializer warning. Don't add new ones. The first build after changing compiler flags can also print `The selected platform is no longer supported by libc++` while clang rebuilds its module cache; that goes away on the next build.
+A clean build currently prints six warnings on macOS: `-multiply_defined is obsolete` (twice), the duplicate `BlockTarget` category on `UIButton` and on `UIGestureRecognizer`, `performSelector may cause a leak`, and the `_ThetaNSEInit` static initializer. On Linux it prints the last four; lld has no `-multiply_defined` warning. Don't add new ones. The first build after changing compiler flags can also print `The selected platform is no longer supported by libc++` while clang rebuilds its module cache; that goes away on the next build.
 
 The version number is `THETA_VERSION_NUMBER` in the Makefile.
 
@@ -70,7 +70,7 @@ ln -sf ../../scripts/pre-push.sh .git/hooks/pre-push
 `-f` replaces the ai-workflow-kit shim that `install.sh --update` writes when no hook exists. Run as a hook, the script first calls the kit's guard (`.claude/hooks/git-pre-push.sh`), which rejects a push to `main` that doesn't come from `release.sh`. Then it does two things:
 
 1. **Hook coverage.** It runs `compat.py` against `input/Payload/Instagram.app`, or skips this step with a notice if the app isn't there. A current Instagram build already has a few misses (dead fallbacks), so the exit code alone is useless. The script compares the MISSING and UNRESOLVED entries (file, class, selector; line numbers ignored) against a baseline in `.git/theta-compat-baseline.txt`, and fails only on entries that are not in the baseline. The first run creates the baseline. Entries that disappear are listed but don't fail. After switching to a new Instagram version, or after deciding a new miss is fine, record the current state with `./scripts/pre-push.sh --update-baseline`.
-2. **Compile.** It runs `gmake clean && gmake`, the same compile `./build.sh` does, and fails on a compile error. More than the usual warnings (six on macOS, five on Linux) fails it too, and prints them.
+2. **Compile.** It runs `gmake clean && gmake`, the same compile `./build.sh` does, and fails on a compile error. More than the usual warnings (six on macOS, four on Linux) fails it too, and prints them.
 
 The check compiles the working tree, including uncommitted changes, so commit or stash before pushing if they differ. `git push --no-verify` skips it.
 

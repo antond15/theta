@@ -10,7 +10,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface THSettingCell : UITableViewCell
-@property (class, nonatomic, readonly) NSString *reuseIdentifier;
+@property (class, nonatomic, readonly, copy) NSString *reuseIdentifier;
 @property (nonatomic, strong, readonly, nullable) THSettingDefinition *setting;
 
 /**
