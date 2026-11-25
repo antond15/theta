@@ -2,7 +2,7 @@
 
 Theta never runs on a server. A release is a `dev` commit that passed the pre-push check, with
 `main` fast-forwarded to it; the user turns it into an IPA and sideloads it. Nothing is published
-or uploaded: the decrypted IPA and everything built from it stay on this machine.
+or uploaded: the decrypted IPA and everything built from it stay on the developer's own machines.
 
 ## First-time setup
 

@@ -24,8 +24,8 @@ Ported from other forks, credited by author, repo and commit in the commit messa
 
 ## Requirements
 
-- A macOS device with the Xcode CLI tools (`xcode-select --install`), which include Python 3. Full Xcode also works but is not required.
-- [Homebrew](https://brew.sh), for GNU make (`gmake`, since macOS ships make 3.81) and `ldid`
+- **macOS:** the Xcode CLI tools (`xcode-select --install`), which include Python 3 (full Xcode also works but is not required), and [Homebrew](https://brew.sh), for GNU make (`gmake`, since macOS ships make 3.81) and `ldid`
+- **Linux (Debian 13 tested):** `sudo apt install clang-19 lld-19 llvm-19 make gcc git curl xz-utils zip python3 perl`. The setup script prints this line for whatever is missing; it never runs sudo itself.
 - [Theos](https://theos.dev) and the patched iPhoneOS 14.5 SDK from this repo, both installed by the setup script below
 - A **decrypted** Instagram IPA
 
@@ -37,7 +37,7 @@ Run once after cloning (safe to re-run):
 ./scripts/setup-toolchain.sh
 ```
 
-It installs GNU make and `ldid` with Homebrew, Theos at a tested commit, and the patched SDK. See [DEVELOPMENT.md](docs/DEVELOPMENT.md#toolchain) for what it changes and why. If you put Theos somewhere other than `~/theos`, export `THEOS` in your shell profile before running the script and building.
+On macOS it installs GNU make and `ldid` with Homebrew; on Linux it sets up a compiler toolchain from the apt packages above. Both install Theos at a tested commit, and the patched SDK. See [DEVELOPMENT.md](docs/DEVELOPMENT.md#toolchain) for what it changes and why. If you put Theos somewhere other than `~/theos`, export `THEOS` in your shell profile before running the script and building.
 
 ## Build
 

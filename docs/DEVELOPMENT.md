@@ -6,7 +6,7 @@ Notes for working on Theta. Building and installing are covered in the [README](
 
 `scripts/setup-toolchain.sh` does the one-time setup and is safe to re-run:
 
-- Installs `make` (GNU make, run as `gmake`; macOS ships make 3.81) and `ldid` with Homebrew.
+- macOS: installs `make` (GNU make, run as `gmake`; macOS ships make 3.81) and `ldid` with Homebrew. Linux: checks the apt packages (`clang-19 lld-19 llvm-19 make gcc git curl xz-utils zip python3 perl`) and prints the `sudo apt install` line for any missing; it never runs sudo.
 - Clones Theos into `$THEOS` (default `~/theos`) at a pinned commit, `THEOS_COMMIT` in the script. This is the commit the fork is built and tested with; bump it on purpose. An existing Theos checkout is left alone, and the script prints a warning and the checkout command if it is at a different commit.
 - Unpacks the patched iPhoneOS 14.5 SDK from `sdks/` into `$THEOS/sdks`. A stock Xcode SDK will not work: Theta is built with `SDKVERSION = 14.5` and needs Theos-patched private-framework stubs.
 
@@ -14,6 +14,12 @@ It also patches two things the SDK and Makefile expect but current macOS no long
 
 - **Toolchain link.** The Makefile uses `$THEOS/toolchain/Xcode14.xctoolchain/usr/bin/`. Xcode 14 does not install on current macOS, so the script links that path to the selected Xcode or command-line tools toolchain. A real Xcode 14 toolchain already there is left alone.
 - **libc++ headers.** The patched 14.5 SDK has no C++ headers, and clang 15 and later fail with `'cmath' file not found` from `simd/math.h`. The script copies libc++ headers into `$THEOS/sdks/iPhoneOS14.5.sdk/usr/include/c++`. Re-unpacking the SDK removes them, so re-run the script after that.
+
+On Linux (Debian 13 tested) the script differs after the Theos step:
+
+- **Compiler.** Debian's clang 19 with lld compiles for iOS; Theos' own clang 11 is not used. `$THEOS/toolchain/theta-linux/usr/bin` holds `clang` and `clang++` wrappers that add `-fuse-ld=lld`, and `Xcode14.xctoolchain` links to that directory.
+- **cctools.** The prebuilt toolchain from [L1ghtmann/llvm-project](https://github.com/L1ghtmann/llvm-project/releases/tag/test-210562a) (checksum verified) is unpacked into `$THEOS/toolchain/linux` and used only for `ldid`, `otool`, `install_name_tool`, `strip`, `lipo` and `libtool`, plus its libc++ headers, which are grafted into the SDK (Debian's `libc++-dev` headers are configured for Linux and fail). `build.sh` puts the toolchain directory first on `PATH`.
+- **`@available` runtime.** Debian's clang ships no Darwin compiler-rt, so the script compiles LLVM's `os_version_check.c` (tag `llvmorg-19.1.7`, checksum verified) into `libclang_rt.ios.a`, which the Makefile links on Linux only.
 
 ## Building
 
@@ -26,7 +32,7 @@ gmake clean && gmake THETA_DEBUG=1    # same, with diagnostic logging
 
 The Makefile runs `scripts/assemble.py` first, which joins `Source/Runtime/` and every file under `Source/Hooks/` into one translation unit, `TweakCOMPILE.xm`, so hook implementations can stay `static`. `Source/UI`, `Source/Media` and `Source/ProfileAnalyzer` are compiled separately. The notification-extension helper `ThetaNSE` is a second library built from `Source/SideloadNSE`.
 
-A clean build currently prints six warnings: `-multiply_defined is obsolete` (twice), the duplicate `BlockTarget` category on `UIButton` and on `UIGestureRecognizer`, `performSelector may cause a leak`, and the `_ThetaNSEInit` static initializer. Don't add new ones. The first build after changing compiler flags can also print `The selected platform is no longer supported by libc++` while clang rebuilds its module cache; that goes away on the next build.
+A clean build currently prints six warnings on macOS: `-multiply_defined is obsolete` (twice), the duplicate `BlockTarget` category on `UIButton` and on `UIGestureRecognizer`, `performSelector may cause a leak`, and the `_ThetaNSEInit` static initializer. On Linux it prints the first five; clang 19 has no static-initializer warning. Don't add new ones. The first build after changing compiler flags can also print `The selected platform is no longer supported by libc++` while clang rebuilds its module cache; that goes away on the next build.
 
 The version number is `THETA_VERSION_NUMBER` in the Makefile.
 
@@ -64,7 +70,7 @@ ln -sf ../../scripts/pre-push.sh .git/hooks/pre-push
 `-f` replaces the ai-workflow-kit shim that `install.sh --update` writes when no hook exists. Run as a hook, the script first calls the kit's guard (`.claude/hooks/git-pre-push.sh`), which rejects a push to `main` that doesn't come from `release.sh`. Then it does two things:
 
 1. **Hook coverage.** It runs `compat.py` against `input/Payload/Instagram.app`, or skips this step with a notice if the app isn't there. A current Instagram build already has a few misses (dead fallbacks), so the exit code alone is useless. The script compares the MISSING and UNRESOLVED entries (file, class, selector; line numbers ignored) against a baseline in `.git/theta-compat-baseline.txt`, and fails only on entries that are not in the baseline. The first run creates the baseline. Entries that disappear are listed but don't fail. After switching to a new Instagram version, or after deciding a new miss is fine, record the current state with `./scripts/pre-push.sh --update-baseline`.
-2. **Compile.** It runs `gmake clean && gmake`, the same compile `./build.sh` does, and fails on a compile error. More than the usual six warnings fails it too, and prints them.
+2. **Compile.** It runs `gmake clean && gmake`, the same compile `./build.sh` does, and fails on a compile error. More than the usual warnings (six on macOS, five on Linux) fails it too, and prints them.
 
 The check compiles the working tree, including uncommitted changes, so commit or stash before pushing if they differ. `git push --no-verify` skips it.
 
@@ -126,5 +132,5 @@ scripts/compat.py        Checks Theta's hooks against an Instagram build
 scripts/pre-push.sh      Local pre-push check: compat.py and a compile
 scripts/objcdump.py      Mach-O / ObjC metadata parser used by compat.py
 scripts/isolate-ffmpeg-dylibs.py  Gives the bundled FFmpeg its own install names
-scripts/setup-toolchain.sh        One-time Theos / SDK / toolchain setup
+scripts/setup-toolchain.sh        One-time Theos / SDK / toolchain setup (macOS and Linux)
 ```

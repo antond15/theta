@@ -113,7 +113,7 @@ never run `close-step`; they return their report to the parent.
 These come on top of the working rules above.
 
 1. **Checks, no CI.** There is no CI, on purpose: the real check needs the decrypted IPA, which
-   never leaves this machine. `scripts/pre-push.sh` (installed as `.git/hooks/pre-push`) is the
+   never leaves the developer's own machines. `scripts/pre-push.sh` (installed as `.git/hooks/pre-push`) is the
    gate: no new `compat.py` misses against the local baseline, and a clean compile. `main` only
    fast-forwards to a `dev` commit that passed it; no merge commits.
 2. **Commits.** Usually no body; when one is needed (credit for a port, a fact the subject can't
@@ -181,7 +181,8 @@ Skills refer to these by name. Run with `THEOS` exported (default `~/theos`).
 ## Tech stack
 
 - Theos at the commit pinned in `scripts/setup-toolchain.sh`, GNU make (`gmake`), `ldid`
-- Patched iPhoneOS 14.5 SDK from `sdks/` (`SDKVERSION = 14.5`); CLT clang, no full Xcode needed
+- Patched iPhoneOS 14.5 SDK from `sdks/` (`SDKVERSION = 14.5`); macOS: CLT clang, no full Xcode
+  needed; Linux (Debian): apt `clang-19` + `lld-19` with a cctools toolchain from setup
 - Objective-C / Logos (`.xm`, `.x`, `.m`), fishhook for C symbol rebinding; no Cydia Substrate
 - FFmpeg from `vendor/ffmpeg.framework`, loaded at runtime with `dlopen`
 - Python 3 for `scripts/` (assembly, compat checking, FFmpeg isolation)

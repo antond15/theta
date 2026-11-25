@@ -19,6 +19,11 @@ if [[ ! -f "$THEOS/makefiles/common.mk" ]]; then
 	echo "[Build] ERROR: Theos not found at $THEOS — run ./scripts/setup-toolchain.sh"
 	exit 1
 fi
+# Linux: the toolchain dir setup-toolchain.sh builds holds ldid, otool, install_name_tool, strip.
+# On macOS it links the Xcode toolchain, which has no ldid and lets the system tools win.
+if [[ "$(uname -s)" == "Linux" ]]; then
+	export PATH="$THEOS/toolchain/Xcode14.xctoolchain/usr/bin:$PATH"
+fi
 
 usage() {
 	cat <<'EOF'
@@ -51,13 +56,30 @@ done
 strip_entitlements() {
 	local target="$1"
 	[[ -f "$target" ]] || return 0
-	/usr/bin/codesign --remove-signature "$target" 2>/dev/null || true
-	/usr/bin/codesign -f -s - "$target" 2>/dev/null || true
+	if command -v codesign &>/dev/null; then
+		codesign --remove-signature "$target" 2>/dev/null || true
+		codesign -f -s - "$target" 2>/dev/null || true
+	else
+		# Linux: ldid -r drops the signature, ldid -S signs ad hoc with no entitlements.
+		ldid -r "$target" 2>/dev/null || true
+		ldid -S "$target" 2>/dev/null || true
+	fi
 }
 
+# Prints a value from a (binary or XML) plist; key is a path like ":NSExtension:NSExtensionPointIdentifier".
 plist_print() {
 	local plist="$1" key="$2"
-	/usr/libexec/PlistBuddy -c "Print ${key}" "$plist" 2>/dev/null || true
+	python3 -I -c '
+import plistlib, sys
+try:
+    with open(sys.argv[1], "rb") as f:
+        v = plistlib.load(f)
+    for k in sys.argv[2].strip(":").split(":"):
+        v = v[k]
+    print(v)
+except Exception:
+    pass
+' "$plist" "$key" 2>/dev/null || true
 }
 
 binary_already_loads() {
@@ -294,9 +316,9 @@ resolve_app_binary() {
 	binary_name="${binary_name%.app}"
 
 	plist="$app_dir/Info.plist"
-	if [[ -f "$plist" ]] && command -v /usr/libexec/PlistBuddy &>/dev/null; then
+	if [[ -f "$plist" ]]; then
 		local exe
-		exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist" 2>/dev/null || true)"
+		exe="$(plist_print "$plist" ":CFBundleExecutable")"
 		if [[ -n "${exe}" ]]; then
 			binary_name="$exe"
 		fi

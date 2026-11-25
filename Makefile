@@ -28,6 +28,13 @@ Theta_FRAMEWORKS = UIKit Foundation CoreGraphics Photos CoreServices SystemConfi
 Theta_LDFLAGS = -lsqlite3
 Theta_PRIVATE_FRAMEWORKS = Preferences
 
+# Linux: Debian's clang lacks the Darwin runtime that @available needs; setup-toolchain.sh builds it.
+ifeq ($(shell uname -s),Linux)
+	THETA_RT = $(THEOS)/toolchain/theta-linux/lib/libclang_rt.ios.a
+	Theta_LDFLAGS += $(THETA_RT)
+	ThetaNSE_LDFLAGS += $(THETA_RT)
+endif
+
 Theta_CFLAGS += -fobjc-arc \
 	-Wno-unused-variable -Wno-unused-value -Wno-deprecated-declarations \
 	-Wno-nullability-completeness -Wno-unused-function -Wno-incompatible-pointer-types \

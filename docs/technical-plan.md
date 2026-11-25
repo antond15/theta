@@ -16,7 +16,7 @@ is in `docs/DEVELOPMENT.md#layout`.
 
 ## Security
 
-The decrypted IPA, `input/`, `output/` and anything read from them never leave this machine.
+The decrypted IPA, `input/`, `output/` and anything read from them never leave the developer's own machines.
 Privacy hooks (seen receipts, Tigon request dropping, Instants seen, tracking strip), the
 sideload runtime and the notification extension are high-risk code (`AGENTS.md`, Theta rules).
 

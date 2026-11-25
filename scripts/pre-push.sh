@@ -11,7 +11,7 @@
 # .git/theta-compat-baseline.txt and fails only on new ones. The first run creates the baseline.
 #
 # Compile: `gmake clean && gmake` of the working tree, the same compile ./build.sh runs. Fails on
-# a compile error or on more than the known warnings. The decrypted IPA never leaves this machine.
+# a compile error or on more than the known warnings. The decrypted IPA never leaves the developer's own machines.
 set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -19,7 +19,9 @@ cd "$REPO_DIR"
 
 APP="input/Payload/Instagram.app"
 BASELINE="$(git rev-parse --git-path theta-compat-baseline.txt)"
+# Linux (Debian clang 19) has no static-initializer warning for _ThetaNSEInit.
 EXPECTED_WARNINGS=6
+[[ "$(uname -s)" == "Linux" ]] && EXPECTED_WARNINGS=5
 
 log() { echo "[pre-push] $*"; }
 
