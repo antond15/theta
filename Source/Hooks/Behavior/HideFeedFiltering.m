@@ -178,7 +178,32 @@ static void hook_endFeedCell(id self, SEL _cmd, id arg1) {
     } @catch (__unused NSException *e) {}
 }
 
+/* Home stories tray: suggested accounts are reels whose owner you don't follow (IGUser followStatus 2).
+ * Your own reel (also status 2) and multi-author reels stay; an owner Theta can't read stays. */
+static BOOL theta_isSuggestedTrayReel(id vm) {
+    if ([vm respondsToSelector:@selector(isCurrentUserReel)] && ((BOOL (*)(id, SEL))objc_msgSend)(vm, @selector(isCurrentUserReel)))
+        return NO;
+    id owner = ThetaValueForKey(vm, @"reelOwner");
+    if ([ThetaValueForKey(owner, @"_subtype") integerValue] != 0) return NO;
+    id user = ThetaValueForKey(owner, @"_userReelOwner_user");
+    Class userClass = objc_getClass("IGUser");
+    if (!userClass || ![user isKindOfClass:userClass] || ![user respondsToSelector:@selector(followStatus)]) return NO;
+    return [(IGUser *)user followStatus] == 2;
+}
+
+static NSArray *(*orig_traySorted)(id, SEL, id, BOOL, NSInteger);
+static NSArray *hook_traySorted(id self, SEL _cmd, id models, BOOL highlightsAtEnd, NSInteger refreshType) {
+    NSArray *r = orig_traySorted(self, _cmd, models, highlightsAtEnd, refreshType);
+    if (!ENABLED(THFeedHideSuggestedPeople) || ![r isKindOfClass:[NSArray class]]) return r;
+    NSMutableArray *out = [NSMutableArray arrayWithCapacity:r.count];
+    for (id vm in r) {
+        if (!theta_isSuggestedTrayReel(vm)) [out addObject:vm];
+    }
+    return out.count == r.count ? r : [out copy];
+}
+
 void THRegisterHideFeedFilteringHooks(void) {
+    NullHookMessageIfPresent(objc_getClass("IGStoryTrayModelsListBuilder"), @selector(sortedViewModels:highlightsCanAppearAtEndOfTray:refreshType:), (void *)hook_traySorted, &orig_traySorted);
     NullHookMessageIfPresent(objc_getClass("_TtC23IGSundialFeedDataSource23IGSundialFeedDataSource") ?: objc_getClass("IGSundialFeedDataSource"), @selector(objectsForListAdapter:), (void *)hook_sundialObjs, &orig_sundialObjs);
     NullHookMessageIfPresent(objc_getClass("_TtC30IGContextualFeedViewController30IGContextualFeedViewController") ?: objc_getClass("IGContextualFeedViewController"), @selector(objectsForListAdapter:), (void *)hook_ctxObjs, &orig_ctxObjs);
     NullHookMessageIfPresent(objc_getClass("IGVideoFeedViewController"), @selector(objectsForListAdapter:), (void *)hook_videoObjs, &orig_videoObjs);

@@ -8,6 +8,7 @@ Differences from upstream [objcmsgSend/theta](https://github.com/objcmsgSend/the
 - **Hide Create Button** works on the new profile header.
 - **Liquid Glass.** No longer crashes a sideloaded app at launch. The toggles no longer switch on Instagram's All / Friends / Following home feed, and "Enable Liquid Glass Buttons" has a visible effect again.
 - **Follow Confirmation** works on 451.
+- **Hide Suggested Accounts** also removes the suggested accounts Instagram now adds to the stories bar on the home feed.
 - **DBB** blocks the forced-logout push on 451.
 - **Profile pictures.** The save / fullscreen menu opens on a long press of the large avatar in a profile header only; avatars elsewhere behave normally.
 - **AV1 reels** convert on a sideload: Theta's FFmpeg no longer clashes with the stripped copy Instagram ships. A failed conversion says why.

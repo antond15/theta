@@ -138,7 +138,7 @@ static THSettingDefinition *Page(NSString *key, NSString *title, NSString *detai
             Toggle(THFeedHideAds, @"Hide Ads", @"Removes sponsored posts from your feed, Reels and Explore.", nil),
             Toggle(THFeedHideSuggestedPosts, @"Hide Suggested Posts", @"Removes suggested posts from accounts you don't follow.", nil),
             Toggle(THFeedHideSuggestedReels, @"Hide Suggested Reels", @"Removes the row of suggested reels from your feed.", nil),
-            Toggle(THFeedHideSuggestedPeople, @"Hide Suggested Accounts", @"Removes \"Suggested for you\" accounts from your feed and Reels.", nil),
+            Toggle(THFeedHideSuggestedPeople, @"Hide Suggested Accounts", @"Removes \"Suggested for you\" accounts from your feed, Reels and the stories bar.", nil),
             Toggle(THFeedHideThreadsCarousel, @"Hide Threads Posts", @"Removes Threads posts and promotions from your feed and Reels.", nil),
             Toggle(THFeedHideStoriesTray, @"Hide Stories Bar", @"Removes the row of stories at the top of your feed.", nil),
             Toggle(THFeedHideEndFooter, @"Hide \"You're All Caught Up\"", @"Removes the text that marks the end of new posts.", nil),
