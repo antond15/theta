@@ -26,6 +26,12 @@ log() { echo "[pre-push] $*"; }
 update_baseline=0
 [[ "${1:-}" == "--update-baseline" ]] && update_baseline=1
 
+# As a git hook (git passes the remote name and URL), first the ai-workflow-kit guard: it reads
+# the pushed refs from stdin and rejects a push to main outside release.sh, and --mirror/--prune.
+if [[ $# -eq 2 && "$1" != --* ]]; then
+	bash "$REPO_DIR/.claude/hooks/git-pre-push.sh" "$@" || exit 1
+fi
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 

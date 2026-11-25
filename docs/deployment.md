@@ -8,7 +8,7 @@ or uploaded: the decrypted IPA and everything built from it stay on this machine
 
 Toolchain (`./scripts/setup-toolchain.sh`), the patched SDK and a decrypted Instagram IPA in
 `input/`: see `README.md#requirements` and `docs/DEVELOPMENT.md#toolchain`. Install the pre-push
-hook: `ln -s ../../scripts/pre-push.sh .git/hooks/pre-push`.
+hook: `ln -sf ../../scripts/pre-push.sh .git/hooks/pre-push`.
 
 ## Deploy flow
 

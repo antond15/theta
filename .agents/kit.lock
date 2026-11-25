@@ -1,10 +1,11 @@
 # ai-workflow-kit lock — edit `owned` lines only
-version 2.3.1
-commit df0c72390202a942589b06251548b8f4d55f3e73
+version 3.1.1
+commit dda0a62468f31e9c1f257eef500703baa09107e6
 modules core
 e2e no
-file 2713d844050add846a686b720a81c8e8b2bc0e9e261da9113d36c35144bd8af9 .agents/skills/close-step/SKILL.md
-file d7d5193422c5df65569367bf6a7933c8e92b4057fc2b214560a6d696f292eafd .agents/skills/close-step/release.sh
-file 3da69fe70e433e7dd89e9c4669a3b5614068a4d845693a8e7214d336ca4dbed0 .agents/skills/decision-round/SKILL.md
-file 5fe9cce217615e66a5387262b47746d240e5034fe5dbc7b21bc7e5d6fe4a4c6f .claude/hooks/guard-main-push.sh
-file 2c288ff9016a7a3e5df8785b1a4286bda72809a92b07a292cba5edab869f8dbb .claude/hooks/session-start.sh
+file 00f82f2558ef7956d7744c2df6ce05d29ee7c98c8a807ed7c200b2cd01e1de56 .agents/skills/close-step/SKILL.md
+file ce425fbcf2041fefd8d3ce7d8a22bac96f8b48fee6450c615c8dcb97c35c53bb .agents/skills/close-step/release.sh
+file 6348a1b8e21101e4e1147f956bb559664c20e174827151d45efc5a66bf1efc16 .agents/skills/decision-round/SKILL.md
+file 8c325e89c61480d02349486bd8834074dc61f488b7d139e72eaf464912049dd7 .claude/hooks/git-pre-push.sh
+file fd2182135c3f15599f27ea9cf90575150eef3713c91078aa764acdf263694b0e .claude/hooks/guard-main-push.sh
+file d3c6041053056a0db8a5682ff33745aaa504dfb83be785d47ebfa120ad0bf8c7 .claude/hooks/session-start.sh

@@ -58,10 +58,10 @@ A hook marked missing whose neighbours in the same file still resolve is usually
 `scripts/pre-push.sh` runs `compat.py` and a compile before every push. It runs locally on purpose: CI would need the decrypted IPA, and that must not be uploaded anywhere. Install it as a git hook once:
 
 ```sh
-ln -s ../../scripts/pre-push.sh .git/hooks/pre-push
+ln -sf ../../scripts/pre-push.sh .git/hooks/pre-push
 ```
 
-It does two things:
+`-f` replaces the ai-workflow-kit shim that `install.sh --update` writes when no hook exists. Run as a hook, the script first calls the kit's guard (`.claude/hooks/git-pre-push.sh`), which rejects a push to `main` that doesn't come from `release.sh`. Then it does two things:
 
 1. **Hook coverage.** It runs `compat.py` against `input/Payload/Instagram.app`, or skips this step with a notice if the app isn't there. A current Instagram build already has a few misses (dead fallbacks), so the exit code alone is useless. The script compares the MISSING and UNRESOLVED entries (file, class, selector; line numbers ignored) against a baseline in `.git/theta-compat-baseline.txt`, and fails only on entries that are not in the baseline. The first run creates the baseline. Entries that disappear are listed but don't fail. After switching to a new Instagram version, or after deciding a new miss is fine, record the current state with `./scripts/pre-push.sh --update-baseline`.
 2. **Compile.** It runs `gmake clean && gmake`, the same compile `./build.sh` does, and fails on a compile error. More than the usual six warnings fails it too, and prints them.

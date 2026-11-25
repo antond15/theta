@@ -14,12 +14,17 @@
 # moved to <sha>` or `main not moved` (the progress frames of `gh run watch` are hidden).
 # Run it once as a background command and wait for it; it blocks until the CI result is known.
 # Exit: 0 released (or dev pushed with --dev-only), 1 CI failed, 2 bad usage or precondition,
-#       3 a push was rejected (local pre-push hook or remote), 4 no CI run appeared for <sha> in time.
+#       3 a push was rejected (local pre-push hook or remote), 4 no CI run appeared for <sha> in time,
+#       or the run had no result in time. main moves only on a run whose conclusion is success: a
+#       failing `gh run watch` (e.g. a token that cannot read annotations) is checked against the
+#       run's own status before it counts as red.
 set -euo pipefail
 
 CI_WORKFLOW=ci.yml
 WAIT_TRIES="${WAIT_TRIES:-60}"   # wait for the run to appear: tries x seconds (default 5 min)
 WAIT_SECONDS="${WAIT_SECONDS:-5}"
+POLL_TRIES="${POLL_TRIES:-120}"  # when gh run watch errors: read the run's state, tries x seconds (30 min)
+POLL_SECONDS="${POLL_SECONDS:-15}"
 
 dev_only=0 skip_ci=0 sha=""
 for arg in "$@"; do
@@ -33,7 +38,12 @@ done
 [[ -n "$sha" ]] || { echo "usage: release.sh [--dev-only | --skip-ci] <sha>" >&2; exit 2; }
 ((dev_only && skip_ci)) && { echo "release.sh: --dev-only and --skip-ci do not combine" >&2; exit 2; }
 
-sha="$(git rev-parse --verify "$sha^{commit}")" || { echo "release.sh: unknown commit" >&2; exit 2; }
+given="$sha"
+sha="$(git rev-parse --verify "$sha^{commit}" 2>/dev/null)" || {
+  echo "release.sh: unknown commit '$given'; pass \"\$(git rev-parse HEAD)\". Latest commits:" >&2
+  git log --oneline -3 >&2 2>/dev/null
+  exit 2
+}
 git remote get-url origin >/dev/null 2>&1 || { echo "release.sh: no origin remote" >&2; exit 2; }
 git merge-base --is-ancestor "$sha" dev || { echo "release.sh: $sha is not on dev" >&2; exit 2; }
 
@@ -54,7 +64,9 @@ later="$(git rev-list --count "$sha..dev")"
 if ((dev_only)); then echo "dev only: main not moved"; exit 0; fi
 
 move_main() {
-  git push origin "$sha:refs/heads/main" || { echo "release.sh: push of main failed (not a fast-forward?)" >&2; exit 3; }
+  # AI_KIT_RELEASE=1 lets this one push past the kit's git pre-push hook (.claude/hooks/git-pre-push.sh).
+  # No submodule recursion, so no submodule push inherits it.
+  AI_KIT_RELEASE=1 git push --recurse-submodules=no origin "$sha:refs/heads/main" || { echo "release.sh: push of main failed (not a fast-forward?)" >&2; exit 3; }
   echo "main is now ${sha:0:12}"
   sync_local_main
 }
@@ -107,12 +119,29 @@ done
 [[ -n "$run_id" ]] || { echo "release.sh: no $CI_WORKFLOW run appeared for ${sha:0:12}; main not moved" >&2; exit 4; }
 
 echo "watching run $run_id"
+result=""
 if gh run watch "$run_id" --exit-status >/dev/null 2>&1; then
+  result=success
+else
+  # A non-zero watch is not proof of red: gh also exits 1 when a token cannot read check-run
+  # annotations (HTTP 403), while the run is still going. Read the run's own state; wait
+  # (bounded) while it is not completed.
+  for ((i = 0; i < POLL_TRIES; i++)); do
+    state="$(gh run view "$run_id" --json status,conclusion --jq '.status + " " + .conclusion' 2>/dev/null || true)"
+    if [[ "$state" == "completed "* ]]; then result="${state#completed }"; break; fi
+    sleep "$POLL_SECONDS"
+  done
+fi
+if [[ "$result" == success ]]; then
   echo "CI passed (run $run_id)"
   move_main
   echo "release: $CI_WORKFLOW run $run_id passed for ${sha:0:12}; main moved to ${sha:0:12}"
+elif [[ -z "$result" ]]; then
+  echo "release.sh: run $run_id has no result in time (gh run watch failed and the run is not completed); main not moved" >&2
+  echo "release: $CI_WORKFLOW run $run_id has no result for ${sha:0:12}; main not moved"
+  exit 4
 else
-  echo "CI failed or was cancelled (run $run_id); main not moved" >&2
+  echo "CI ${result:-failed} (run $run_id); main not moved" >&2
   gh run view "$run_id" --log-failed 2>&1 | tail -n 60 >&2 || true
   echo "release: $CI_WORKFLOW run $run_id failed for ${sha:0:12}; main not moved"
   exit 1

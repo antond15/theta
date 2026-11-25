@@ -20,16 +20,19 @@ re-signer (Sideloadly, AltStore, SideStore, TrollStore). There is no jailbreak b
 1. **Decisions.** Ask the user when a choice has a visible effect, a data consequence or a real
    trade-off; settle technical internals yourself and write a one-line reason. Explain in plain
    language (what it is here, an example, effect with and without, cost, pros and cons), then
-   use AskUserQuestion: up to four questions per call, recommended option first and labelled
-   "(Recommended)", each standing on its own because the dialog may hide the message. Answer a
-   clarifying question in chat and re-ask only that. If the dialog tool is missing or the call
-   is denied, ask in chat. A planner follows `decision-round`. A
+   use your agent's question tool (Claude Code `AskUserQuestion`, Codex `request_user_input`,
+   Antigravity `ask_question`, OpenCode `question`): up to four questions per call, recommended
+   option first and labelled "(Recommended)", each standing on its own because the dialog may
+   hide the message. Answer a clarifying question in chat and re-ask only that. If no question
+   tool exists or the call is denied, ask in chat. A planner follows `decision-round`. A
    builder that meets a core question (data model, math, input mapping, security, a visible
    flow) stops, records it under "In progress" and tells the user to take it to a planner.
 2. **Branches and commits.** Work on `dev`. Commit as work lands with a Conventional Commit
    subject, `type(scope): lowercase summary`, e.g. `feat(auth): add totp enrollment`. Docs
    changes go in the related commit. Push and move `main` only inside `close-step`, after the
-   user approves: an unasked push was rejected before.
+   user approves: an unasked push was rejected before. A git `pre-push` hook
+   (`.claude/hooks/git-pre-push.sh`) rejects every push to `main` but `release.sh`'s, for
+   every agent; never pass `--no-verify` or set `AI_KIT_RELEASE`.
 3. **CI.** When the project has CI (`.github/workflows/ci.yml`), read it with `gh`, never poll;
    it runs on every push except to `main`. On a failure read only
    `gh run view <id> --log-failed`.
@@ -48,6 +51,12 @@ re-signer (Sideloadly, AltStore, SideStore, TrollStore). There is no jailbreak b
 8. **Sessions.** The planner runs the decision round, writes the handoff and stops; a builder
    builds a fully decided step in a fresh session. High-risk code (auth, encryption, keys, money
    math, migrations) stays with the planner, who also reviews builder work that touched it.
+9. **Shell.** Change files with your editor tool, not heredocs, `sed` rewrites or `python -c`
+   scripts: in Claude Code the push guard blocks any shell text that mentions `git push`. A
+   push to a scratch test remote goes in a script file written with the editor tool, then
+   `bash <file>`. Never `sleep` to wait: run a long
+   command in the background and wait with the host's tool (T3 `t3_background_wait` with that
+   command's id). Pass a sha copied from git output (`git rev-parse HEAD`), never a typed one.
 
 ## When a fix fails
 
@@ -59,20 +68,31 @@ directly before a third fix. If the test does not settle it, stop and report.
 Run `git status -sb` once and note changes that are not yours. When the project has CI, check
 the last `dev` CI run once (`gh run list --branch dev --limit 1`); read the backlog's "In
 progress" section. In Claude Code the hooks in `.claude/hooks/` print these and block every
-`git push` except a plain push to `dev`; other agents have no hooks, so do it and follow the
-rule yourself.
+`git push` except a plain push to `dev`. An agent whose context shows no hook output runs
+`bash .claude/hooks/session-start.sh` once and follows the push rule itself.
 
 ## Models
 
-Handoffs name only the next session's role; a launch reads model and effort from this table.
-| Role | Model | Effort |
-|---|---|---|
-| Planner: decision rounds, first-session architecture, design review, high-risk code and its review | Opus 5.5 (`claude-opus-5-5`) | high |
-| Builder | Sonnet 5.5 (`claude-sonnet-5-5`) | medium |
-| Mechanical: CI triage, backlog grooming, docs-only edits, dependency bumps | Haiku 5.5 (`claude-haiku-5-5`) | medium |
+Handoffs name only the next session's role. A launch takes the first entry of that role's chain
+that the host lists as available; the next entry is on another provider.
+| Role | Chain (model, effort) |
+|---|---|
+| Planner: decision rounds, first-session architecture, design review, high-risk code and its review | Claude `claude-opus-5-5` high → Codex `gpt-6.2-astra` high → Antigravity `gemini-4-neon` high → Claude `claude-fable-5-2` high |
+| Builder | Claude `claude-sonnet-5-5` medium → Codex `gpt-6.2-sol` medium → Antigravity `gemini-4-carbon` medium → Claude `claude-opus-5-5` medium |
+| Mechanical: CI triage, backlog grooming, docs-only edits, dependency bumps | Claude `claude-haiku-5-5` medium → OpenCode `opencode/deepseek-v4.1-flash-free` → Codex `gpt-6-luna` medium → Antigravity `gemini-4-hydrogen` medium |
 
-Fable 5.2 is an occasional opt-in for an unusually hard architecture decision. Re-evaluate this
-split on real steps. The project's Codex model, if any, is in its own Codex section.
+Fable 5.2 closes the planner chain and is an occasional opt-in for an unusually hard
+architecture decision. Re-evaluate this split on real steps. A "Project models" section in
+this file, outside the kit block, replaces this table whole.
+
+## Threads and subagents
+
+Session-sized work (planner, builder, a review that fixes, mechanical) runs in a new thread
+that the launcher references by link. Subagents, native or delegated, do only read-only work
+that reports back into the current session: lookups and review children. A brief to a child
+starts with who asks and why (this session's role, the user's goal) and the read-only scope;
+Codex refuses a brief from another thread without it. A child notifies its parent when it
+finishes, so its id never goes to a background-wait tool.
 
 ## Skills
 

@@ -33,13 +33,19 @@ when the session changed something; **Clean up** whenever it started a server or
    survives a "no". A new step starts with a planner session running `decision-round`; a builder
    prompt is only for a step whose handoff holds all its decisions. Name the next session by
    role (planner, builder, mechanical); model and effort come from the Models table in
-   AGENTS.md. When a builder session touched high-risk code (auth, encryption, keys, money math,
+   AGENTS.md (the first available entry of the role's chain, see **Launch**). When a builder session touched high-risk code (auth, encryption, keys, money math,
    migrations), the next session is a planner review: `/code-review medium` on the `dev` branch
    while it is ahead of `main`, fixing what it confirms. Name the one fact the change is safe
    because of and prove it with a small script or test that runs the real code; write
-   "unproven" if it could not be proven. When nothing obvious comes next, say so
-   and write no prompt.
-7. **Dialog.** Always last: one `AskUserQuestion` call holding each question below whose
+   "unproven" if it could not be proven. For a step whose handoff says
+   `Review: cross-provider`, and for a high-risk step, the review is a read-only child on a
+   provider other than the one the step was built on (the first planner-chain entry that
+   qualifies); when none is available, review without it and say so. A `cross-provider`
+   step is reviewed inside the builder's own close-step: before the Release question, a
+   read-only child reviews `main..dev`, and the builder fixes what it confirms and re-verifies.
+   For a high-risk step, the Opus planner-review session delegates that child and merges its
+   findings. When nothing obvious comes next, say so and write no prompt.
+7. **Dialog.** Always last: one call of your agent's question tool (AGENTS.md, Working rules, Decisions) holding each question below whose
    condition holds, each standing on its own (the dialog may hide the message). For each
    question left out, say in one line which and why (e.g. "No release question: `dev` is level
    with `main`"); when none holds, say so. A project may add its own questions. Never end with
@@ -57,21 +63,28 @@ when the session changed something; **Clean up** whenever it started a server or
      wait for: replace the first option with **Push dev, move main without CI**, which is the
      user's explicit order. When the user ordered a move without CI in this session, the
      question reads "Move main to <sha> without CI, as you asked?" Approval covers this one
-     release. The user can always push from their own terminal; the agent's push guard only
-     covers the agent.
+     release. The user can still push from their own terminal; there a push to `main` needs
+     `git push --no-verify`, because the kit's pre-push hook rejects every push to `main` but `release.sh`'s.
    - **Launch**, when there is a next prompt and the host has the T3 tools: "Launch the next
      session (<what it does>, <model>, <effort>) as a new thread?" Options: **Launch it
-     (Recommended):** `t3_thread_launch` with the prompt as its `message`, model and effort from
-     the Models table for that role, workspace strategy `root`, and `instanceId` (the provider
-     instance that lists the model in `orchestrator_capabilities`, usually `claudeAgent` for
-     Claude models; without it the launch fails with "Expected string at
-     modelSelection.instanceId"), and mention the thread by its `link`; **No:** the user starts
-     it from the fenced prompt. A launch is not given `dev` as a parameter, so the prompt text
-     must say "Work on `dev`".
+     (Recommended):** `t3_thread_launch` with the prompt as its `message`, workspace strategy
+     `root`, and `instanceId` (the provider instance that lists the model in
+     `orchestrator_capabilities`, usually `claudeAgent` for Claude models; without it the launch
+     fails with "Expected string at modelSelection.instanceId"), and mention the thread by its
+     `link`; **No:** the user starts it from the fenced prompt. A launch is not given `dev` as a
+     parameter, so the prompt text must say "Work on `dev`". The prompt also states the project,
+     the role and where the handoff is (Codex refused a delegated task that gave no context).
+     Pick the model from the role's chain in the Models table: the first entry whose provider
+     `orchestrator_capabilities` lists without constraints and whose model it lists; never assume
+     a provider is up. Set effort with the provider's own option (Claude `effort`, Codex
+     `reasoningEffort`, Antigravity `thought_level`, OpenCode `variant`, where medium maps to
+     `high`, its default). The question names the model it picked and any entries it skipped,
+     with the reason. When the launch fails, try the next entry once and report the skip. Record
+     `Launched: <link> (<provider> <model> <effort>)` in the summary.
 8. **Release.** Act on the answers in this order, then **Launch**; never launch before the
    release result is final, because a launched session may commit to the same checkout.
    - Capture `sha=$(git rev-parse HEAD)` before pushing. Run
-     `bash .agents/skills/close-step/release.sh [--dev-only] <sha>` once, as a background
+     `bash .agents/skills/close-step/release.sh [--dev-only] "$sha"` (never a typed sha) once, as a background
      command, and wait for it (`t3_background_wait` or the host's equivalent; never poll).
      The script pushes `dev`, waits for the CI run of that commit, watches it, and moves `main`
      to exactly that commit only when it passed (no branch switch, no merge commit). It prints
@@ -88,7 +101,7 @@ when the session changed something; **Clean up** whenever it started a server or
      without CI, as the user ordered").
    - **Exit 0:** report it. **Exit 2** (a precondition failed, e.g. no `ci.yml`): report the
      script's message and offer the no-CI release only as the Release question describes.
-     **Exit 1 (red) or 4 (no run appeared):** do not
+     **Exit 1 (red) or 4 (no run, or no result, in time):** do not
      touch `main`; summarize the cause from the script's output and ask with a second dialog,
      "CI failed on `dev`. What now?" Options: **Fix it (Recommended):** fix the cause, commit
      only the fix's files by path, and release again; **Re-run the failed jobs:** for a flaky or
@@ -100,7 +113,8 @@ when the session changed something; **Clean up** whenever it started a server or
      **Exit 3 (a push was rejected by a local pre-push hook or the remote):** `main` stays
      where it was; show the script's message and ask with its own dialog, "The push was
      rejected (hook or remote). What now?" Options: **Fix it (Recommended):** fix the cause
-     (the hook's complaint, or the remote's reason) and release again; **Leave it:** record
+     (the hook's complaint, or the remote's reason; never `--no-verify`, `AI_KIT_RELEASE` or an
+     edit of the hook) and release again; **Leave it:** record
      the rejection in `docs/backlog.md` (a backlog commit follows the Backlog rule of
      AGENTS.md) and do not push. There is no re-run option.
    - Then, if the user chose to launch, launch: after the release result is final, including a

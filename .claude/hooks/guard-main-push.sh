@@ -35,6 +35,9 @@ fi
 reason="main moves only through close-step's release.sh; other pushes need the user to run them"
 ref_ok='^(dev|(HEAD|[0-9a-fA-F]{4,40}):(dev|refs/heads/dev))$'
 
+# Split the command into segments with bash itself: macOS sed writes "n" for "\n" in a replacement.
+nl=$'\n'; chain="$cmd"
+chain="${chain//&&/$nl}"; chain="${chain//||/$nl}"; chain="${chain//;/$nl}"; chain="${chain//|/$nl}"
 while IFS= read -r seg; do
   [[ "$seg" =~ (^|[^[:alnum:]_./-])git([[:space:]]+[^[:space:]]+)*[[:space:]]+push([[:space:]]|$) ]] || continue
   seg="${seg//[\"\']/}"
@@ -54,7 +57,14 @@ while IFS= read -r seg; do
       exit 2
     fi
   fi
-  if ((!ok)); then echo "Blocked: '$(echo "$seg" | head -c 120)'. $reason" >&2; exit 2; fi
-done < <(printf '%s\n' "$cmd" | sed -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/[;|]/\n/g')
+  if ((!ok)); then
+    echo "Blocked: '$(echo "$seg" | head -c 120)'. $reason" >&2
+    # Most such blocks are file text that only mentions a push (a heredoc, python -c, echo).
+    if [[ "${tok[0]-}" != git ]]; then
+      echo "If this is text that only mentions git push, write the file with your editor tool (Edit/Write), not the shell. A push to a scratch test remote goes in a script file written with that tool, then run it with bash." >&2
+    fi
+    exit 2
+  fi
+done <<<"$chain"
 
 exit 0

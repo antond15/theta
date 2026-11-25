@@ -20,6 +20,18 @@ if [[ -f "$lock" && -f "$kitfile" ]]; then
   fi
 fi
 
+# One line when the git pre-push hook that guards main is missing (a fresh clone, or a project
+# set up before it existed). Only for the top of a work tree that has the kit's hook script.
+if [[ -f .claude/hooks/git-pre-push.sh ]] && top="$(git rev-parse --show-toplevel 2>/dev/null)" &&
+   [[ "$(cd "$top" 2>/dev/null && pwd -P)" == "$(pwd -P)" ]]; then
+  pp="$(git rev-parse --git-path hooks/pre-push 2>/dev/null)"   # honors core.hooksPath
+  if [[ -n "$pp" && ! -e "$pp" ]]; then
+    echo "git pre-push hook missing ($pp): pushes to main are not blocked; run install.sh --update on this project"
+  elif [[ -n "$pp" && ! -x "$pp" ]]; then
+    echo "git pre-push hook not executable ($pp): git skips it, pushes to main are not blocked; chmod +x it"
+  fi
+fi
+
 echo "== git status -sb"
 git status -sb 2>/dev/null | head -n 20
 

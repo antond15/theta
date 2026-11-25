@@ -59,6 +59,7 @@ handoff every time (long sessions also resend their whole history).
 changes and where.
 
 Next session: <role: builder | planner review>.
+Review: none | cross-provider | planner (high-risk)
 
 Touch points:
 - <path:line>: <what to change or read there>
